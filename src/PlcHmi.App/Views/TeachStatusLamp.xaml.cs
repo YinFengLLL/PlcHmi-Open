@@ -1,4 +1,4 @@
-namespace 上位机.应用.视图;
+namespace PlcHmi.App.Views;
 
 /// <summary>
 /// 示教页顶部固定状态灯（锁附示教 / 点胶示教共用）。
@@ -10,10 +10,10 @@ namespace 上位机.应用.视图;
 /// <para>数据全部来自页面的 DataContext（两个示教页 VM 属性同名），因此这里不定义依赖属性，
 /// 也不需要代码后置逻辑——没有任何"控件自己的状态"需要维护。</para>
 /// </summary>
-public partial class 示教状态灯 : System.Windows.Controls.UserControl
+public partial class TeachStatusLamp : System.Windows.Controls.UserControl
 {
     /// <summary>初始化组件。</summary>
-    public 示教状态灯()
+    public TeachStatusLamp()
     {
         InitializeComponent();
     }

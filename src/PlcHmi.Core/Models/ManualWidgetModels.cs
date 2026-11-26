@@ -1,18 +1,18 @@
-namespace 上位机.核心.模型;
+namespace PlcHmi.Core.Models;
 
 using System.Text.Json.Serialization;
 
 /// <summary>手动页元件类型。</summary>
-public enum 手动元件类型
+public enum ManualComponentType
 {
     /// <summary>气缸：伸出 / 缩回两个控制位。</summary>
-    气缸 = 0,
+    Cylinder = 0,
 
     /// <summary>单动按钮：按下置位、松开复位。</summary>
-    按钮 = 1,
+    Button = 1,
 
     /// <summary>指示灯：只读显示一个位。</summary>
-    指示灯 = 2,
+    Indicator = 2,
 }
 
 /// <summary>
@@ -23,19 +23,19 @@ public enum 手动元件类型
 /// 这样上位机不会绕过 PLC 的联锁逻辑直接动作执行机构。
 /// 直接绑定 Y 点的配置会被拒绝保存。</para>
 /// </summary>
-public sealed class 手动元件定义
+public sealed class ManualComponentDefinition
 {
     /// <summary>唯一标识，用于增删改定位。</summary>
-    public string 标识 { get; set; } = string.Empty;
+    public string Id { get; set; } = string.Empty;
 
     /// <summary>元件类型。</summary>
-    public 手动元件类型 类型 { get; set; } = 手动元件类型.气缸;
+    public ManualComponentType Kind { get; set; } = ManualComponentType.Cylinder;
 
     /// <summary>界面显示名称，如「上料气缸」。</summary>
-    public string 名称 { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
 
     /// <summary>排序号，小的排前面。</summary>
-    public int 顺序 { get; set; }
+    public int Order { get; set; }
 
     /// <summary>
     /// 控制位地址（M 区），如 <c>M220</c>。
@@ -43,68 +43,68 @@ public sealed class 手动元件定义
     /// <para><b>气缸为单线圈控制：置位 = 伸出，复位 = 缩回。</b>
     /// 按钮为脉冲触发。指示灯不使用本字段。</para>
     /// </summary>
-    public string 地址 { get; set; } = string.Empty;
+    public string Address { get; set; } = string.Empty;
 
     /// <summary>状态监测地址（M 区），指示灯使用。</summary>
-    public string 状态地址 { get; set; } = string.Empty;
+    public string StateAddress { get; set; } = string.Empty;
 
     /// <summary>
-    /// 控制位绑定的变量表变量名（可选）。绑定后 <see cref="地址"/> 为该变量的软元件地址回填值，
+    /// 控制位绑定的变量表变量名（可选）。绑定后 <see cref="Address"/> 为该变量的软元件地址回填值，
     /// OPC UA 模式下按变量名做符号寻址。
     /// </summary>
-    public string 变量 { get; set; } = string.Empty;
+    public string Variable { get; set; } = string.Empty;
 
     /// <summary>状态监测位绑定的变量表变量名（可选，指示灯使用）。</summary>
-    public string 状态值变量 { get; set; } = string.Empty;
+    public string StateValueVariable { get; set; } = string.Empty;
 
     /// <summary>备注。</summary>
-    public string? 注释 { get; set; }
+    public string? Comment { get; set; }
 
     /// <summary>是否为气缸（需要两个可写地址）。</summary>
     [JsonIgnore]
-    public bool 是否气缸 => 类型 == 手动元件类型.气缸;
+    public bool IsCylinder => Kind == ManualComponentType.Cylinder;
 
     /// <summary>是否为按钮（需要一个可写地址）。</summary>
     [JsonIgnore]
-    public bool 是否按钮 => 类型 == 手动元件类型.按钮;
+    public bool IsButton => Kind == ManualComponentType.Button;
 
     /// <summary>是否为指示灯（需要一个只读地址）。</summary>
     [JsonIgnore]
-    public bool 是否指示灯 => 类型 == 手动元件类型.指示灯;
+    public bool IsIndicator => Kind == ManualComponentType.Indicator;
 
     /// <summary>深拷贝。</summary>
-    public 手动元件定义 克隆() => new()
+    public ManualComponentDefinition Clone() => new()
     {
-        标识 = 标识,
-        类型 = 类型,
-        名称 = 名称,
-        顺序 = 顺序,
-        地址 = 地址,
-        状态地址 = 状态地址,
-        变量 = 变量,
-        状态值变量 = 状态值变量,
-        注释 = 注释,
+        Id = Id,
+        Kind = Kind,
+        Name = Name,
+        Order = Order,
+        Address = Address,
+        StateAddress = StateAddress,
+        Variable = Variable,
+        StateValueVariable = StateValueVariable,
+        Comment = Comment,
     };
 }
 
 /// <summary><c>config/manual-widgets.json</c> 的顶层结构。</summary>
-public sealed class 手动元件配置
+public sealed class ManualComponentConfig
 {
     /// <summary>元件列表。</summary>
-    public List<手动元件定义> 元件集合 { get; set; } = new();
+    public List<ManualComponentDefinition> ComponentCollection { get; set; } = new();
 }
 
 /// <summary>元件配置校验结果。</summary>
-public sealed class 手动元件校验
+public sealed class ManualComponentValidate
 {
     /// <summary>是否通过校验。</summary>
-    public bool 是否有效 { get; init; } = true;
+    public bool IsValid { get; init; } = true;
 
     /// <summary>错误列表（为空表示通过）。</summary>
-    public List<string> 错误集合 { get; init; } = new();
+    public List<string> ErrorCollection { get; init; } = new();
 
     /// <summary>给操作员看的一句话。</summary>
-    public string 摘要 => 是否有效
+    public string Summary => IsValid
         ? "校验通过"
-        : string.Join("；", 错误集合);
+        : string.Join("；", ErrorCollection);
 }

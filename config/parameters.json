@@ -1,10 +1,10 @@
 {
-  "当前参数": {
-    "X.LocateSpeed": 150,
-    "Y.LocateSpeed": 100,
-    "Z.LocateSpeed": 50,
-    "ZZ.LocateSpeed": 20,
-    "GlueX.LocateSpeed": 60,
-    "GlueZ.LocateSpeed": 50
+  "currentParameter": {
+    "x.LocateSpeed": 150,
+    "y.LocateSpeed": 100,
+    "z.LocateSpeed": 50,
+    "zZ.LocateSpeed": 20,
+    "glueX.LocateSpeed": 60,
+    "glueZ.LocateSpeed": 50
   }
 }

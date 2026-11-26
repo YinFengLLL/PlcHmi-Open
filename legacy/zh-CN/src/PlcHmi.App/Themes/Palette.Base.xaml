@@ -1,0 +1,119 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!-- ════════════════════════════════════════════════════════════════
+         基础令牌（主题无关）：字体 / 字号 / 间距 / 圆角 / 尺寸
+
+         双主题架构（2026-09-29 起）：
+           Palette.Base.xaml   —— 本文件，不随主题切换，可用 StaticResource 引用
+           Palette.Light.xaml  —— 浅色主题（颜色 / 画刷 / 阴影 / 罩层）
+           Palette.Dark.xaml   —— 深色主题（同一组键，不同值）
+         运行期由 Services/ThemeManager.cs 整体替换 Light/Dark 字典完成切换，
+         因此**颜色类令牌一律用 DynamicResource 引用**，StaticResource 换不掉。
+         ════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── 字体 ───────────────────────────────────────────────────── -->
+    <FontFamily x:Key="UiFontFamily">Microsoft YaHei UI, 微软雅黑, Segoe UI</FontFamily>
+    <FontFamily x:Key="NumericFontFamily">Consolas, Cascadia Mono, Courier New</FontFamily>
+
+    <sys:Double x:Key="FontSizeTitle">20</sys:Double>
+    <sys:Double x:Key="FontSizeHeading">15</sys:Double>
+    <sys:Double x:Key="FontSizeBody">13</sys:Double>
+    <sys:Double x:Key="FontSizeCaption">12</sys:Double>
+    <sys:Double x:Key="FontSizeMini">11</sys:Double>
+    <sys:Double x:Key="FontSizeMetric">26</sys:Double>
+    <sys:Double x:Key="FontSizeDisplay">32</sys:Double>
+    <!-- 首屏核心指标专用（节拍 / 良品 / 不良品）：两米外可读的仪表级 -->
+    <sys:Double x:Key="FontSizeDisplay48">48</sys:Double>
+
+    <!-- ── 间距：4px 栅格，命名即像素值 ─────────────────────────────
+         页面里禁止再写字面量 Margin/Padding，统一引用下列 token；
+         常用组合直接给 Thickness，避免页面自己拼四元组。 -->
+    <Thickness x:Key="PageMargin">20</Thickness>
+    <Thickness x:Key="CardPadding">16,14</Thickness>
+    <Thickness x:Key="ToolBarPadding">16,12</Thickness>
+    <Thickness x:Key="DialogMargin">28</Thickness>
+    <Thickness x:Key="CompactPadding">12</Thickness>
+    <Thickness x:Key="UnitLabelMargin">4,0,0,4</Thickness>
+    <Thickness x:Key="ToolBarButtonMargin">0,8,12,8</Thickness>
+
+    <Thickness x:Key="GapTop4">0,4,0,0</Thickness>
+    <Thickness x:Key="GapTop8">0,8,0,0</Thickness>
+    <Thickness x:Key="GapTop12">0,12,0,0</Thickness>
+    <Thickness x:Key="GapTop16">0,16,0,0</Thickness>
+    <Thickness x:Key="GapTop20">0,20,0,0</Thickness>
+    <!-- 空状态提示与列表顶部的留白 -->
+    <Thickness x:Key="GapTop60">0,60,0,0</Thickness>
+
+    <Thickness x:Key="GapBottom4">0,0,0,4</Thickness>
+    <Thickness x:Key="GapBottom8">0,0,0,8</Thickness>
+    <Thickness x:Key="GapBottom12">0,0,0,12</Thickness>
+    <Thickness x:Key="GapBottom16">0,0,0,16</Thickness>
+    <Thickness x:Key="GapBottom20">0,0,0,20</Thickness>
+    <Thickness x:Key="GapBottom24">0,0,0,24</Thickness>
+
+    <Thickness x:Key="GapLeft4">4,0,0,0</Thickness>
+    <Thickness x:Key="GapLeft8">8,0,0,0</Thickness>
+    <Thickness x:Key="GapLeft12">12,0,0,0</Thickness>
+    <Thickness x:Key="GapLeft16">16,0,0,0</Thickness>
+    <Thickness x:Key="GapLeft20">20,0,0,0</Thickness>
+
+    <Thickness x:Key="GapRight4">0,0,4,0</Thickness>
+    <Thickness x:Key="GapRight8">0,0,8,0</Thickness>
+    <Thickness x:Key="GapRight12">0,0,12,0</Thickness>
+    <Thickness x:Key="GapRight16">0,0,16,0</Thickness>
+    <Thickness x:Key="GapRight20">0,0,20,0</Thickness>
+
+    <Thickness x:Key="GapV4">0,4</Thickness>
+    <Thickness x:Key="GapV8">0,8</Thickness>
+    <Thickness x:Key="GapV12">0,12</Thickness>
+    <Thickness x:Key="GapV16">0,16</Thickness>
+
+    <!-- 水平内缩：状态条单元需要左右留白，但不该同时加上下内边距 -->
+    <Thickness x:Key="GapH12">12,0</Thickness>
+
+    <!-- 组合间距：上 8 + 右 12（弹窗设置里两列并排的字段组用） -->
+    <Thickness x:Key="GapTop8Right12">8,8,12,0</Thickness>
+
+
+    <!-- 表格类单元组合（供表头 / 表格内微调用，避免页面写四元组字面量） -->
+    <Thickness x:Key="TableHeaderCellMargin">0,10,6,10</Thickness>
+    <Thickness x:Key="TableHeaderCellMarginLast">0,10,16,10</Thickness>
+    <Thickness x:Key="IndexNavLabelMargin">20,0,8,0</Thickness>
+    <Thickness x:Key="CoordBoxLastMargin">2,0,14,0</Thickness>
+    <!-- 区块标题下方的说明行 -->
+    <Thickness x:Key="SectionCaptionMargin">0,4,0,10</Thickness>
+    <!-- 顶栏 / 底栏的水平留白 -->
+    <Thickness x:Key="BarMargin">20,0</Thickness>
+    <!-- 导航区（侧栏标题 / 列表） -->
+    <Thickness x:Key="NavHeaderMargin">20,18,0,10</Thickness>
+    <Thickness x:Key="NavListMargin">10,0</Thickness>
+    <!-- 页面标题与首屏内容的间距 -->
+    <Thickness x:Key="PageHeaderMargin">0,0,0,18</Thickness>
+    <!-- 小型启用开关 / 徽章盒内边距 -->
+    <Thickness x:Key="ChipPadding">12,6</Thickness>
+    <!-- 提示条内边距 -->
+    <Thickness x:Key="NoticePadding">12,10</Thickness>
+    <!-- 手动页元件卡内边距 -->
+    <Thickness x:Key="WidgetCardPadding">12,10</Thickness>
+    <!-- 配置列表行内边距 -->
+    <Thickness x:Key="ListRowPadding">0,6</Thickness>
+
+    <!-- ── 圆角尺度：卡片 12 / 控件 8 / 主视觉 16 / 胶囊 20 ─────────
+         20 而非 999 —— WPF 的 CornerRadius 不保证对超 half-height 的值做钳制，
+         写一个大数会在矮控件（如 30px 徽标）上出现渲染毛刺。 -->
+    <CornerRadius x:Key="CardCornerRadius">12</CornerRadius>
+    <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="HeroCornerRadius">16</CornerRadius>
+    <CornerRadius x:Key="PillCornerRadius">20</CornerRadius>
+
+    <!-- ── 尺寸 ───────────────────────────────────────────────────── -->
+    <sys:Double x:Key="TouchButtonHeight">62</sys:Double>
+    <sys:Double x:Key="NormalButtonHeight">44</sys:Double>
+    <!-- 危险操作按钮：52px，高于触控基准，视觉上与普通操作拉开一档 -->
+    <sys:Double x:Key="DangerousButtonHeight">52</sys:Double>
+    <!-- 图标按钮（✎ ✕ 等无文字操作）：44×44 触控基准 -->
+    <sys:Double x:Key="IconButtonSize">44</sys:Double>
+
+</ResourceDictionary>

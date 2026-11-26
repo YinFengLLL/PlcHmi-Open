@@ -1,8 +1,8 @@
-using 上位机.业务.配置;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 点胶「单点工艺参数」结构体数组回归（2026-10-21 现场要求）。
@@ -16,75 +16,75 @@ namespace 上位机.上位机测试;
 /// 现场表现是"点胶参数偶发不对"，而数据本身看起来完全正常——最难查的一类。</para>
 /// </summary>
 [Collection("config-files")]
-public class 辅助地址结构体数组测试
+public class AuxAddressStructArrayTest
 {
     /// <summary>按现场表构造：偏移 0/2/3/4/6，长度 8。</summary>
-    private static 辅助地址项 建项(string 名称, int 偏移, 标签数据类型 类型) => new()
+    private static AuxAddressItem BuildItem(string Name, int Offset, TagDataType Kind) => new()
     {
-        键 = 名称,
-        名称 = 名称,
-        分组 = "点胶",
-        数据类型 = 类型,
-        结构体成员 = true,
-        结构体基址 = 3500,
-        结构体内偏移 = 偏移,
-        结构体长度 = 8,
+        Key = Name,
+        Name = Name,
+        Group = "点胶",
+        DataType = Kind,
+        StructMember = true,
+        StructBaseAddress = 3500,
+        StructInnerOffset = Offset,
+        StructLength = 8,
     };
 
     [Fact]
-    public void 按点地址_第1点应从基址开始()
+    public void ByPointAddress_No1PointShouldFromBaseAddressStart()
     {
-        var 项 = 建项("提前关胶", 0, 标签数据类型.Float32);
+        var Item = BuildItem("提前关胶", 0, TagDataType.Float32);
 
-        Assert.True(项.是结构体数组);
-        Assert.Equal("D3500", 项.按点地址(0));
-        Assert.Equal(3500, 项.按点序号(0));
+        Assert.True(Item.IsStructArray);
+        Assert.Equal("D3500", Item.ByPointAddress(0));
+        Assert.Equal(3500, Item.ByPointIndex(0));
     }
 
     /// <summary>现场原话：选中第二点后，提前关胶从 D3500 到 D3508。</summary>
     [Fact]
-    public void 按点地址_第二点应偏移一个结构体长度()
+    public void ByPointAddress_NoTwoPointShouldOffsetOneStructLength()
     {
-        var 项 = 建项("提前关胶", 0, 标签数据类型.Float32);
+        var Item = BuildItem("提前关胶", 0, TagDataType.Float32);
 
-        Assert.Equal("D3508", 项.按点地址(1));
-        Assert.Equal("D3516", 项.按点地址(2));
+        Assert.Equal("D3508", Item.ByPointAddress(1));
+        Assert.Equal("D3516", Item.ByPointAddress(2));
     }
 
     /// <summary>每个字段在自己的偏移上：D3502/D3503/D3504/D3506（长 8 字，不互相压）。</summary>
     [Fact]
-    public void 按点地址_各字段应落在自己的偏移上()
+    public void ByPointAddress_EachFieldShouldPersistAtSelfOffsetOn()
     {
-        Assert.Equal("D3502", 建项("移动前出胶延时", 2, 标签数据类型.Int16).按点地址(0));
-        Assert.Equal("D3503", 建项("关胶后延时", 3, 标签数据类型.Int16).按点地址(0));
-        Assert.Equal("D3504", 建项("抬针高度", 4, 标签数据类型.Float32).按点地址(0));
-        Assert.Equal("D3506", 建项("点胶速度", 6, 标签数据类型.Float32).按点地址(0));
+        Assert.Equal("D3502", BuildItem("移动前出胶延时", 2, TagDataType.Int16).ByPointAddress(0));
+        Assert.Equal("D3503", BuildItem("关胶后延时", 3, TagDataType.Int16).ByPointAddress(0));
+        Assert.Equal("D3504", BuildItem("抬针高度", 4, TagDataType.Float32).ByPointAddress(0));
+        Assert.Equal("D3506", BuildItem("点胶速度", 6, TagDataType.Float32).ByPointAddress(0));
 
         // 第 2 点：整体 +8
-        Assert.Equal("D3510", 建项("移动前出胶延时", 2, 标签数据类型.Int16).按点地址(1));
-        Assert.Equal("D3514", 建项("点胶速度", 6, 标签数据类型.Float32).按点地址(1));
+        Assert.Equal("D3510", BuildItem("移动前出胶延时", 2, TagDataType.Int16).ByPointAddress(1));
+        Assert.Equal("D3514", BuildItem("点胶速度", 6, TagDataType.Float32).ByPointAddress(1));
     }
 
     /// <summary>非数组模式（锁附页的拍照点等）必须仍按固定地址走，不能被动到。</summary>
     [Fact]
-    public void 非数组模式_应回到固定地址()
+    public void NonArrayMode_ShouldBackToFixedAddress()
     {
-        var 项 = new 辅助地址项 { 键 = "拍照点X", 名称 = "拍照点 X", 地址 = "D2680", 数据类型 = 标签数据类型.Float32 };
+        var Item = new AuxAddressItem { Key = "拍照点X", Name = "拍照点 X", Address = "D2680", DataType = TagDataType.Float32 };
 
-        Assert.False(项.是结构体数组);
-        Assert.Equal("D2680", 项.按点地址(0));
-        Assert.Equal("D2680", 项.按点地址(17));   // 与点序号无关
-        Assert.Equal(2680, 项.按点序号(5));
+        Assert.False(Item.IsStructArray);
+        Assert.Equal("D2680", Item.ByPointAddress(0));
+        Assert.Equal("D2680", Item.ByPointAddress(17));   // 与点序号无关
+        Assert.Equal(2680, Item.ByPointIndex(5));
     }
 
     /// <summary>点序号为负（未选中时的哨兵值）按 0 处理，不能算出区段外的地址。</summary>
     [Fact]
-    public void 负点序号应按第一点处理()
+    public void NegativePointIndexShouldByNoOnePointProcess()
     {
-        var 项 = 建项("提前关胶", 0, 标签数据类型.Float32);
+        var Item = BuildItem("提前关胶", 0, TagDataType.Float32);
 
-        Assert.Equal("D3500", 项.按点地址(-1));
-        Assert.Equal(3500, 项.按点序号(-3));
+        Assert.Equal("D3500", Item.ByPointAddress(-1));
+        Assert.Equal(3500, Item.ByPointIndex(-3));
     }
 
     // ── 出厂配置自检 ────────────────────────────────────────────────────
@@ -94,31 +94,31 @@ public class 辅助地址结构体数组测试
     /// 且字段区间互不重叠、总长不超过结构体长度。
     /// </summary>
     [Fact]
-    public void 出厂配置_点胶单点参数应共用同一结构体且不重叠()
+    public void FactoryConfig_DispenseSinglePointParameterShouldSharedSameOneStructAndNotOverlap()
     {
-        var 配置项 = 配方配置加载器.加载(out _);
-        var 点胶项 = 配置项.辅助地址.Where(项 => 项.分组 == "点胶").ToList();
+        var configItem = RecipeConfigLoader.Load(out _);
+        var dispenseItem = configItem.AuxAddress.Where(Item => Item.Group == "点胶").ToList();
 
-        Assert.Equal(5, 点胶项.Count);
-        Assert.All(点胶项, 项 => Assert.True(项.是结构体数组, $"「{项.名称}」未配置为结构体数组"));
-        Assert.All(点胶项, 项 => Assert.Equal(3500, 项.结构体基址));
-        Assert.All(点胶项, 项 => Assert.Equal(8, 项.结构体长度));
+        Assert.Equal(5, dispenseItem.Count);
+        Assert.All(dispenseItem, Item => Assert.True(Item.IsStructArray, $"「{Item.Name}」未配置为结构体数组"));
+        Assert.All(dispenseItem, Item => Assert.Equal(3500, Item.StructBaseAddress));
+        Assert.All(dispenseItem, Item => Assert.Equal(8, Item.StructLength));
 
         // 按偏移 + 字数排一遍，任意两项不得重叠
-        var 区间 = 点胶项
-            .Select(项 => (项.名称, 起: 项.结构体内偏移, 止: 项.结构体内偏移 + 项.寄存器数量 - 1))
-            .OrderBy(区 => 区.起)
+        var areaBetween = dispenseItem
+            .Select(Item => (Item.Name, begin: Item.StructInnerOffset, stop: Item.StructInnerOffset + Item.RegisterCount - 1))
+            .OrderBy(area => area.begin)
             .ToList();
 
-        for (var 序 = 0; 序 < 区间.Count; 序++)
+        for (var ordinal = 0; ordinal < areaBetween.Count; ordinal++)
         {
-            Assert.True(区间[序].止 < 8,
-                $"「{区间[序].名称}」超出结构体长度（止于偏移 {区间[序].止}）");
+            Assert.True(areaBetween[ordinal].stop < 8,
+                $"「{areaBetween[ordinal].Name}」超出结构体长度（止于偏移 {areaBetween[ordinal].stop}）");
 
-            if (序 > 0)
+            if (ordinal > 0)
             {
-                Assert.True(区间[序].起 > 区间[序 - 1].止,
-                    $"「{区间[序 - 1].名称}」与「{区间[序].名称}」在结构体内重叠");
+                Assert.True(areaBetween[ordinal].begin > areaBetween[ordinal - 1].stop,
+                    $"「{areaBetween[ordinal - 1].Name}」与「{areaBetween[ordinal].Name}」在结构体内重叠");
             }
         }
     }
@@ -130,70 +130,70 @@ public class 辅助地址结构体数组测试
     /// 加载时必须按出厂定义补齐。
     /// </summary>
     [Fact]
-    public void 加载老现场配置_应自动补齐结构体参数()
+    public void LoadLegacyFieldConfig_ShouldAutoFillStructParameter()
     {
         // 复刻现场文件：5 项地址正确（D3500/D3502/D3503/D3504/D3506），但没有结构体三参数
-        var 配置对象 = new 配方配置
+        var configPairObject = new RecipeConfig
         {
-            辅助地址 =
+            AuxAddress =
             [
-                new() { 键 = "点胶-提前关胶", 名称 = "提前关胶", 分组 = "点胶", 地址 = "D3500", 数据类型 = 标签数据类型.Float32 },
-                new() { 键 = "点胶-运动速度延时", 名称 = "出胶延时", 分组 = "点胶", 地址 = "D3502", 数据类型 = 标签数据类型.Int16 },
-                new() { 键 = "点胶-关胶后延时", 名称 = "关胶后延时", 分组 = "点胶", 地址 = "D3503", 数据类型 = 标签数据类型.Int16 },
-                new() { 键 = "点胶-抬针高度", 名称 = "抬针高度", 分组 = "点胶", 地址 = "D3504", 数据类型 = 标签数据类型.Float32 },
-                new() { 键 = "点胶-点胶速度", 名称 = "点胶速度", 分组 = "点胶", 地址 = "D3506", 数据类型 = 标签数据类型.Float32 },
+                new() { Key = "点胶-提前关胶", Name = "提前关胶", Group = "点胶", Address = "D3500", DataType = TagDataType.Float32 },
+                new() { Key = "点胶-运动速度延时", Name = "出胶延时", Group = "点胶", Address = "D3502", DataType = TagDataType.Int16 },
+                new() { Key = "点胶-关胶后延时", Name = "关胶后延时", Group = "点胶", Address = "D3503", DataType = TagDataType.Int16 },
+                new() { Key = "点胶-抬针高度", Name = "抬针高度", Group = "点胶", Address = "D3504", DataType = TagDataType.Float32 },
+                new() { Key = "点胶-点胶速度", Name = "点胶速度", Group = "点胶", Address = "D3506", DataType = TagDataType.Float32 },
                 // 地址对不上出厂规划的项：一律不动（现场有自己的安排）
-                new() { 键 = "点胶-提前关胶-备用", 名称 = "备用", 分组 = "点胶", 地址 = "D3900", 数据类型 = 标签数据类型.Float32 },
+                new() { Key = "点胶-提前关胶-备用", Name = "备用", Group = "点胶", Address = "D3900", DataType = TagDataType.Float32 },
             ],
         };
 
-        var 补齐 = 辅助地址结构体缺省.应用(配置对象);
+        var fill = AuxAddressStructDefault.App(configPairObject);
 
-        Assert.Equal(5, 补齐);
+        Assert.Equal(5, fill);
 
-        var 提前关胶 = 配置对象.辅助地址[0];
-        Assert.True(提前关胶.是结构体数组);
-        Assert.Equal(3500, 提前关胶.结构体基址);
-        Assert.Equal(8, 提前关胶.结构体长度);
-        Assert.Equal(0, 提前关胶.结构体内偏移);
+        var preCloseGlue = configPairObject.AuxAddress[0];
+        Assert.True(preCloseGlue.IsStructArray);
+        Assert.Equal(3500, preCloseGlue.StructBaseAddress);
+        Assert.Equal(8, preCloseGlue.StructLength);
+        Assert.Equal(0, preCloseGlue.StructInnerOffset);
 
         // 补齐后按点寻址立刻可用：第 2 点 = D3508
-        Assert.Equal("D3508", 提前关胶.按点地址(1));
+        Assert.Equal("D3508", preCloseGlue.ByPointAddress(1));
 
         // 地址与出厂规划不符的项保持原样
-        var 备用 = 配置对象.辅助地址[^1];
-        Assert.False(备用.是结构体数组);
-        Assert.Equal("D3900", 备用.按点地址(3));
+        var spare = configPairObject.AuxAddress[^1];
+        Assert.False(spare.IsStructArray);
+        Assert.Equal("D3900", spare.ByPointAddress(3));
     }
 
     /// <summary>已经配好结构体参数的现场不做二次覆盖（补齐只补零），只补「结构体成员」标记。</summary>
     [Fact]
-    public void 已有结构体参数_不应被补齐覆盖()
+    public void AlreadyHasStructParameter_ShouldNotBeFillOverwrite()
     {
-        var 配置对象 = new 配方配置
+        var configPairObject = new RecipeConfig
         {
-            辅助地址 =
+            AuxAddress =
             [
                 new()
                 {
-                    键 = "点胶-提前关胶", 地址 = "D3500", 分组 = "点胶",
-                    结构体基址 = 3500, 结构体内偏移 = 0, 结构体长度 = 6,   // 现场改成了 6
+                    Key = "点胶-提前关胶", Address = "D3500", Group = "点胶",
+                    StructBaseAddress = 3500, StructInnerOffset = 0, StructLength = 6,   // 现场改成了 6
                 },
             ],
         };
 
         // 2026-10-21：新增「结构体成员」勾选框后，老配置只有三参数 —— 认回成员（返回 1），
         // 但现场的基址 / 偏移 / 长度一个字都不动
-        Assert.Equal(1, 辅助地址结构体缺省.应用(配置对象));
+        Assert.Equal(1, AuxAddressStructDefault.App(configPairObject));
 
-        var 项 = 配置对象.辅助地址[0];
-        Assert.True(项.结构体成员);
-        Assert.Equal(3500, 项.结构体基址);
-        Assert.Equal(0, 项.结构体内偏移);
-        Assert.Equal(6, 项.结构体长度);
+        var Item = configPairObject.AuxAddress[0];
+        Assert.True(Item.StructMember);
+        Assert.Equal(3500, Item.StructBaseAddress);
+        Assert.Equal(0, Item.StructInnerOffset);
+        Assert.Equal(6, Item.StructLength);
 
         // 再跑一次不再补（幂等）
-        Assert.Equal(0, 辅助地址结构体缺省.应用(配置对象));
+        Assert.Equal(0, AuxAddressStructDefault.App(configPairObject));
     }
 
     /// <summary>
@@ -201,17 +201,17 @@ public class 辅助地址结构体数组测试
     /// 落在区段外的话"换机种"时单点工艺参数不会跟着换，等于换了机种还用旧参数。
     /// </summary>
     [Fact]
-    public void 机种区段_应覆盖点胶结构体数组全部点()
+    public void MachineModelSection_ShouldOverwriteDispenseStructArrayAllPoint()
     {
-        var 配置项 = 配方配置加载器.加载(out _);
-        var 点数 = 配置项.点表.查找("点胶")!.点数;
-        var 项 = 配置项.辅助地址.First(条 => 条.分组 == "点胶" && 条.是结构体数组);
+        var configItem = RecipeConfigLoader.Load(out _);
+        var PointCount = configItem.PointTable.Find("点胶")!.PointCount;
+        var Item = configItem.AuxAddress.First(eachRow => eachRow.Group == "点胶" && eachRow.IsStructArray);
 
-        var 首字 = 项.按点序号(0);
-        var 末字 = 项.按点序号(点数 - 1) + 项.结构体长度 - 1;
+        var firstWord = Item.ByPointIndex(0);
+        var lastWord = Item.ByPointIndex(PointCount - 1) + Item.StructLength - 1;
 
-        Assert.True(机种区段.包含(首字), $"首点 D{首字} 不在机种区段内");
-        Assert.True(机种区段.包含(末字), $"末点 D{末字} 不在机种区段内");
-        Assert.Equal(3999, 机种区段.结束);
+        Assert.True(MachineModelSection.Contains(firstWord), $"首点 D{firstWord} 不在机种区段内");
+        Assert.True(MachineModelSection.Contains(lastWord), $"末点 D{lastWord} 不在机种区段内");
+        Assert.Equal(3999, MachineModelSection.end);
     }
 }

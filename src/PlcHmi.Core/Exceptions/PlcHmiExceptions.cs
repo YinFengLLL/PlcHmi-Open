@@ -1,33 +1,33 @@
-namespace 上位机.核心.异常;
+namespace PlcHmi.Core.Exceptions;
 
 /// <summary>软元件地址解析失败。</summary>
-public sealed class 地址解析异常 : Exception
+public sealed class AddressParseException : Exception
 {
-    public 地址解析异常(string 消息) : base(消息) { }
+    public AddressParseException(string Message) : base(Message) { }
 
-    public 地址解析异常(string 消息, Exception 内部) : base(消息, 内部) { }
+    public AddressParseException(string Message, Exception innerPart) : base(Message, innerPart) { }
 
-    public static 地址解析异常 输入(string 输入项, string 原因) =>
-        new($"无法解析软元件地址 \"{输入项}\"：{原因}");
+    public static AddressParseException Input(string inputItem, string originalReason) =>
+        new($"无法解析软元件地址 \"{inputItem}\"：{originalReason}");
 
-    public static 地址解析异常 超范围(string 输入项, int 序号, int 最大值) =>
-        new($"软元件地址 \"{输入项}\" 越界：序号 {序号} 超出允许范围 0-{最大值}。");
+    public static AddressParseException OutOfRange(string inputItem, int Sequence, int MaxValue) =>
+        new($"软元件地址 \"{inputItem}\" 越界：序号 {Sequence} 超出允许范围 0-{MaxValue}。");
 }
 
 /// <summary>点位写入值超出允许范围。</summary>
-public sealed class 标签值超范围异常 : Exception
+public sealed class TagValueOutOfRangeException : Exception
 {
-    public 标签值超范围异常(string 名称值, double 写入值, double? 最小值, double? 最大值)
-        : base($"点位 \"{名称值}\" 的写入值 {写入值} 超出允许范围 [{最小值?.ToString() ?? "-∞"}, {最大值?.ToString() ?? "+∞"}]。")
+    public TagValueOutOfRangeException(string nameValue, double writeValue, double? MinValue, double? MaxValue)
+        : base($"点位 \"{nameValue}\" 的写入值 {writeValue} 超出允许范围 [{MinValue?.ToString() ?? "-∞"}, {MaxValue?.ToString() ?? "+∞"}]。")
     {
-        标签名称 = 名称值;
-        值 = 写入值;
-        最小 = 最小值;
-        最大 = 最大值;
+        TagFullName = nameValue;
+        Value = writeValue;
+        Min = MinValue;
+        Max = MaxValue;
     }
 
-    public string 标签名称 { get; }
-    public double 值 { get; }
-    public double? 最小 { get; }
-    public double? 最大 { get; }
+    public string TagFullName { get; }
+    public double Value { get; }
+    public double? Min { get; }
+    public double? Max { get; }
 }

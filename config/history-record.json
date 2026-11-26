@@ -1,110 +1,110 @@
 {
-  "配置": {
-    "标题": "锁螺丝记录",
-    "触发地址": "M8",
-    "读取后复位触发位": true,
-    "启用": true,
-    "字顺序": "小字节序",
-    "保留天数": 90,
-    "数据项集合": [
+  "config": {
+    "title": "锁螺丝记录",
+    "triggerAddress": "M8",
+    "readAfterResetTriggerBit": true,
+    "enabled": true,
+    "wordOrder": "LittleEndian",
+    "retainDays": 90,
+    "dataItemCollection": [
       {
-        "名称": "机种号",
-        "地址": "D1300",
-        "数据类型": "Int16",
-        "小数位": 0,
-        "单元": null,
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "机种号",
+        "address": "D1300",
+        "dataType": "Int16",
+        "decimalBit": 0,
+        "unit": null,
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "已锁颗数",
-        "地址": "D212",
-        "数据类型": "Int16",
-        "小数位": 0,
-        "单元": null,
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "已锁颗数",
+        "address": "D212",
+        "dataType": "Int16",
+        "decimalBit": 0,
+        "unit": null,
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "设定扭力",
-        "地址": "D213",
-        "数据类型": "Int16",
-        "小数位": 3,
-        "单元": "N·m",
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "设定扭力",
+        "address": "D213",
+        "dataType": "Int16",
+        "decimalBit": 3,
+        "unit": "N·m",
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "实际扭力",
-        "地址": "D214",
-        "数据类型": "Int16",
-        "小数位": 3,
-        "单元": "N·m",
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "实际扭力",
+        "address": "D214",
+        "dataType": "Int16",
+        "decimalBit": 3,
+        "unit": "N·m",
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "设定角度",
-        "地址": "D215",
-        "数据类型": "Int16",
-        "小数位": 0,
-        "单元": "°",
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "设定角度",
+        "address": "D215",
+        "dataType": "Int16",
+        "decimalBit": 0,
+        "unit": "°",
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "实际角度",
-        "地址": "D216",
-        "数据类型": "Int16",
-        "小数位": 0,
-        "单元": "°",
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "实际角度",
+        "address": "D216",
+        "dataType": "Int16",
+        "decimalBit": 0,
+        "unit": "°",
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "设定浮高",
-        "地址": "D217",
-        "数据类型": "Float32",
-        "小数位": 2,
-        "单元": "mm",
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "设定浮高",
+        "address": "D217",
+        "dataType": "Float32",
+        "decimalBit": 2,
+        "unit": "mm",
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "实际浮高",
-        "地址": "D219",
-        "数据类型": "Float32",
-        "小数位": 2,
-        "单元": "mm",
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "实际浮高",
+        "address": "D219",
+        "dataType": "Float32",
+        "decimalBit": 2,
+        "unit": "mm",
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "锁附时间",
-        "地址": "D221",
-        "数据类型": "Int16",
-        "小数位": 3,
-        "单元": "s",
-        "显示为Ascii": false,
-        "颜色": "无"
+        "name": "锁附时间",
+        "address": "D221",
+        "dataType": "Int16",
+        "decimalBit": 3,
+        "unit": "s",
+        "showAsAscii": false,
+        "color": "None"
       },
       {
-        "名称": "锁附结果",
-        "地址": "D222",
-        "数据类型": "Int32",
-        "小数位": 0,
-        "单元": null,
-        "显示为Ascii": true,
-        "颜色": "黄"
+        "name": "锁附结果",
+        "address": "D222",
+        "dataType": "Int32",
+        "decimalBit": 0,
+        "unit": null,
+        "showAsAscii": true,
+        "color": "Yellow"
       },
       {
-        "名称": "错误码",
-        "地址": "D224",
-        "数据类型": "Int16",
-        "小数位": 0,
-        "单元": null,
-        "显示为Ascii": false,
-        "颜色": "红"
+        "name": "错误码",
+        "address": "D224",
+        "dataType": "Int16",
+        "decimalBit": 0,
+        "unit": null,
+        "showAsAscii": false,
+        "color": "Red"
       }
     ]
   }

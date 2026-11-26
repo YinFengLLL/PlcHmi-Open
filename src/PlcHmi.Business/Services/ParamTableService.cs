@@ -1,11 +1,11 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 参数页自定义表格服务（延时表 / 按钮表）。
@@ -13,13 +13,13 @@ namespace 上位机.业务.服务;
 /// <para><b>地址约束：</b>延时表绑 D 区（数值）、按钮表绑 M 区（命令位）。
 /// 按钮只操作内部继电器，由 PLC 决定何时驱动实际输出。</para>
 /// </summary>
-public sealed partial class 参数表格服务 : 参数表格服务接口
+public sealed partial class ParameterTableService : IParameterTableService
 {
     /// <summary>延时表允许的软元件区。</summary>
-    private static readonly 软元素[] 延迟元素 = [软元素.D];
+    private static readonly SoftElement[] delayElement = [SoftElement.D];
 
     /// <summary>按钮表允许的软元件区。</summary>
-    private static readonly 软元素[] 按钮元素 = [软元素.M];
+    private static readonly SoftElement[] buttonElement = [SoftElement.M];
 
     /// <summary>
     /// 按钮表允许的 M 区地址范围（含两端）。
@@ -28,10 +28,10 @@ public sealed partial class 参数表格服务 : 参数表格服务接口
     /// M500–M600 报警位），所以自定义按钮统一放在 <b>M5000–M5099</b>，
     /// 与系统点位彻底隔开，避免管理员加一个开关就撞掉某个功能。</para>
     /// </summary>
-    public const int 按钮地址最小 = 5000;
+    public const int buttonAddressMin = 5000;
 
-    /// <inheritdoc cref="按钮地址最小" />
-    public const int 按钮地址最大 = 5099;
+    /// <inheritdoc cref="buttonAddressMin" />
+    public const int buttonAddressMax = 5099;
 
     /// <summary>
     /// 延时表允许的 D 区地址范围（含两端）。
@@ -46,36 +46,36 @@ public sealed partial class 参数表格服务 : 参数表格服务接口
     /// <para><b>2026-10-16：</b>延时改为 32 位（DINT，占 2 字），故上限收到 <b>1098</b>——
     /// 否则最后一条会跨到 D1100，侵入上位机预留段。专属区因此可放 50 条延时。</para>
     /// </summary>
-    public const int 延迟地址最小 = 1000;
+    public const int delayAddressMin = 1000;
 
-    /// <inheritdoc cref="延迟地址最小" />
-    public const int 延迟地址最大 = 1098;
+    /// <inheritdoc cref="delayAddressMin" />
+    public const int delayAddressMax = 1098;
 
-    private readonly 地址解析器接口 _解析器;
-    private readonly 标签写入器 _写入器;
-    private readonly ILogger<参数表格服务> _日志;
+    private readonly IAddressParser _parser;
+    private readonly TagWriter _writer;
+    private readonly ILogger<ParameterTableService> _log;
 
-    private readonly List<参数条目定义> _延迟 = new();
-    private readonly List<参数条目定义> _按钮 = new();
-    private readonly 配置健康接口? _健康;
-    private readonly 变量表服务接口? _变量表;
+    private readonly List<ParameterEntryDefinition> _delay = new();
+    private readonly List<ParameterEntryDefinition> _button = new();
+    private readonly IConfigHealth? _health;
+    private readonly IVariableTableService? _variableTable;
 
     /// <summary>服务层权限守卫。增删改条目属管理员专有（改的是"表结构"，不是数值）。</summary>
-    private readonly 权限守卫接口 _权限;
+    private readonly IPermissionGuard _permission;
 
     /// <summary>防止下一次保存时把"加载期间"的默认值又写一遍。</summary>
-    private bool _有未保存改动;
+    private bool _hasUnsavedChangeMove;
 
-    public 参数表格服务(
-        地址解析器接口 解析器, 标签写入器 写入器, ILogger<参数表格服务> 日志,
-        权限守卫接口 权限, 配置健康接口? 健康 = null, 变量表服务接口? 变量表 = null)
+    public ParameterTableService(
+        IAddressParser Parser, TagWriter Writer, ILogger<ParameterTableService> Log,
+        IPermissionGuard Permission, IConfigHealth? Health = null, IVariableTableService? VariableTable = null)
     {
-        _解析器 = 解析器;
-        _写入器 = 写入器;
-        _日志 = 日志;
-        _权限 = 权限;
-        _健康 = 健康;
-        _变量表 = 变量表;
+        _parser = Parser;
+        _writer = Writer;
+        _log = Log;
+        _permission = Permission;
+        _health = Health;
+        _variableTable = VariableTable;
     }
 
     /// <inheritdoc />
@@ -84,112 +84,112 @@ public sealed partial class 参数表格服务 : 参数表格服务接口
     /// 调用方既可以直接 Add 绕过权限校验，也会在枚举时撞上 UI 线程的增删
     /// （Collection was modified）。
     /// </remarks>
-    public IReadOnlyList<参数条目定义> 延迟集合 => _延迟.ToArray();
+    public IReadOnlyList<ParameterEntryDefinition> DelayCollection => _delay.ToArray();
 
-    /// <inheritdoc cref="延迟集合" />
-    public IReadOnlyList<参数条目定义> 按钮集合 => _按钮.ToArray();
-
-    /// <inheritdoc />
-    public event EventHandler? 条目已变更;
+    /// <inheritdoc cref="DelayCollection" />
+    public IReadOnlyList<ParameterEntryDefinition> ButtonCollection => _button.ToArray();
 
     /// <inheritdoc />
-    public IReadOnlyList<参数条目定义> 获取(参数表格类别 类别) =>
-        类别 == 参数表格类别.延迟 ? _延迟.ToArray() : _按钮.ToArray();
+    public event EventHandler? entryChanged;
+
+    /// <inheritdoc />
+    public IReadOnlyList<ParameterEntryDefinition> Get(ParameterTableCategory Category) =>
+        Category == ParameterTableCategory.Delay ? _delay.ToArray() : _button.ToArray();
 
     // ── 加载与保存 ──────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task 异步初始化(CancellationToken 取消令牌 = default)
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var 文件路径 = 配置路径.参数表格;
+        var filePath = ConfigPath.ParameterTable;
 
-        var 结果值 = await 配置文件加载器
-            .异步加载JSON<参数表格配置>(文件路径, JSON配置.读取, _日志, 取消令牌)
+        var resultValue = await ConfigFileLoader
+            .LoadJsonAsync<ParameterTableConfig>(filePath, JsonConfig.Read, _log, cancellationToken)
             .ConfigureAwait(false);
 
-        _健康.上报("参数表（延时/按钮）", 结果值);
+        _health.Report("参数表（延时/按钮）", resultValue);
 
-        if (结果值.加载结果 is 加载结果分类.缺失)
+        if (resultValue.loadResult is LoadResultSplitCategory.Missing)
         {
-            _日志.LogInformation("未找到参数表配置，写入一份默认配置：{Path}", 文件路径);
+            _log.LogInformation("未找到参数表配置，写入一份默认配置：{Path}", filePath);
 
-            _延迟.Clear();
-            _延迟.AddRange(参数表格默认值.创建延迟(延迟地址最小));
+            _delay.Clear();
+            _delay.AddRange(ParameterTableDefaultValue.CreateDelay(delayAddressMin));
 
-            _按钮.Clear();
-            _按钮.AddRange(参数表格默认值.创建按钮());
+            _button.Clear();
+            _button.AddRange(ParameterTableDefaultValue.CreateButton());
 
             // 首次运行写默认配置：走核心保存（启动阶段尚无登录身份，
             // 不能因为有权限校验而让初始化失败）
-            await 异步保存核心(取消令牌).ConfigureAwait(false);
+            await SaveCoreAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        _延迟.Clear();
-        _延迟.AddRange(结果值.值?.延迟集合 ?? new List<参数条目定义>());
+        _delay.Clear();
+        _delay.AddRange(resultValue.Value?.DelayCollection ?? new List<ParameterEntryDefinition>());
 
-        _按钮.Clear();
-        _按钮.AddRange(结果值.值?.按钮集合 ?? new List<参数条目定义>());
+        _button.Clear();
+        _button.AddRange(resultValue.Value?.ButtonCollection ?? new List<ParameterEntryDefinition>());
 
-        排序全部();
-        应用变量绑定();
-        检查延时地址重叠();
+        SortAll();
+        ApplyVariableBinding();
+        CheckDelayAddressOverlap();
 
-        if (结果值.加载结果 is 加载结果分类.已加载)
+        if (resultValue.loadResult is LoadResultSplitCategory.Loaded)
         {
-            _日志.LogInformation("已加载参数表：延时 {D} 条、按钮 {B} 条", _延迟.Count, _按钮.Count);
+            _log.LogInformation("已加载参数表：延时 {D} 条、按钮 {B} 条", _delay.Count, _button.Count);
         }
 
-        条目已变更?.Invoke(this, EventArgs.Empty);
+        entryChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // 延时地址重叠的启动期检查见 ParamTableService.Validate.cs（同为校验职责）。
 
     /// <summary>变量绑定回填：绑定了变量的条目用变量表中的软元件地址刷新地址字段。</summary>
-    private void 应用变量绑定()
+    private void ApplyVariableBinding()
     {
-        变量绑定回填.应用条目绑定(_延迟, "延时", _变量表, _解析器, _健康);
-        变量绑定回填.应用条目绑定(_按钮, "按钮", _变量表, _解析器, _健康);
+        VariableBindingBackfill.ApplyEntryBinding(_delay, "延时", _variableTable, _parser, _health);
+        VariableBindingBackfill.ApplyEntryBinding(_button, "按钮", _variableTable, _parser, _health);
     }
 
     /// <inheritdoc />
-    public async Task 异步保存(CancellationToken 取消令牌 = default)
+    public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
         // 保存的是"表结构"（地址 / 范围 / 条目集合），与增删改同权限：
         // 界面隐藏按钮只是防误触，边界在服务层（R5）
-        _权限.要求(权限.编辑绑定地址);
+        _permission.WantRequire(Permission.EditBindAddress);
 
-        await 异步保存核心(取消令牌).ConfigureAwait(false);
-        条目已变更?.Invoke(this, EventArgs.Empty);
+        await SaveCoreAsync(cancellationToken).ConfigureAwait(false);
+        entryChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
     /// 落盘但<b>不</b>通知界面。
-    /// <para>实时下发延时后由 <see cref="异步写入延迟"/> 调用：
-    /// 若走 <see cref="异步保存"/>，<c>ItemsChanged</c> 会重建整张表格，
+    /// <para>实时下发延时后由 <see cref="WriteDelayAsync"/> 调用：
+    /// 若走 <see cref="SaveAsync"/>，<c>ItemsChanged</c> 会重建整张表格，
     /// 打断用户在其他行正在进行的编辑。</para>
     /// </summary>
-    private async Task 异步保存核心(CancellationToken 取消令牌)
+    private async Task SaveCoreAsync(CancellationToken cancellationToken)
     {
-        排序全部();
+        SortAll();
 
-        var 配置对象 = new 参数表格配置
+        var configPairObject = new ParameterTableConfig
         {
-            延迟集合 = _延迟.Select(条目项 => 条目项.克隆()).ToList(),
-            按钮集合 = _按钮.Select(乙 => 乙.克隆()).ToList(),
+            DelayCollection = _delay.Select(EntryItem => EntryItem.Clone()).ToList(),
+            ButtonCollection = _button.Select(item2 => item2.Clone()).ToList(),
         };
 
         try
         {
-            var JSON文本 = JsonSerializer.Serialize(配置对象, JSON配置.写入);
-            await 原子文件.异步写入全部文本(配置路径.参数表格, JSON文本, 取消令牌).ConfigureAwait(false);
+            var jsonText = JsonSerializer.Serialize(configPairObject, JsonConfig.Write);
+            await AtomicFile.WriteAllTextAsync(ConfigPath.ParameterTable, jsonText, cancellationToken).ConfigureAwait(false);
 
-            _有未保存改动 = false;
-            _日志.LogInformation("参数表已保存：延时 {D} 条、按钮 {B} 条", _延迟.Count, _按钮.Count);
+            _hasUnsavedChangeMove = false;
+            _log.LogInformation("参数表已保存：延时 {D} 条、按钮 {B} 条", _delay.Count, _button.Count);
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "保存参数表失败：{Path}", 配置路径.参数表格);
+            _log.LogError(exception, "保存参数表失败：{Path}", ConfigPath.ParameterTable);
             throw;
         }
     }
@@ -199,133 +199,133 @@ public sealed partial class 参数表格服务 : 参数表格服务接口
     // ── 增删改 ──────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public void 添加(参数表格类别 类别, 参数条目定义 条目)
+    public void Add(ParameterTableCategory Category, ParameterEntryDefinition Entry)
     {
-        ArgumentNullException.ThrowIfNull(条目);
+        ArgumentNullException.ThrowIfNull(Entry);
 
         // 角色校验在参数校验之前：被拒绝的调用不留任何状态痕迹
-        _权限.要求(权限.编辑绑定地址);
+        _permission.WantRequire(Permission.EditBindAddress);
 
-        var 列表 = 变更(类别);
+        var list = Change(Category);
 
-        if (string.IsNullOrWhiteSpace(条目.标识))
+        if (string.IsNullOrWhiteSpace(Entry.Id))
         {
-            条目.标识 = 新标识(类别);
+            Entry.Id = NewId(Category);
         }
 
-        if (条目.顺序 <= 0)
+        if (Entry.Order <= 0)
         {
-            条目.顺序 = 列表.Count == 0 ? 1 : 列表.Max(坐标X => 坐标X.顺序) + 1;
+            Entry.Order = list.Count == 0 ? 1 : list.Max(coordinateX => coordinateX.Order) + 1;
         }
 
-        列表.Add(条目.克隆());
-        排序全部();
-        _有未保存改动 = true;
+        list.Add(Entry.Clone());
+        SortAll();
+        _hasUnsavedChangeMove = true;
 
-        _日志.LogInformation("已新增{Kind}条目：{Name}", 类别 == 参数表格类别.延迟 ? "延时" : "按钮", 条目.名称);
-        条目已变更?.Invoke(this, EventArgs.Empty);
+        _log.LogInformation("已新增{Kind}条目：{Name}", Category == ParameterTableCategory.Delay ? "延时" : "按钮", Entry.Name);
+        entryChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc />
-    public void 更新(参数表格类别 类别, 参数条目定义 条目)
+    public void Update(ParameterTableCategory Category, ParameterEntryDefinition Entry)
     {
-        ArgumentNullException.ThrowIfNull(条目);
+        ArgumentNullException.ThrowIfNull(Entry);
 
-        _权限.要求(权限.编辑绑定地址);
+        _permission.WantRequire(Permission.EditBindAddress);
 
-        var 列表 = 变更(类别);
-        var 序号 = 列表.FindIndex(坐标X => string.Equals(坐标X.标识, 条目.标识, StringComparison.OrdinalIgnoreCase));
+        var list = Change(Category);
+        var Sequence = list.FindIndex(coordinateX => string.Equals(coordinateX.Id, Entry.Id, StringComparison.OrdinalIgnoreCase));
 
-        if (序号 < 0)
+        if (Sequence < 0)
         {
-            throw new InvalidOperationException($"找不到编号为「{条目.标识}」的条目。");
+            throw new InvalidOperationException($"找不到编号为「{Entry.Id}」的条目。");
         }
 
-        列表[序号] = 条目.克隆();
-        排序全部();
-        _有未保存改动 = true;
+        list[Sequence] = Entry.Clone();
+        SortAll();
+        _hasUnsavedChangeMove = true;
 
-        _日志.LogInformation("已更新{Kind}条目：{Name}", 类别 == 参数表格类别.延迟 ? "延时" : "按钮", 条目.名称);
-        条目已变更?.Invoke(this, EventArgs.Empty);
+        _log.LogInformation("已更新{Kind}条目：{Name}", Category == ParameterTableCategory.Delay ? "延时" : "按钮", Entry.Name);
+        entryChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc />
-    public void 移除(参数表格类别 类别, string 标识)
+    public void Remove(ParameterTableCategory Category, string Id)
     {
-        _权限.要求(权限.编辑绑定地址);
+        _permission.WantRequire(Permission.EditBindAddress);
 
-        var 已移除 = 变更(类别).RemoveAll(坐标X =>
-            string.Equals(坐标X.标识, 标识, StringComparison.OrdinalIgnoreCase));
+        var alreadyRemove = Change(Category).RemoveAll(coordinateX =>
+            string.Equals(coordinateX.Id, Id, StringComparison.OrdinalIgnoreCase));
 
-        if (已移除 > 0)
+        if (alreadyRemove > 0)
         {
-            _有未保存改动 = true;
-            _日志.LogInformation("已删除参数表条目：{Id}", 标识);
-            条目已变更?.Invoke(this, EventArgs.Empty);
+            _hasUnsavedChangeMove = true;
+            _log.LogInformation("已删除参数表条目：{Id}", Id);
+            entryChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
     /// <inheritdoc />
-    public string 新标识(参数表格类别 类别)
+    public string NewId(ParameterTableCategory Category)
     {
-        var 前缀 = 类别 == 参数表格类别.延迟 ? "delay" : "btn";
-        var 列表 = 获取(类别);
+        var prefix = Category == ParameterTableCategory.Delay ? "delay" : "btn";
+        var list = Get(Category);
 
-        for (var 条目 = 1; 条目 < 1000; 条目++)
+        for (var Entry = 1; Entry < 1000; Entry++)
         {
-            var 候选 = $"{前缀}-{条目}";
+            var candidate = $"{prefix}-{Entry}";
 
-            if (列表.All(坐标X => !string.Equals(坐标X.标识, 候选, StringComparison.OrdinalIgnoreCase)))
+            if (list.All(coordinateX => !string.Equals(coordinateX.Id, candidate, StringComparison.OrdinalIgnoreCase)))
             {
-                return 候选;
+                return candidate;
             }
         }
 
-        return $"{前缀}-{Guid.NewGuid():N}"[..12];
+        return $"{prefix}-{Guid.NewGuid():N}"[..12];
     }
 
     // ── 按钮置位 / 复位 ─────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task 异步设置按钮(
-        参数条目定义 条目, bool on, CancellationToken 取消令牌 = default)
+    public async Task SetButtonAsync(
+        ParameterEntryDefinition Entry, bool on, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(条目);
+        ArgumentNullException.ThrowIfNull(Entry);
 
         // 置位/复位改的是设备状态，工程师及以上即可（不是改表结构）
-        _权限.要求(权限.编辑参数值列表);
+        _permission.WantRequire(Permission.EditParameterValueList);
 
         // 服务层再校验一次：即使配置文件被手工改错，也不会写错区。
         // 界面上编辑器只让填 M 区不够——手工编辑 JSON 同样要被拦住。
         // isUpdate: true —— 按钮是已存在的条目，同 Id 就是它自己，不能报「已被占用」。
-        var 校验项 = 校验(参数表格类别.按钮, 条目, 是否更新: true);
+        var validateItem = Validate(ParameterTableCategory.Button, Entry, isUpdate: true);
 
-        if (!校验项.是否有效)
+        if (!validateItem.IsValid)
         {
-            throw new InvalidOperationException(校验项.摘要);
+            throw new InvalidOperationException(validateItem.Summary);
         }
 
-        await _写入器.异步写入线圈地址(条目.地址, on, 取消令牌).ConfigureAwait(false);
+        await _writer.WriteCoilAddressAsync(Entry.Address, on, cancellationToken).ConfigureAwait(false);
 
-        _日志.LogInformation("按钮「{Name}」({Address}) 已{Action}",
-            条目.名称, 条目.地址, on ? "置位" : "复位");
+        _log.LogInformation("按钮「{Name}」({Address}) 已{Action}",
+            Entry.Name, Entry.Address, on ? "置位" : "复位");
     }
 
     /// <inheritdoc />
-    public async Task 异步写入延迟(
-        参数条目定义 条目, CancellationToken 取消令牌 = default)
+    public async Task WriteDelayAsync(
+        ParameterEntryDefinition Entry, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(条目);
+        ArgumentNullException.ThrowIfNull(Entry);
 
-        _权限.要求(权限.编辑参数值列表);
+        _permission.WantRequire(Permission.EditParameterValueList);
 
         // 服务层再校验一次：即使配置文件被手工改错，也不会写错区、写出范围。
         // isUpdate: true —— 延时是已存在的条目，同 Id 就是它自己，不能报「已被占用」。
-        var 校验项 = 校验(参数表格类别.延迟, 条目, 是否更新: true);
+        var validateItem = Validate(ParameterTableCategory.Delay, Entry, isUpdate: true);
 
-        if (!校验项.是否有效)
+        if (!validateItem.IsValid)
         {
-            throw new InvalidOperationException(校验项.摘要);
+            throw new InvalidOperationException(validateItem.Summary);
         }
 
         // 界面与配置按秒，PLC 存 <b>32 位整数毫秒（DINT）</b>：0.500 S → 500（2026-10-16 现场确认，
@@ -333,38 +333,38 @@ public sealed partial class 参数表格服务 : 参数表格服务接口
         // 必须先在 double 域判定范围再转 int：条目.值 是 double 且校验只保证
         // 最小 < 值 < 最大（最大本身可以是任意大的 double），先乘后转会让
         // 超大值在 unchecked 下回绕成小正数，静默写错延时
-        var 毫秒值 = 条目.值 * 1000;
+        var millisecondsValue = Entry.Value * 1000;
 
-        if (毫秒值 is < 0 or > int.MaxValue)
+        if (millisecondsValue is < 0 or > int.MaxValue)
         {
             throw new InvalidOperationException(
-                $"延时 {条目.值:0.###} S 换算为 {毫秒值:0} ms，超出 32 位整数（DINT）范围（0–{int.MaxValue}）。");
+                $"延时 {Entry.Value:0.###} S 换算为 {millisecondsValue:0} ms，超出 32 位整数（DINT）范围（0–{int.MaxValue}）。");
         }
 
-        var 毫秒 = (int)Math.Round(毫秒值, MidpointRounding.AwayFromZero);
+        var milliseconds = (int)Math.Round(millisecondsValue, MidpointRounding.AwayFromZero);
 
-        await _写入器.异步写入寄存器地址32(条目.地址, 毫秒, 取消令牌)
+        await _writer.WriteRegisterAddress32Async(Entry.Address, milliseconds, cancellationToken)
             .ConfigureAwait(false);
 
         // 静默落盘：保证「PLC 里的值 = 配置文件里的值」，
         // 否则断电重启后配置退回旧值，与 PLC 不一致。
-        await 异步保存核心(取消令牌).ConfigureAwait(false);
+        await SaveCoreAsync(cancellationToken).ConfigureAwait(false);
 
-        _日志.LogInformation("延时「{Name}」({Address}) 已实时下发：{Seconds:0.###} S = {Millis} ms",
-            条目.名称, 条目.地址, 条目.值, 毫秒);
+        _log.LogInformation("延时「{Name}」({Address}) 已实时下发：{Seconds:0.###} S = {Millis} ms",
+            Entry.Name, Entry.Address, Entry.Value, milliseconds);
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────
 
-    private List<参数条目定义> 变更(参数表格类别 类别) =>
-        类别 == 参数表格类别.延迟 ? _延迟 : _按钮;
+    private List<ParameterEntryDefinition> Change(ParameterTableCategory Category) =>
+        Category == ParameterTableCategory.Delay ? _delay : _button;
 
-    private void 排序全部()
+    private void SortAll()
     {
-        _延迟.Sort((甲, 乙) => 甲.顺序.CompareTo(乙.顺序));
-        _按钮.Sort((甲, 乙) => 甲.顺序.CompareTo(乙.顺序));
+        _delay.Sort((item, item2) => item.Order.CompareTo(item2.Order));
+        _button.Sort((item, item2) => item.Order.CompareTo(item2.Order));
     }
 
     /// <summary>是否有未保存的改动（供界面提示）。</summary>
-    public bool 有未保存变更 => _有未保存改动;
+    public bool HasUnsavedChange => _hasUnsavedChangeMove;
 }

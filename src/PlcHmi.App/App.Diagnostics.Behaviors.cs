@@ -1,11 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
-using 上位机.应用.视图模型;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.App.ViewModels;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用;
+namespace PlcHmi.App;
 
 /// <summary>
 /// <c>--smoke</c> 的「现场行为」自检（partial）：验证"界面动作真的通到了 PLC 与其它页面"，
@@ -18,59 +18,105 @@ namespace 上位机.应用;
 ///   <item>动作按钮的状态原先只在<b>进入页面</b>时回读一次——PLC 侧复位后必须离开再回来才看得到。</item>
 /// </list>
 ///
-/// <para>自检跑在模拟器上，但读写的都是真实的 <see cref="Modbus客户端接口"/>，
+/// <para>自检跑在模拟器上，但读写的都是真实的 <see cref="IModbusClient"/>，
 /// 验证的是"界面动作 → 共享状态 → PLC 落位"这条链本身。</para>
 /// </summary>
-public partial class 应用
+public partial class App
 {
     /// <summary>同步交互自检 + 需要 PLC 往返的现场行为自检。</summary>
-    private async Task<int> 异步验证交互() => 验证交互() + await 异步验证现场行为();
+    private async Task<int> VerifyCommitMutualAsync() => VerifyCommitMutual() + await VerifyFieldRowAsAsync();
 
-    private async Task<int> 异步验证现场行为()
+    private async Task<int> VerifyFieldRowAsAsync()
     {
-        if (_主机 is null)
+        if (_host is null)
         {
             return 0;
         }
 
-        var 失败 = 0;
+        var Failed = 0;
 
         try
         {
             // 门禁不能依赖"现场 PLC 在不在线"（开发机、CI 上都没接设备），
             // 而这几条要验证的恰恰是"界面动作有没有真的落到 PLC"——切到本地模拟从站最确定。
             // 模拟开关刻意不落盘、不跨重启记忆（见运行模式管理器），自检不会污染现场。
-            var 模式 = _主机.Services.GetService<运行模式管理器接口>();
+            var mode = _host.Services.GetService<IRunModeManager>();
 
-            if (模式 is null || !模式.可在运行期切换)
+            if (mode is null || !mode.CanAtRuntimeSwitch)
             {
                 Log.Warning("现场行为自检跳过：当前协议不支持运行期切换运行模式");
                 return 0;
             }
 
-            await 模式.异步切换(运行模式.模拟PLC);
-            await 异步等待连接();
+            await mode.SwitchAsync(RunMode.SimulationPlc);
+            await WaitConnectAsync();
 
-            失败 += await 异步验证使能共享与M666();
-            失败 += await 异步验证动作按钮自动跟随();
+            Failed += await VerifyEnableTotalShareAndM666Async();
+            Failed += await VerifyActionButtonAutoFollowAsync();
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            失败++;
-            Log.Error(异常, "现场行为自检异常");
+            Failed++;
+            Log.Error(exception, "现场行为自检异常");
         }
 
-        return 失败;
+        return Failed;
     }
 
     /// <summary>等连接建立（切到模拟模式后连接由后台重连线程拉起）。</summary>
-    private async Task 异步等待连接()
+    private async Task WaitConnectAsync()
     {
-        var 客户端 = _主机!.Services.GetRequiredService<Modbus客户端接口>();
-        var 截止 = Environment.TickCount64 + 5000;
+        var Client = _host!.Services.GetRequiredService<IModbusClient>();
+        var truncateStop = Environment.TickCount64 + 5000;
 
-        while (!客户端.是否已连接 && Environment.TickCount64 < 截止)
+        while (!Client.IsConnected && Environment.TickCount64 < truncateStop)
         {
+            await Task.Delay(100);
+        }
+    }
+
+    /// <summary>
+    /// 等条件成立（超时返回 false）。
+    ///
+    /// <para><b>为什么不能用"固定睡 N 秒"做断言依据：</b>动作按钮的周期回读是 2 秒一次，
+    /// 原来这里睡 3 秒——只剩半个周期的余量。CI（以及现场低配机）上采集线程被挤占、
+    /// 或 UI 派发排队时，一次周期就被错过，自检报"周期回读没起作用"的假缺陷。
+    /// 改成"盯住目标状态、最多等 N 秒"，既不会误判，也不会让正常情况变慢。</para>
+    /// </summary>
+    private static async Task<bool> WaitUntilAsync(Func<bool> condition, int timeoutMilliseconds = 15000)
+    {
+        var deadline = Environment.TickCount64 + timeoutMilliseconds;
+
+        while (!condition())
+        {
+            if (Environment.TickCount64 >= deadline)
+            {
+                return false;
+            }
+
+            await Task.Delay(100);
+        }
+
+        return true;
+    }
+
+    /// <summary>同上，但条件本身要读写 PLC（链路未就绪时由调用方用 IsConnected 短路）。</summary>
+    private static async Task<bool> WaitUntilAsync(Func<Task<bool>> condition, int timeoutMilliseconds = 15000)
+    {
+        var deadline = Environment.TickCount64 + timeoutMilliseconds;
+
+        while (true)
+        {
+            if (await condition().ConfigureAwait(true))
+            {
+                return true;
+            }
+
+            if (Environment.TickCount64 >= deadline)
+            {
+                return false;
+            }
+
             await Task.Delay(100);
         }
     }
@@ -78,130 +124,133 @@ public partial class 应用
     /// <summary>
     /// ① 手动使能：标定页的开关 → 共享状态（三页同步）→ PLC 的 M666 置位 / 复位。
     /// </summary>
-    private async Task<int> 异步验证使能共享与M666()
+    private async Task<int> VerifyEnableTotalShareAndM666Async()
     {
-        var 手动 = _主机!.Services.GetRequiredService<手动控件服务接口>();
-        var 客户端 = _主机.Services.GetRequiredService<Modbus客户端接口>();
-        var 标定 = _主机.Services.GetRequiredService<标定视图模型>();
-        var 示教 = _主机.Services.GetRequiredService<锁附示教视图模型>();
+        var Manual = _host!.Services.GetRequiredService<IManualWidgetService>();
+        var Client = _host.Services.GetRequiredService<IModbusClient>();
+        var Calibration = _host.Services.GetRequiredService<CalibrationViewModel>();
+        var Teach = _host.Services.GetRequiredService<ScrewTeachViewModel>();
 
-        var 问题 = 0;
+        var Issue = 0;
 
         // 从"未使能"起步（事件回写是经界面派发排队的，等它跑完）
-        标定.是否手动启用 = false;
-        await Task.Delay(400);
+        Calibration.IsManualEnabled = false;
+        await WaitUntilAsync(() => !Manual.IsEnabled, 5000);
 
-        标定.是否手动启用 = true;
-        await Task.Delay(600);
+        Calibration.IsManualEnabled = true;
+        await WaitUntilAsync(() => Manual.IsEnabled && Teach.IsManualEnabled);
 
-        if (!手动.是否启用)
+        if (!Manual.IsEnabled)
         {
-            问题++;
+            Issue++;
             Log.Error("现场行为自检失败：标定页打开使能后，共享服务状态仍为关闭");
         }
 
-        if (!示教.是否手动启用)
+        if (!Teach.IsManualEnabled)
         {
-            问题++;
+            Issue++;
             Log.Error("现场行为自检失败：标定页打开使能后锁附示教页未同步——使能没有共享");
         }
 
-        var 置位后 = await 客户端.异步读取线圈(手动使能寄存器.线圈, 1);
+        // 刚切到模拟从站时，头几条读写可能落空（链路还在建），盯住目标状态重试到超时
+        var set = await WaitUntilAsync(
+            async () => Client.IsConnected && (await Client.ReadCoilAsync(ManualEnableRegister.Coil, 1))[0]);
 
-        if (!置位后[0])
+        if (!set)
         {
-            问题++;
-            Log.Error("现场行为自检失败：使能打开后 PLC 的 M{Coil} 未置位", 手动使能寄存器.线圈);
+            Issue++;
+            Log.Error("现场行为自检失败：使能打开后 PLC 的 M{Coil} 未置位", ManualEnableRegister.Coil);
         }
 
-        标定.是否手动启用 = false;
-        await Task.Delay(600);
+        Calibration.IsManualEnabled = false;
+        await WaitUntilAsync(() => !Manual.IsEnabled && !Teach.IsManualEnabled, 5000);
 
-        var 复位后 = await 客户端.异步读取线圈(手动使能寄存器.线圈, 1);
+        var reset = await WaitUntilAsync(
+            async () => Client.IsConnected && !(await Client.ReadCoilAsync(ManualEnableRegister.Coil, 1))[0]);
 
-        if (手动.是否启用 || 示教.是否手动启用 || 复位后[0])
+        if (Manual.IsEnabled || Teach.IsManualEnabled || !reset)
         {
-            问题++;
-            Log.Error("现场行为自检失败：关闭使能后未复位（服务={Shared} 示教页={Teach} M{Coil}={Coil}）",
-                手动.是否启用, 示教.是否手动启用, 手动使能寄存器.线圈, 复位后[0]);
+            Issue++;
+            Log.Error("现场行为自检失败：关闭使能后未复位（服务={Shared} 示教页={Teach} M{Coil} 仍为 1）",
+                Manual.IsEnabled, Teach.IsManualEnabled, ManualEnableRegister.Coil);
         }
 
-        if (问题 == 0)
+        if (Issue == 0)
         {
             Log.Information("现场行为自检通过：标定页使能 → 三页共享 + PLC M{Coil} 置位/复位",
-                手动使能寄存器.线圈);
+                ManualEnableRegister.Coil);
         }
 
-        return 问题;
+        return Issue;
     }
 
     /// <summary>
     /// ② 动作按钮自动跟随：上位机置位 → PLC 复位后，界面<b>不离开页面</b>就能跟上
-    /// （由主视图模型对当前页的周期回读完成，见 <see cref="动作按钮页接口"/>）。
+    /// （由主视图模型对当前页的周期回读完成，见 <see cref="IActionButtonPage"/>）。
     /// </summary>
-    private async Task<int> 异步验证动作按钮自动跟随()
+    private async Task<int> VerifyActionButtonAutoFollowAsync()
     {
-        var 主 = _主机!.Services.GetRequiredService<主视图模型>();
-        var 客户端 = _主机.Services.GetRequiredService<Modbus客户端接口>();
-        var 解析器 = _主机.Services.GetRequiredService<地址解析器接口>();
-        var 示教 = _主机.Services.GetRequiredService<锁附示教视图模型>();
+        var master = _host!.Services.GetRequiredService<MasterViewModel>();
+        var Client = _host.Services.GetRequiredService<IModbusClient>();
+        var Parser = _host.Services.GetRequiredService<IAddressParser>();
+        var Teach = _host.Services.GetRequiredService<ScrewTeachViewModel>();
 
-        var 条目 = 主.导航条目集合.FirstOrDefault(项 => 项.标题 == "锁附示教");
+        var Entry = master.NavigationEntryCollection.FirstOrDefault(Item => Item.Title == "锁附示教");
 
-        if (条目 is null)
+        if (Entry is null)
         {
             Log.Warning("现场行为自检跳过：导航里没有锁附示教页");
             return 0;
         }
 
         // 周期回读只作用于"当前页面"，所以先切到有动作按钮的示教页
-        主.选中导航条目 = 条目;
+        master.SelectedNavigationEntry = Entry;
         await Task.Delay(400);
 
-        if (示教.动作按钮集合.Count == 0)
+        if (Teach.ActionButtonCollection.Count == 0)
         {
             Log.Warning("现场行为自检跳过：锁附示教页没有动作按钮");
             return 0;
         }
 
-        var 按钮 = 示教.动作按钮集合[0];
+        var Button = Teach.ActionButtonCollection[0];
 
-        if (!解析器.尝试解析(按钮.定义.地址, out var 地址值) || 地址值 is null)
+        if (!Parser.TryParse(Button.Definition.Address, out var addressValue) || addressValue is null)
         {
             Log.Error("现场行为自检失败：动作按钮 {Name} 的地址「{Address}」无法解析",
-                按钮.名称, 按钮.定义.地址);
+                Button.Name, Button.Definition.Address);
             return 1;
         }
 
-        var 问题 = 0;
+        var Issue = 0;
 
         // 上位机置位 → 回读应反映为已激活
-        await 客户端.异步写入单个线圈(地址值.Modbus地址, true);
-        await 示教.异步刷新动作按钮状态();
-        await Task.Delay(200);
+        await Client.WriteSingleCoilAsync(addressValue.ModbusAddress, true);
+        await Teach.RefreshActionButtonStateAsync();
+        await WaitUntilAsync(() => Button.Activated, 3000);
 
-        if (!按钮.已激活)
+        if (!Button.Activated)
         {
-            问题++;
-            Log.Error("现场行为自检失败：PLC 侧线圈置位后，动作按钮 {Name} 未显示已激活", 按钮.名称);
+            Issue++;
+            Log.Error("现场行为自检失败：PLC 侧线圈置位后，动作按钮 {Name} 未显示已激活", Button.Name);
         }
 
-        // PLC 侧复位：界面不做任何操作，只等周期回读自己跟上
-        await 客户端.异步写入单个线圈(地址值.Modbus地址, false);
-        await Task.Delay(3000);
+        // PLC 侧复位：界面不做任何操作，只等周期回读自己跟上（回读间隔 2 秒，给足 15 秒）
+        await Client.WriteSingleCoilAsync(addressValue.ModbusAddress, false);
+        await WaitUntilAsync(() => !Button.Activated);
 
-        if (按钮.已激活)
+        if (Button.Activated)
         {
-            问题++;
+            Issue++;
             Log.Error("现场行为自检失败：PLC 复位后动作按钮 {Name} 仍显示已激活——周期回读没起作用",
-                按钮.名称);
+                Button.Name);
         }
         else
         {
             Log.Information("现场行为自检通过：动作按钮 {Name} 在 PLC 复位后自动跟上（无需离开页面）",
-                按钮.名称);
+                Button.Name);
         }
 
-        return 问题;
+        return Issue;
     }
 }

@@ -31,8 +31,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- 2026-10-12 现场要求：exe 直接叫「点胶锁付机」（AssemblyName 同时决定 exe 与主 DLL 名） -->
-    <AssemblyName>点胶锁付机</AssemblyName>
+    <!-- 2026-11-26 开源版：程序集名回归英文标识（AssemblyName 同时决定 exe 与主 DLL 名）。
+         现场部署包需要旧名时，在本行覆盖即可，不要改代码。 -->
+    <AssemblyName>PlcHmi.App</AssemblyName>
     <!-- 只带中文资源：发布包根目录不再躺着一堆 de/es/fr/… 卫星语言文件夹 -->
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <!-- 2026-10-16：延时改 DINT（32 位毫秒）+ 工位状态条（M 区三灯 + 已锁附颗数）+ 下发点表自动并入本机种快照 -->
@@ -41,7 +42,7 @@
     <Version>1.0.0</Version>
     <FileVersion>1.0.0.0</FileVersion>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <Product>点胶锁付机上位机</Product>
+    <Product>PlcHmi WPF HMI Reference</Product>
   </PropertyGroup>
 
 </Project>

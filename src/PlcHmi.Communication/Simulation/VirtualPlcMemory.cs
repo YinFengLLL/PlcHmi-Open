@@ -1,87 +1,87 @@
-namespace 上位机.通信.仿真;
+namespace PlcHmi.Communication.Simulation;
 
 /// <summary>
 /// 虚拟 PLC 内存映像。模拟一个 Modbus 从站的四个数据区。
 /// </summary>
-public sealed class 虚拟PLC内存
+public sealed class VirtualPlcMemory
 {
-    private readonly object _同步 = new();
+    private readonly object _sync = new();
 
-    private readonly bool[] _线圈 = new bool[65536];
-    private readonly bool[] _离散输入 = new bool[65536];
-    private readonly ushort[] _保持寄存器 = new ushort[65536];
-    private readonly ushort[] _输入寄存器 = new ushort[65536];
+    private readonly bool[] _coil = new bool[65536];
+    private readonly bool[] _discreteInput = new bool[65536];
+    private readonly ushort[] _holdingRegister = new ushort[65536];
+    private readonly ushort[] _inputRegister = new ushort[65536];
 
     // ── 读 ──────────────────────────────────────────────────────────────
 
-    public bool[] 读取线圈(int 地址值, int 数量值)
+    public bool[] ReadCoil(int addressValue, int countValue)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            return 切片(_线圈, 地址值, 数量值);
+            return Segment(_coil, addressValue, countValue);
         }
     }
 
-    public bool[] 读取离散输入(int 地址值, int 数量值)
+    public bool[] ReadDiscreteInput(int addressValue, int countValue)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            return 切片(_离散输入, 地址值, 数量值);
+            return Segment(_discreteInput, addressValue, countValue);
         }
     }
 
-    public ushort[] 读取保持寄存器(int 地址值, int 数量值)
+    public ushort[] ReadHoldingRegister(int addressValue, int countValue)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            return 切片(_保持寄存器, 地址值, 数量值);
+            return Segment(_holdingRegister, addressValue, countValue);
         }
     }
 
-    public ushort[] 读取输入寄存器(int 地址值, int 数量值)
+    public ushort[] ReadInputRegister(int addressValue, int countValue)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            return 切片(_输入寄存器, 地址值, 数量值);
+            return Segment(_inputRegister, addressValue, countValue);
         }
     }
 
     // ── 写 ──────────────────────────────────────────────────────────────
 
-    public void 写入线圈(int 地址值, bool 值)
+    public void WriteCoil(int addressValue, bool Value)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            _线圈[地址值] = 值;
+            _coil[addressValue] = Value;
         }
     }
 
-    public void 写入线圈项(int 地址值, IReadOnlyList<bool> 值列表)
+    public void WriteCoilItem(int addressValue, IReadOnlyList<bool> ValueList)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            for (var 条目 = 0; 条目 < 值列表.Count; 条目++)
+            for (var Entry = 0; Entry < ValueList.Count; Entry++)
             {
-                _线圈[地址值 + 条目] = 值列表[条目];
+                _coil[addressValue + Entry] = ValueList[Entry];
             }
         }
     }
 
-    public void 写入保持寄存器(int 地址值, ushort 值)
+    public void WriteHoldingRegister(int addressValue, ushort Value)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            _保持寄存器[地址值] = 值;
+            _holdingRegister[addressValue] = Value;
         }
     }
 
-    public void 写入保持寄存器项(int 地址值, IReadOnlyList<ushort> 值列表)
+    public void WriteHoldingRegisterItem(int addressValue, IReadOnlyList<ushort> ValueList)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            for (var 条目 = 0; 条目 < 值列表.Count; 条目++)
+            for (var Entry = 0; Entry < ValueList.Count; Entry++)
             {
-                _保持寄存器[地址值 + 条目] = 值列表[条目];
+                _holdingRegister[addressValue + Entry] = ValueList[Entry];
             }
         }
     }
@@ -89,51 +89,51 @@ public sealed class 虚拟PLC内存
     // ── 模拟器内部使用（不加锁直接访问，调用方自行保证）────────────────
 
     /// <summary>直接设置线圈值（模拟器内部使用）。</summary>
-    public void 不安全设置线圈(int 地址值, bool 值) => _线圈[地址值] = 值;
+    public void UnsafeSetCoil(int addressValue, bool Value) => _coil[addressValue] = Value;
 
     /// <summary>直接设置离散输入值（模拟器内部使用）。</summary>
-    public void 不安全设置离散输入(int 地址值, bool 值) => _离散输入[地址值] = 值;
+    public void UnsafeSetDiscreteInput(int addressValue, bool Value) => _discreteInput[addressValue] = Value;
 
     /// <summary>直接读取线圈值（模拟器内部使用）。</summary>
-    public bool 不安全获取线圈(int 地址值) => _线圈[地址值];
+    public bool UnsafeGetCoil(int addressValue) => _coil[addressValue];
 
     /// <summary>直接读取离散输入值（模拟器内部使用）。X 是物理输入，读的是这一区。</summary>
-    public bool 不安全获取离散输入(int 地址值) => _离散输入[地址值];
+    public bool UnsafeGetDiscreteInput(int addressValue) => _discreteInput[addressValue];
 
     /// <summary>直接设置保持寄存器值（模拟器内部使用）。</summary>
-    public void 不安全设置保持寄存器(int 地址值, ushort 值) => _保持寄存器[地址值] = 值;
+    public void UnsafeSetHoldingRegister(int addressValue, ushort Value) => _holdingRegister[addressValue] = Value;
 
     /// <summary>直接读取保持寄存器值（模拟器内部使用）。</summary>
-    public ushort 不安全获取保持寄存器(int 地址值) => _保持寄存器[地址值];
+    public ushort UnsafeGetHoldingRegister(int addressValue) => _holdingRegister[addressValue];
 
     /// <summary>批量设置保持寄存器（模拟器内部使用）。</summary>
-    public void 不安全设置保持寄存器项(int 启动地址, ReadOnlySpan<ushort> 值列表)
+    public void UnsafeSetHoldingRegisterItem(int StartAddress, ReadOnlySpan<ushort> ValueList)
     {
-        for (var 条目 = 0; 条目 < 值列表.Length; 条目++)
+        for (var Entry = 0; Entry < ValueList.Length; Entry++)
         {
-            _保持寄存器[启动地址 + 条目] = 值列表[条目];
+            _holdingRegister[StartAddress + Entry] = ValueList[Entry];
         }
     }
 
     /// <summary>模拟器内部写操作加锁范围。</summary>
-    public void 运行独占(Action 动作)
+    public void RunAloneOccupy(Action action)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            动作();
+            action();
         }
     }
 
-    private static T[] 切片<T>(T[] 来源, int 地址值, int 数量值)
+    private static T[] Segment<T>(T[] Source, int addressValue, int countValue)
     {
-        if (地址值 < 0 || 地址值 + 数量值 > 来源.Length)
+        if (addressValue < 0 || addressValue + countValue > Source.Length)
         {
-            throw new ArgumentOutOfRangeException(nameof(地址值),
-                $"模拟器地址越界：address={地址值}, count={数量值}, 容量={来源.Length}");
+            throw new ArgumentOutOfRangeException(nameof(addressValue),
+                $"模拟器地址越界：address={addressValue}, count={countValue}, 容量={Source.Length}");
         }
 
-        var 结果值 = new T[数量值];
-        Array.Copy(来源, 地址值, 结果值, 0, 数量值);
-        return 结果值;
+        var resultValue = new T[countValue];
+        Array.Copy(Source, addressValue, resultValue, 0, countValue);
+        return resultValue;
     }
 }

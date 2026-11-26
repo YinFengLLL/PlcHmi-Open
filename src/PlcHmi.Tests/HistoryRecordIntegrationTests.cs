@@ -1,15 +1,15 @@
 using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using 上位机.业务;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.Modbus;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 历史记录采集的端到端测试（虚拟 PLC）。
@@ -18,86 +18,86 @@ namespace 上位机.上位机测试;
 /// 单元用例无法覆盖它：地址合并读取、上升沿判定、字序解码、按天落盘 都在真实服务里发生。</para>
 ///
 /// <para>与 <c>config-files</c> 集合串行：本用例读的是真实 <c>config/history-record.json</c>，
-/// 而 <see cref="历史记录测试"/> 会临时改写它。</para>
+/// 而 <see cref="HistoryRecordTest"/> 会临时改写它。</para>
 /// </summary>
 [Collection("config-files")]
-public class 历史记录集成测试
+public class HistoryRecordIntegrationTest
 {
     [Fact]
-    public async Task 触发位上升沿应落一条记录且按小数位显示()
+    public async Task TriggerBitRisingEdgeShouldPersistOneItemRecordAndByDecimalBitShow()
     {
-        var 设置 = 应用设置加载器.加载(out _);
-        var 配方配置 = 配方配置加载器.加载(out _);
+        var Settings = AppSettingsLoader.Load(out _);
+        var RecipeConfig = RecipeConfigLoader.Load(out _);
 
-        设置.PLC连接.使用模拟器 = true;   // 虚拟 PLC：可写 D / M 后由采集服务读回
+        Settings.PlcConnection.UseSimulator = true;   // 虚拟 PLC：可写 D / M 后由采集服务读回
 
-        var 服务集合 = new ServiceCollection();
-        服务集合.AddLogging();
-        服务集合.添加上位机服务(设置.PLC连接, 设置.轮询, 配方配置);
-        服务集合.AddSingleton<权限守卫接口, 允许全部权限守卫>();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddLogging();
+        serviceCollection.AddPlcHmiService(Settings.PlcConnection, Settings.Polling, RecipeConfig);
+        serviceCollection.AddSingleton<IPermissionGuard, AllowAllPermissionGuard>();
 
-        await using var 提供者 = 服务集合.BuildServiceProvider(validateScopes: true);
-        var 托管 = 提供者.GetServices<IHostedService>().ToList();
+        await using var provider = serviceCollection.BuildServiceProvider(validateScopes: true);
+        var hosting = provider.GetServices<IHostedService>().ToList();
 
-        foreach (var 服务实例 in 托管)
+        foreach (var serviceInstance in hosting)
         {
-            await 服务实例.StartAsync(CancellationToken.None);
+            await serviceInstance.StartAsync(CancellationToken.None);
         }
 
         try
         {
-            var 历史 = 提供者.GetRequiredService<历史记录服务接口>();
-            var 客户端 = 提供者.GetRequiredService<Modbus客户端接口>();
-            var 今天 = DateTime.Today;
+            var History = provider.GetRequiredService<IHistoryRecordService>();
+            var Client = provider.GetRequiredService<IModbusClient>();
+            var TodayDate = DateTime.Today;
 
-            Assert.True(历史.配置.启用, "默认配置应启用采集");
-            Assert.True(历史.配置.数据项集合.Count > 0, "默认配置应有数据项");
+            Assert.True(History.Config.Enabled, "默认配置应启用采集");
+            Assert.True(History.Config.DataItemCollection.Count > 0, "默认配置应有数据项");
 
-            var 之前条数 = (await 历史.异步读取日(今天)).Count;
+            var previousCount = (await History.ReadDayAsync(TodayDate)).Count;
 
             // 地址一律取自配置（现场版：触发 M8、实际扭力 D218 INT16 小数位 3），
             // 避免"工厂配置换一次地址就红一片"。
-            var 触发地址 = 历史.配置.触发地址.Trim();
-            var 触发位 = int.Parse(触发地址.AsSpan(1), CultureInfo.InvariantCulture);
+            var TriggerAddress = History.Config.TriggerAddress.Trim();
+            var triggerBit = int.Parse(TriggerAddress.AsSpan(1), CultureInfo.InvariantCulture);
 
-            var 扭力序号 = 历史.配置.数据项集合.FindIndex(项 => 项.名称 == "实际扭力");
-            Assert.True(扭力序号 >= 0, "出厂配置里应有「实际扭力」列");
+            var torqueIndex = History.Config.DataItemCollection.FindIndex(Item => Item.Name == "实际扭力");
+            Assert.True(torqueIndex >= 0, "出厂配置里应有「实际扭力」列");
 
-            var 扭力项 = 历史.配置.数据项集合[扭力序号];
-            var 扭力地址 = int.Parse(扭力项.地址.AsSpan(1), CultureInfo.InvariantCulture);
+            var torqueItem = History.Config.DataItemCollection[torqueIndex];
+            var torqueAddress = int.Parse(torqueItem.Address.AsSpan(1), CultureInfo.InvariantCulture);
 
             // INT16 单字：600 × 10⁻³ = 0.600
-            await 客户端.异步写入单个寄存器(扭力地址, 600);
+            await Client.WriteSingleRegisterAsync(torqueAddress, 600);
 
             // 触发位上升沿：只有 0 → 1 的沿才记录
-            await 客户端.异步写入单个线圈(触发位, true);
+            await Client.WriteSingleCoilAsync(triggerBit, true);
 
-            await 异步等待直到(
-                async () => (await 历史.异步读取日(今天)).Count > 之前条数,
+            await WaitUntilAsync(
+                async () => (await History.ReadDayAsync(TodayDate)).Count > previousCount,
                 "触发位上升沿后应新增一条历史记录");
 
-            var 记录 = (await 历史.异步读取日(今天))[^1];
+            var recordItem = (await History.ReadDayAsync(TodayDate))[^1];
 
-            Assert.True(历史.配置.读取后复位触发位, "默认应开启读取后复位握手");
-            Assert.Equal(历史.配置.数据项集合.Count, 记录.数值集合.Count);
-            Assert.Equal(600d, 记录.数值集合[扭力序号]);
-            Assert.Equal("0.600", 扭力项.显示文本(记录.数值集合[扭力序号]));
+            Assert.True(History.Config.ReadAfterResetTriggerBit, "默认应开启读取后复位握手");
+            Assert.Equal(History.Config.DataItemCollection.Count, recordItem.NumericValueCollection.Count);
+            Assert.Equal(600d, recordItem.NumericValueCollection[torqueIndex]);
+            Assert.Equal("0.600", torqueItem.ShowText(recordItem.NumericValueCollection[torqueIndex]));
 
             // 握手闭环：读取完成后触发位应被上位机写回 0，
             // PLC 程序据此知道"数据已被取走"，可以开始下一个动作
-            await 异步等待直到(
+            await WaitUntilAsync(
                 async () =>
                 {
-                    var 线圈 = await 客户端.异步读取线圈(触发位, 1);
-                    return 线圈.Length > 0 && !线圈[0];
+                    var Coil = await Client.ReadCoilAsync(triggerBit, 1);
+                    return Coil.Length > 0 && !Coil[0];
                 },
                 "读取完成后触发位应被复位为 0");
         }
         finally
         {
-            foreach (var 服务实例 in 托管)
+            foreach (var serviceInstance in hosting)
             {
-                await 服务实例.StopAsync(CancellationToken.None);
+                await serviceInstance.StopAsync(CancellationToken.None);
             }
         }
     }
@@ -108,49 +108,49 @@ public class 历史记录集成测试
     /// 直接得到工程量（3.75 就是 3.75，不再需要 /1000 之类的换算）。</para>
     /// </summary>
     [Fact]
-    public async Task REAL数据项应按32位浮点读到工程量()
+    public async Task RealDataItemShouldBy32BitFloatReadToEngineeringValue()
     {
-        var 设置 = 应用设置加载器.加载(out _);
-        var 配方配置 = 配方配置加载器.加载(out _);
+        var Settings = AppSettingsLoader.Load(out _);
+        var RecipeConfig = RecipeConfigLoader.Load(out _);
 
-        设置.PLC连接.使用模拟器 = true;
-        设置.轮询.快间隔毫秒 = 50;
-        设置.轮询.慢间隔毫秒 = 100;
-        设置.轮询.事件间隔毫秒 = 100;
+        Settings.PlcConnection.UseSimulator = true;
+        Settings.Polling.FastIntervalMilliseconds = 50;
+        Settings.Polling.SlowIntervalMilliseconds = 100;
+        Settings.Polling.EventIntervalMilliseconds = 100;
 
-        var 服务集合 = new ServiceCollection();
-        服务集合.AddLogging();
-        服务集合.添加上位机服务(设置.PLC连接, 设置.轮询, 配方配置);
-        服务集合.AddSingleton<权限守卫接口, 允许全部权限守卫>();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddLogging();
+        serviceCollection.AddPlcHmiService(Settings.PlcConnection, Settings.Polling, RecipeConfig);
+        serviceCollection.AddSingleton<IPermissionGuard, AllowAllPermissionGuard>();
 
-        var 配置备份 = await File.ReadAllTextAsync(配置路径.历史记录配置);
+        var configBackup = await File.ReadAllTextAsync(ConfigPath.HistoryRecordConfig);
 
         try
         {
-            await using var 提供者 = 服务集合.BuildServiceProvider(validateScopes: true);
-            var 托管 = 提供者.GetServices<IHostedService>().ToList();
+            await using var provider = serviceCollection.BuildServiceProvider(validateScopes: true);
+            var hosting = provider.GetServices<IHostedService>().ToList();
 
-            foreach (var 服务实例 in 托管)
+            foreach (var serviceInstance in hosting)
             {
-                await 服务实例.StartAsync(CancellationToken.None);
+                await serviceInstance.StartAsync(CancellationToken.None);
             }
 
             try
             {
-                var 历史 = 提供者.GetRequiredService<历史记录服务接口>();
-                var 客户端 = 提供者.GetRequiredService<Modbus客户端接口>();
-                var 今天 = DateTime.Today;
+                var History = provider.GetRequiredService<IHistoryRecordService>();
+                var Client = provider.GetRequiredService<IModbusClient>();
+                var TodayDate = DateTime.Today;
 
-                await 历史.异步保存配置(new 历史记录配置
+                await History.SaveConfigAsync(new HistoryRecordConfig
                 {
-                    标题 = "浮点记录",
-                    触发地址 = "M8",
-                    启用 = true,
-                    保留天数 = 90,
-                    数据项集合 =
+                    Title = "浮点记录",
+                    TriggerAddress = "M8",
+                    Enabled = true,
+                    RetainDays = 90,
+                    DataItemCollection =
                     [
-                        new() { 名称 = "胶量", 地址 = "D1420", 数据类型 = 标签数据类型.Float32, 小数位 = 3, 单元 = "mg" },
-                        new() { 名称 = "颗数", 地址 = "D1422", 数据类型 = 标签数据类型.Int16, 小数位 = 0 },
+                        new() { Name = "胶量", Address = "D1420", DataType = TagDataType.Float32, DecimalBit = 3, Unit = "mg" },
+                        new() { Name = "颗数", Address = "D1422", DataType = TagDataType.Int16, DecimalBit = 0 },
                     ],
                 });
 
@@ -158,45 +158,45 @@ public class 历史记录集成测试
                 // 再置位才有 0 → 1 的沿（否则第一轮看到的就已经是 1，不会记录）
                 await Task.Delay(700);
 
-                await 客户端.异步写入多个寄存器(
-                    1420, 寄存器编解码器.编码(标签数据类型.Float32, 3.75, 字顺序.小字节序));
-                await 客户端.异步写入单个寄存器(1422, 7);
+                await Client.WriteMultiRegisterAsync(
+                    1420, RegisterCodec.Encode(TagDataType.Float32, 3.75, WordOrder.LittleEndian));
+                await Client.WriteSingleRegisterAsync(1422, 7);
 
-                var 之前条数 = (await 历史.异步读取日(今天)).Count;
+                var previousCount = (await History.ReadDayAsync(TodayDate)).Count;
 
-                await 客户端.异步写入单个线圈(8, true);
+                await Client.WriteSingleCoilAsync(8, true);
 
-                await 异步等待直到(
-                    async () => (await 历史.异步读取日(今天)).Count > 之前条数,
+                await WaitUntilAsync(
+                    async () => (await History.ReadDayAsync(TodayDate)).Count > previousCount,
                     "浮点数据项的触发位上升沿应新增一条记录");
 
-                var 记录 = (await 历史.异步读取日(今天))[^1];
+                var recordItem = (await History.ReadDayAsync(TodayDate))[^1];
 
-                Assert.Equal(3.75, 记录.数值集合[0], 3);
-                Assert.Equal("3.750", 历史.配置.数据项集合[0].显示文本(记录.数值集合[0]));
-                Assert.Equal(7d, 记录.数值集合[1]);
+                Assert.Equal(3.75, recordItem.NumericValueCollection[0], 3);
+                Assert.Equal("3.750", History.Config.DataItemCollection[0].ShowText(recordItem.NumericValueCollection[0]));
+                Assert.Equal(7d, recordItem.NumericValueCollection[1]);
             }
             finally
             {
-                foreach (var 服务实例 in 托管)
+                foreach (var serviceInstance in hosting)
                 {
-                    await 服务实例.StopAsync(CancellationToken.None);
+                    await serviceInstance.StopAsync(CancellationToken.None);
                 }
             }
         }
         finally
         {
-            await File.WriteAllTextAsync(配置路径.历史记录配置, 配置备份);
+            await File.WriteAllTextAsync(ConfigPath.HistoryRecordConfig, configBackup);
         }
     }
 
-    private static async Task 异步等待直到(Func<Task<bool>> 条件, string 描述, int 超时毫秒 = 8000)
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition, string Description, int TimeoutMilliseconds = 8000)
     {
-        var 截止时间 = Environment.TickCount64 + 超时毫秒;
+        var truncateStopTime = Environment.TickCount64 + TimeoutMilliseconds;
 
-        while (Environment.TickCount64 < 截止时间)
+        while (Environment.TickCount64 < truncateStopTime)
         {
-            if (await 条件())
+            if (await condition())
             {
                 return;
             }
@@ -204,6 +204,6 @@ public class 历史记录集成测试
             await Task.Delay(100);
         }
 
-        Assert.Fail($"等待超时：{描述}");
+        Assert.Fail($"等待超时：{Description}");
     }
 }

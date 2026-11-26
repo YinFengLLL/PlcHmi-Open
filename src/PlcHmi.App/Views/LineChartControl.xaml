@@ -1,4 +1,4 @@
-<UserControl x:Class="上位机.应用.视图.折线图控件"
+<UserControl x:Class="PlcHmi.App.Views.LineChartWidget"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- 画布铺满可用空间并随尺寸变化原生重绘。
@@ -6,6 +6,6 @@
          全屏时放大倍数是非整数，小字号刻度与细线被整体拉伸 → 发虚。
          现在布局给多大就画多大，字号永远是真实字号，任何窗口尺寸下都清晰。 -->
     <Grid>
-        <Canvas x:Name="绘图板" />
+        <Canvas x:Name="DrawChartBoard" />
     </Grid>
 </UserControl>

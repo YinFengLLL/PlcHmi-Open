@@ -1,54 +1,54 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
-using 上位机.核心.抽象;
-using 上位机.核心.模型;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 点位实时值服务。保存最新值，并<b>仅在值发生变化时</b>推送事件，
 /// 避免 UI 因重复赋值而频繁刷新。
 /// </summary>
-public sealed class 标签值服务 : 标签值服务接口
+public sealed class TagValueService : ITagValueService
 {
-    private readonly ILogger<标签值服务> _日志;
-    private readonly ConcurrentDictionary<string, 标签新值> _值列表 = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILogger<TagValueService> _log;
+    private readonly ConcurrentDictionary<string, TagNewValue> _valueList = new(StringComparer.OrdinalIgnoreCase);
 
-    public 标签值服务(ILogger<标签值服务> 日志)
+    public TagValueService(ILogger<TagValueService> Log)
     {
-        _日志 = 日志;
+        _log = Log;
     }
 
     /// <inheritdoc />
-    public event EventHandler<标签新值>? 新值已变更;
+    public event EventHandler<TagNewValue>? NewValueChanged;
 
     /// <inheritdoc />
-    public 标签新值 获取新值(string 名称值) =>
-        _值列表.TryGetValue(名称值, out var 值) ? 值 : 标签新值.无效(名称值);
+    public TagNewValue GetNewValue(string nameValue) =>
+        _valueList.TryGetValue(nameValue, out var Value) ? Value : TagNewValue.Invalid(nameValue);
 
     /// <inheritdoc />
-    public bool 尝试获取双精度(string 名称值, out double 值)
+    public bool TryGetDouble(string nameValue, out double Value)
     {
-        if (_值列表.TryGetValue(名称值, out var 标签新值) && 标签新值.是否有效 && !double.IsNaN(标签新值.缩放后新值))
+        if (_valueList.TryGetValue(nameValue, out var TagNewValue) && TagNewValue.IsValid && !double.IsNaN(TagNewValue.scaleAfterNewValue))
         {
-            值 = 标签新值.缩放后新值;
+            Value = TagNewValue.scaleAfterNewValue;
             return true;
         }
 
-        值 = double.NaN;
+        Value = double.NaN;
         return false;
     }
 
     /// <inheritdoc />
-    public bool 尝试获取布尔(string 名称值, out bool 值)
+    public bool TryGetBoolean(string nameValue, out bool Value)
     {
-        if (_值列表.TryGetValue(名称值, out var 标签新值) && 标签新值.是否有效 && 标签新值.值 is bool 乙)
+        if (_valueList.TryGetValue(nameValue, out var TagNewValue) && TagNewValue.IsValid && TagNewValue.Value is bool item2)
         {
-            值 = 乙;
+            Value = item2;
             return true;
         }
 
-        值 = false;
+        Value = false;
         return false;
     }
 
@@ -56,40 +56,40 @@ public sealed class 标签值服务 : 标签值服务接口
     /// 发布一个新值。由轮询引擎调用。
     /// <para>变化检测规则：值与有效性任一发生变化才推送；<c>double</c> 值按 1e-9 容差比较。</para>
     /// </summary>
-    public void 发布(标签新值 值)
+    public void RaiseLayout(TagNewValue Value)
     {
-        var 已变更 = true;
+        var changed = true;
 
-        if (_值列表.TryGetValue(值.名称, out var 上一个))
+        if (_valueList.TryGetValue(Value.Name, out var Previous))
         {
-            已变更 = 上一个.是否有效 != 值.是否有效
-                      || 上一个.值?.GetType() != 值.值?.GetType()
-                      || !是否近乎相等(上一个, 值);
+            changed = Previous.IsValid != Value.IsValid
+                      || Previous.Value?.GetType() != Value.Value?.GetType()
+                      || !IsAlmostEqual(Previous, Value);
         }
 
-        _值列表[值.名称] = 值;
+        _valueList[Value.Name] = Value;
 
-        if (已变更)
+        if (changed)
         {
             try
             {
-                新值已变更?.Invoke(this, 值);
+                NewValueChanged?.Invoke(this, Value);
             }
-            catch (Exception 异常)
+            catch (Exception exception)
             {
-                _日志.LogError(异常, "推送点位 {Name} 变化事件时出现异常", 值.名称);
+                _log.LogError(exception, "推送点位 {Name} 变化事件时出现异常", Value.Name);
             }
         }
     }
 
     /// <summary>把全部点位标记为无效（断线时调用，界面据此置灰）。</summary>
-    public void 失效全部()
+    public void FailEffectAll()
     {
-        foreach (var 键值 in _值列表.Keys.ToList())
+        foreach (var keyValue in _valueList.Keys.ToList())
         {
             // 走 发布() 而不是直接改字典：只有原本有效的点位才会触发
             // 新值已变更 事件，界面才能收到置灰通知（此前静默改值，界面不知情）。
-            发布(标签新值.无效(键值));
+            RaiseLayout(TagNewValue.Invalid(keyValue));
         }
     }
 
@@ -99,9 +99,9 @@ public sealed class 标签值服务 : 标签值服务接口
     /// 1e-9 容差形同虚设，浮点点位每个轮询周期都误报变化、UI 空转刷新。
     /// 因此浮点点位按<b>缩放后值</b>的容差比较；其余类型精确相等。</para>
     /// </summary>
-    private static bool 是否近乎相等(标签新值 上一个, 标签新值 当前) =>
-        上一个.值 is float or double
-            ? Math.Abs(上一个.缩放后新值 - 当前.缩放后新值) <= 1e-9
-            : Equals(上一个.值, 当前.值)
-              && Math.Abs(上一个.缩放后新值 - 当前.缩放后新值) <= 1e-9;
+    private static bool IsAlmostEqual(TagNewValue Previous, TagNewValue Current) =>
+        Previous.Value is float or double
+            ? Math.Abs(Previous.scaleAfterNewValue - Current.scaleAfterNewValue) <= 1e-9
+            : Equals(Previous.Value, Current.Value)
+              && Math.Abs(Previous.scaleAfterNewValue - Current.scaleAfterNewValue) <= 1e-9;
 }

@@ -1,7 +1,7 @@
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.核心.抽象;
+namespace PlcHmi.Core.Abstractions;
 
 /// <summary>
 /// 手动页元件服务。
@@ -11,36 +11,36 @@ namespace 上位机.核心.抽象;
 /// <para><b>硬约束：</b>元件只能绑定 <b>M 区（辅助继电器）</b>地址。
 /// 上位机只置位内部继电器，由 PLC 程序决定何时驱动 Y 输出——
 /// 这样上位机不会绕过 PLC 的联锁逻辑直接动作执行机构。
-/// 绑定 Y 点的配置会在 <see cref="校验"/> 中被拒绝。</para>
+/// 绑定 Y 点的配置会在 <see cref="Validate"/> 中被拒绝。</para>
 /// </summary>
-public interface 手动元件服务接口
+public interface IManualComponentService
 {
     /// <summary>当前元件列表（已按 Order 排序）。</summary>
-    IReadOnlyList<手动元件定义> 元件集合 { get; }
+    IReadOnlyList<ManualComponentDefinition> ComponentCollection { get; }
 
     /// <summary>元件列表变化。</summary>
-    event EventHandler? 元件已变更;
+    event EventHandler? componentChanged;
 
     /// <summary>初始化：从文件加载。文件不存在时写入一份默认配置。</summary>
-    Task 异步初始化(CancellationToken 取消令牌 = default);
+    Task InitializeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>把当前元件列表写回文件。</summary>
-    Task 异步保存(CancellationToken 取消令牌 = default);
+    Task SaveAsync(CancellationToken cancellationToken = default);
 
     /// <summary>校验元件定义（名称、地址类型、必填项）。</summary>
-    手动元件校验 校验(手动元件定义 元件项);
+    ManualComponentValidate Validate(ManualComponentDefinition ComponentItem);
 
-    /// <summary>新增元件（<b>仅内存</b>，需再调 <see cref="异步保存"/>）。</summary>
-    void 添加(手动元件定义 元件项);
+    /// <summary>新增元件（<b>仅内存</b>，需再调 <see cref="SaveAsync"/>）。</summary>
+    void Add(ManualComponentDefinition ComponentItem);
 
     /// <summary>更新元件（按 Id 匹配，<b>仅内存</b>）。</summary>
-    void 更新(手动元件定义 元件项);
+    void Update(ManualComponentDefinition ComponentItem);
 
     /// <summary>删除元件（<b>仅内存</b>）。</summary>
-    void 移除(string 标识);
+    void Remove(string Id);
 
     /// <summary>生成一个新的唯一 Id。</summary>
-    string 新标识(手动元件类型 type);
+    string NewId(ManualComponentType type);
 }
 
 /// <summary>
@@ -53,19 +53,19 @@ public interface 手动元件服务接口
 /// <para><b>地址约束：</b>只允许绑定 <b>M 区或 D 区</b>。
 /// X / Y 点专供 IO 监控页使用，不作为报警源。</para>
 /// </summary>
-public interface 报警定义服务接口
+public interface IAlarmDefinitionService
 {
     /// <summary>当前报警定义列表。</summary>
-    IReadOnlyList<报警定义> 定义集合 { get; }
+    IReadOnlyList<AlarmDefinition> DefinitionCollection { get; }
 
     /// <summary>定义列表变化（增删改或重新加载）。</summary>
-    event EventHandler? 定义已变更;
+    event EventHandler? definitionChanged;
 
     /// <summary>初始化：从文件加载。文件不存在时写入一份默认配置。</summary>
-    Task 异步初始化(CancellationToken 取消令牌 = default);
+    Task InitializeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>写回文件。</summary>
-    Task 异步保存(CancellationToken 取消令牌 = default);
+    Task SaveAsync(CancellationToken cancellationToken = default);
 
     /// <summary>校验定义（编号、文本、地址类型、位号范围）。</summary>
     /// <param name="definition">待校验的定义（编辑时传的是克隆副本）。</param>
@@ -73,19 +73,19 @@ public interface 报警定义服务接口
     /// 是否为编辑已有条目。编辑传 <c>true</c>：编号相同的已有条目就是正在编辑的那条自身，
     /// 不再报「已被占用」——克隆副本无法用引用比较排除自身（见 AlarmDefinitionService.Validate 注释）。
     /// </param>
-    报警定义校验 校验(报警定义 定义项, bool 是否更新 = false);
+    AlarmDefinitionValidate Validate(AlarmDefinition DefinitionItem, bool isUpdate = false);
 
     /// <summary>新增（<b>仅内存</b>）。</summary>
-    void 添加(报警定义 定义项);
+    void Add(AlarmDefinition DefinitionItem);
 
     /// <summary>更新（按 Id 匹配，<b>仅内存</b>）。</summary>
-    void 更新(报警定义 定义项);
+    void Update(AlarmDefinition DefinitionItem);
 
     /// <summary>删除（<b>仅内存</b>）。</summary>
-    void 移除(string 标识);
+    void Remove(string Id);
 
     /// <summary>生成一个新的报警编号。</summary>
-    string 新标识();
+    string NewId();
 }
 
 /// <summary>
@@ -96,25 +96,25 @@ public interface 报警定义服务接口
 ///
 /// <para>管理员可增删条目、改名称、改地址、启停；改动写回 <c>config/param-tables.json</c>。</para>
 /// </summary>
-public interface 参数表格服务接口
+public interface IParameterTableService
 {
     /// <summary>延时表条目。</summary>
-    IReadOnlyList<参数条目定义> 延迟集合 { get; }
+    IReadOnlyList<ParameterEntryDefinition> DelayCollection { get; }
 
     /// <summary>按钮表条目。</summary>
-    IReadOnlyList<参数条目定义> 按钮集合 { get; }
+    IReadOnlyList<ParameterEntryDefinition> ButtonCollection { get; }
 
     /// <summary>任一表格变化。</summary>
-    event EventHandler? 条目已变更;
+    event EventHandler? entryChanged;
 
     /// <summary>初始化：从文件加载，不存在时写入默认配置。</summary>
-    Task 异步初始化(CancellationToken 取消令牌 = default);
+    Task InitializeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>写回文件。</summary>
-    Task 异步保存(CancellationToken 取消令牌 = default);
+    Task SaveAsync(CancellationToken cancellationToken = default);
 
     /// <summary>取某张表的条目。</summary>
-    IReadOnlyList<参数条目定义> 获取(参数表格类别 类别);
+    IReadOnlyList<ParameterEntryDefinition> Get(ParameterTableCategory Category);
 
     /// <summary>校验条目（名称、地址区、取值范围）。</summary>
     /// <param name="kind">延时表 / 按钮表。</param>
@@ -123,16 +123,16 @@ public interface 参数表格服务接口
     /// 是否为编辑已有条目。编辑传 <c>true</c>：同 Id 的条目就是正在编辑的那条自身，
     /// 不再报「已被占用」（克隆副本无法用引用比较排除自身）。
     /// </param>
-    参数条目校验 校验(参数表格类别 类别, 参数条目定义 条目, bool 是否更新 = false);
+    ParameterEntryValidate Validate(ParameterTableCategory Category, ParameterEntryDefinition Entry, bool isUpdate = false);
 
     /// <summary>新增（仅内存）。</summary>
-    void 添加(参数表格类别 类别, 参数条目定义 条目);
+    void Add(ParameterTableCategory Category, ParameterEntryDefinition Entry);
 
     /// <summary>更新（按 Id 匹配，仅内存）。</summary>
-    void 更新(参数表格类别 类别, 参数条目定义 条目);
+    void Update(ParameterTableCategory Category, ParameterEntryDefinition Entry);
 
     /// <summary>删除（仅内存）。</summary>
-    void 移除(参数表格类别 类别, string 标识);
+    void Remove(ParameterTableCategory Category, string Id);
 
     /// <summary>
     /// 把按钮点位写入 PLC（<paramref name="开"/> 为 <c>true</c> 置位、<c>false</c> 复位）。
@@ -140,7 +140,7 @@ public interface 参数表格服务接口
     /// <para>与气缸同样的语义：<b>一个 M 点就是一个开关</b>，置位 = 开启、复位 = 关闭，
     /// 不需要两个地址。</para>
     /// </summary>
-    Task 异步设置按钮(参数条目定义 条目, bool on, CancellationToken 取消令牌 = default);
+    Task SetButtonAsync(ParameterEntryDefinition Entry, bool on, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 把延时条目的当前值写入 PLC（实时生效，不需要再按「下发到 PLC」）。
@@ -148,7 +148,7 @@ public interface 参数表格服务接口
     /// <para>换算规则：界面与配置按秒，PLC 的 D 区存 <b>32 位整数毫秒（DINT，占 2 字）</b>（×1000）。
     /// 写完后同步保存配置文件，保证「PLC 里的值 = 配置文件里的值」。</para>
     /// </summary>
-    Task 异步写入延迟(参数条目定义 条目, CancellationToken 取消令牌 = default);
+    Task WriteDelayAsync(ParameterEntryDefinition Entry, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 回读：把延时表与按钮表在 PLC 上的<b>当前真实值</b>读回来。
@@ -160,19 +160,19 @@ public interface 参数表格服务接口
     /// <para>逐项容错：某一项读失败只跳过它，不影响其它项，也不抛异常
     /// （回读是"锦上添花"，不该把页面操作打断）。</para>
     /// </summary>
-    Task 异步回读(CancellationToken 取消令牌 = default);
+    Task ReadBackAsync(CancellationToken cancellationToken = default);
 
     /// <summary>回读完成后触发（参数为变化的数据项标识）。</summary>
-    event EventHandler<string>? 回读已变更;
+    event EventHandler<string>? readBackChanged;
 
     /// <summary>某条延时的 PLC 当前值（秒）；从未回读过或读不到时为 <c>null</c>。</summary>
-    double? 回读延时值(string 标识);
+    double? ReadBackDelayValue(string Id);
 
     /// <summary>某个按钮的 PLC 当前状态；从未回读过或读不到时为 <c>null</c>。</summary>
-    bool? 回读按钮状态(string 标识);
+    bool? ReadBackButtonState(string Id);
 
     /// <summary>生成一个新的唯一 Id。</summary>
-    string 新标识(参数表格类别 类别);
+    string NewId(ParameterTableCategory Category);
 }
 
 /// <summary>
@@ -183,50 +183,50 @@ public interface 参数表格服务接口
 ///
 /// <para><b>存储：</b>账号存本地 <c>config/users.json</c>，只存 PBKDF2 哈希与盐，绝不存明文。</para>
 /// </summary>
-public interface 用户服务接口
+public interface IUserService
 {
-    /// <summary>当前角色。未登录时为最低权限的 <see cref="用户角色.操作员"/>。</summary>
-    用户角色 当前角色 { get; }
+    /// <summary>当前角色。未登录时为最低权限的 <see cref="UserRole.Operator"/>。</summary>
+    UserRole CurrentRole { get; }
 
     /// <summary>当前登录名。未登录时为空。</summary>
-    string 当前用户名称 { get; }
+    string CurrentUserName { get; }
 
     /// <summary>当前显示名。</summary>
-    string 当前显示名称 { get; }
+    string CurrentDisplayName { get; }
 
     /// <summary>是否已登录（未登录时按操作员权限处理）。</summary>
-    bool 是否已登录 { get; }
+    bool IsAlreadyLogin { get; }
 
     /// <summary>当前权限集合。</summary>
-    权限 当前权限 { get; }
+    Permission CurrentPermission { get; }
 
     /// <summary>当前账号是否仍在使用初始密码。</summary>
-    bool 是否使用默认密码 { get; }
+    bool IsUseDefaultPassword { get; }
 
     /// <summary>全部账号（不含密码哈希）。</summary>
-    IReadOnlyList<用户账号> 账号集合 { get; }
+    IReadOnlyList<UserAccount> AccountNumberCollection { get; }
 
     /// <summary>身份变化（登录 / 登出）。</summary>
-    event EventHandler? 用户已变更;
+    event EventHandler? userChanged;
 
     /// <summary>判断当前身份是否具备某项权限。</summary>
-    bool 有(权限 权限项);
+    bool Has(Permission permissionItem);
 
     /// <summary>初始化：加载账号文件，不存在时创建默认账号。</summary>
-    Task 异步初始化(CancellationToken 取消令牌 = default);
+    Task InitializeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>登录。成功返回 <c>true</c>。</summary>
-    Task<bool> 异步登录(string 用户名称, string 密码, CancellationToken 取消令牌 = default);
+    Task<bool> LoginAsync(string userName, string password, CancellationToken cancellationToken = default);
 
     /// <summary>登出，回落到操作员身份。</summary>
-    void 退出登录();
+    void ExitLogin();
 
     /// <summary>修改密码。成功返回 <c>true</c>。</summary>
-    Task<bool> 异步变更密码(
-        string 用户名称, string 当前密码, string 新密码, CancellationToken 取消令牌 = default);
+    Task<bool> ChangePasswordAsync(
+        string userName, string currentPassword, string newPassword, CancellationToken cancellationToken = default);
 
     /// <summary>初始密码（用于首次登录提示）。</summary>
-    static string 默认密码 => "123456";
+    static string DefaultPassword => "123456";
 }
 
 /// <summary>
@@ -248,22 +248,22 @@ public interface 用户服务接口
 ///
 /// <para><b>保存后立即生效</b>：原子落盘 → 重载点位定义 → 重建采集计划，无需重启程序。</para>
 /// </summary>
-public interface 轴地址服务接口
+public interface IAxisAddressService
 {
     /// <summary>当前四轴地址快照。界面编辑前应先 <c>Table.Clone()</c> 取副本。</summary>
-    轴地址表格 表格 { get; }
+    AxisAddressTable DataGrid { get; }
 
     /// <summary>地址表已被保存并生效（界面据此刷新）。</summary>
-    event EventHandler? 地址已变更;
+    event EventHandler? AddressChanged;
 
     /// <summary>校验一组待保存的地址，返回全部错误（不修改任何状态）。</summary>
-    轴地址校验 校验(轴地址表格 候选);
+    AxisAddressValidate Validate(AxisAddressTable candidate);
 
     /// <summary>
     /// 保存地址改动：原子落盘 → 重载点位定义 → 重建采集计划。
     /// <para>校验不通过时抛 <see cref="InvalidOperationException"/>，不会写入半个状态。</para>
     /// </summary>
-    Task 异步保存(轴地址表格 候选, CancellationToken 取消令牌 = default);
+    Task SaveAsync(AxisAddressTable candidate, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -272,47 +272,47 @@ public interface 轴地址服务接口
 /// <para><b>用途：</b>轴参数区 / 延时区 / 气缸区的元件配置可按变量名绑定——
 /// Modbus 模式按变量表中的软元件地址映射通讯；OPC UA 模式直接以变量名作 NodeId 符号寻址。</para>
 /// </summary>
-public interface 变量表服务接口
+public interface IVariableTableService
 {
     /// <summary>全部变量条目（按导入顺序）。</summary>
-    IReadOnlyList<变量表条目> 条目集合 { get; }
+    IReadOnlyList<VariableTableEntry> EntryCollection { get; }
 
     /// <summary>变量表已重新导入（NodeId 缓存等下游应刷新）。</summary>
-    event EventHandler? 已重新导入;
+    event EventHandler? alreadyReImport;
 
     /// <summary>按变量名查找（大小写不敏感）。未命中返回 <c>null</c>。</summary>
-    变量表条目? 查找(string? 变量名);
+    VariableTableEntry? Find(string? VariableName);
 
     /// <summary>
-    /// 按变量首地址查找（不限定数量）。命中时经 <paramref name="寄存器数量值"/> 返回该变量的占用字数。
+    /// 按变量首地址查找（不限定数量）。命中时经 <paramref name="registerCountValue"/> 返回该变量的占用字数。
     /// </summary>
-    变量表条目? 按首地址查找(Modbus区域 区域值, int 起始地址值, out int 寄存器数量值);
+    VariableTableEntry? ByFirstAddressFind(ModbusArea areaValue, int startAddressValue, out int registerCountValue);
 
     /// <summary>
     /// 按软元件寻址信息反查变量：起始地址与寄存器数量都必须精确匹配（如 REAL 变量占 2 字）。
     /// 未命中返回 <c>null</c>。
     /// </summary>
-    变量表条目? 按地址查找(Modbus区域 区域值, int 起始地址值, int 寄存器数量值);
+    VariableTableEntry? ByAddressFind(ModbusArea areaValue, int startAddressValue, int registerCountValue);
 
     /// <summary>
     /// 从汇川变量表 CSV 导入：整表解析校验后原子落盘并替换内存表。
     /// <para>导入失败（文件不可读 / 全部行无效）时保持旧表不变并抛 <see cref="InvalidOperationException"/>。</para>
     /// </summary>
     /// <returns>导入结果（有效条数 / 跳过行说明）。</returns>
-    Task<变量表导入结果> 异步导入(string CSV文件路径, CancellationToken 取消令牌 = default);
+    Task<VariableTableImportResult> ImportAsync(string csvFilePath, CancellationToken cancellationToken = default);
 }
 
 /// <summary>变量表导入结果。</summary>
-public sealed class 变量表导入结果
+public sealed class VariableTableImportResult
 {
     /// <summary>成功导入的条目数。</summary>
-    public int 有效条数 { get; init; }
+    public int ValidCount { get; init; }
 
     /// <summary>被跳过的行数（结构体头行 / 不支持的类型 / 地址无法寻址）。</summary>
-    public int 跳过行数 { get; init; }
+    public int SkipRowNumber { get; init; }
 
     /// <summary>给管理员看的说明（跳过原因汇总）。</summary>
-    public string 摘要 => $"已导入 {有效条数} 个变量，跳过 {跳过行数} 行。";
+    public string Summary => $"已导入 {ValidCount} 个变量，跳过 {SkipRowNumber} 行。";
 }
 
 // 运行监控页元件地址（模型 / 校验结果 / 服务接口）见 IAdminServices.RunMonitor.cs。

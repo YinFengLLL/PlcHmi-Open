@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 参数表格服务的「PLC 回读」部分（partial）。
@@ -17,113 +17,113 @@ namespace 上位机.业务.服务;
 /// <para><b>逐项容错：</b>某一项读失败（地址写错、PLC 无应答）只跳过该项，
 /// 不影响其它项，也不向上抛异常——回读是"让界面跟上 PLC"，不该把页面操作打断。</para>
 /// </summary>
-public sealed partial class 参数表格服务
+public sealed partial class ParameterTableService
 {
     /// <summary>回读间隔（与动作按钮同节奏：2s 一次，够快又不挤占串行 Modbus 链路）。</summary>
-    public static readonly TimeSpan 回读间隔 = TimeSpan.FromSeconds(2);
+    public static readonly TimeSpan readBackInterval = TimeSpan.FromSeconds(2);
 
     /// <summary>标识 → 回读到的延时值（秒）。</summary>
-    private readonly Dictionary<string, double> _回读延时 = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, double> _readBackDelay = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>标识 → 回读到的按钮状态。</summary>
-    private readonly Dictionary<string, bool> _回读按钮 = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, bool> _readBackButton = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>回读互斥：慢速串行链路上上次没读完时新的节拍又到了，在途即跳过本次。</summary>
-    private int _回读在途;
+    private int _readBackAtPurpose;
 
     /// <inheritdoc />
-    public event EventHandler<string>? 回读已变更;
+    public event EventHandler<string>? readBackChanged;
 
     /// <inheritdoc />
-    public double? 回读延时值(string 标识) =>
-        _回读延时.TryGetValue(标识, out var 值) ? 值 : null;
+    public double? ReadBackDelayValue(string Id) =>
+        _readBackDelay.TryGetValue(Id, out var Value) ? Value : null;
 
     /// <inheritdoc />
-    public bool? 回读按钮状态(string 标识) =>
-        _回读按钮.TryGetValue(标识, out var 值) ? 值 : null;
+    public bool? ReadBackButtonState(string Id) =>
+        _readBackButton.TryGetValue(Id, out var Value) ? Value : null;
 
     /// <inheritdoc />
-    public async Task 异步回读(CancellationToken 取消令牌 = default)
+    public async Task ReadBackAsync(CancellationToken cancellationToken = default)
     {
         // 在途即跳过：Modbus 是串行链路，上次回读还没做完时再发一轮只会互相挤占
-        if (Interlocked.CompareExchange(ref _回读在途, 1, 0) != 0)
+        if (Interlocked.CompareExchange(ref _readBackAtPurpose, 1, 0) != 0)
         {
             return;
         }
 
         try
         {
-            await 回读延时(取消令牌).ConfigureAwait(false);
-            await 回读按钮(取消令牌).ConfigureAwait(false);
+            await ReadBackDelay(cancellationToken).ConfigureAwait(false);
+            await ReadBackButton(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            Interlocked.Exchange(ref _回读在途, 0);
+            Interlocked.Exchange(ref _readBackAtPurpose, 0);
         }
     }
 
     /// <summary>逐条回读延时值（秒 = DINT 毫秒 ÷ 1000）。</summary>
-    private async Task 回读延时(CancellationToken 取消令牌)
+    private async Task ReadBackDelay(CancellationToken cancellationToken)
     {
-        foreach (var 条目 in _延迟)
+        foreach (var Entry in _delay)
         {
-            if (!条目.启用 || string.IsNullOrWhiteSpace(条目.地址))
+            if (!Entry.Enabled || string.IsNullOrWhiteSpace(Entry.Address))
             {
                 continue;
             }
 
             try
             {
-                var 毫秒 = await _写入器
-                    .异步读取寄存器地址32(条目.地址, 取消令牌)
+                var milliseconds = await _writer
+                    .ReadRegisterAddress32Async(Entry.Address, cancellationToken)
                     .ConfigureAwait(false);
 
-                var 秒 = 毫秒 / 1000.0;
-                var 有变化 = !_回读延时.TryGetValue(条目.标识, out var 旧值) || Math.Abs(旧值 - 秒) > 1e-9;
+                var seconds = milliseconds / 1000.0;
+                var hasChange = !_readBackDelay.TryGetValue(Entry.Id, out var oldValue) || Math.Abs(oldValue - seconds) > 1e-9;
 
-                _回读延时[条目.标识] = 秒;
+                _readBackDelay[Entry.Id] = seconds;
 
-                if (有变化)
+                if (hasChange)
                 {
-                    回读已变更?.Invoke(this, 条目.标识);
+                    readBackChanged?.Invoke(this, Entry.Id);
                 }
             }
-            catch (Exception 异常)
+            catch (Exception exception)
             {
                 // 单项容错：地址配错 / 无应答只跳过这一条，绝不让整轮回读失败
-                _日志.LogDebug(异常, "回读延时「{Name}」({Address}) 失败，本轮跳过", 条目.名称, 条目.地址);
+                _log.LogDebug(exception, "回读延时「{Name}」({Address}) 失败，本轮跳过", Entry.Name, Entry.Address);
             }
         }
     }
 
     /// <summary>逐条回读按钮状态。</summary>
-    private async Task 回读按钮(CancellationToken 取消令牌)
+    private async Task ReadBackButton(CancellationToken cancellationToken)
     {
-        foreach (var 条目 in _按钮)
+        foreach (var Entry in _button)
         {
-            if (!条目.启用 || string.IsNullOrWhiteSpace(条目.地址))
+            if (!Entry.Enabled || string.IsNullOrWhiteSpace(Entry.Address))
             {
                 continue;
             }
 
             try
             {
-                var 状态 = await _写入器
-                    .异步读取线圈地址(条目.地址, 取消令牌)
+                var State = await _writer
+                    .ReadCoilAddressAsync(Entry.Address, cancellationToken)
                     .ConfigureAwait(false);
 
-                var 有变化 = !_回读按钮.TryGetValue(条目.标识, out var 旧值) || 旧值 != 状态;
+                var hasChange = !_readBackButton.TryGetValue(Entry.Id, out var oldValue) || oldValue != State;
 
-                _回读按钮[条目.标识] = 状态;
+                _readBackButton[Entry.Id] = State;
 
-                if (有变化)
+                if (hasChange)
                 {
-                    回读已变更?.Invoke(this, 条目.标识);
+                    readBackChanged?.Invoke(this, Entry.Id);
                 }
             }
-            catch (Exception 异常)
+            catch (Exception exception)
             {
-                _日志.LogDebug(异常, "回读按钮「{Name}」({Address}) 失败，本轮跳过", 条目.名称, 条目.地址);
+                _log.LogDebug(exception, "回读按钮「{Name}」({Address}) 失败，本轮跳过", Entry.Name, Entry.Address);
             }
         }
     }

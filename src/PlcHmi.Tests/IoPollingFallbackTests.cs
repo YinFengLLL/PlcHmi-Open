@@ -1,12 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// X / Y 点真机采集（位区选择）回归测试。
@@ -22,18 +22,18 @@ namespace 上位机.上位机测试;
 /// 读的是测试输出目录的 <c>config/io-points.json</c>，与写该文件的用例同集合，禁用并行。</para>
 /// </summary>
 [Collection("config-files")]
-public sealed class IO位区回退测试
+public sealed class IoBitAreaFallbackTest
 {
     /// <summary>Y 区 Modbus 基址（Y0 = 64512），与 X 区相差 1024。</summary>
-    private const int Y基址 = 64512;
+    private const int YBaseAddress = 64512;
 
-    private static async Task 异步等待直到(Func<bool> 条件, string 描述, int 超时毫秒 = 8000)
+    private static async Task WaitUntilAsync(Func<bool> condition, string Description, int TimeoutMilliseconds = 8000)
     {
-        var 截止时间 = Environment.TickCount64 + 超时毫秒;
+        var truncateStopTime = Environment.TickCount64 + TimeoutMilliseconds;
 
-        while (Environment.TickCount64 < 截止时间)
+        while (Environment.TickCount64 < truncateStopTime)
         {
-            if (条件())
+            if (condition())
             {
                 return;
             }
@@ -41,180 +41,180 @@ public sealed class IO位区回退测试
             await Task.Delay(25);
         }
 
-        Assert.Fail($"等待超时：{描述}");
+        Assert.Fail($"等待超时：{Description}");
     }
 
     /// <summary>构建采集环境并启动轮询（快组 50ms；含一个 M 点标签用于验证其它采集不受牵连）。</summary>
-    private static async Task<(轮询引擎 引擎, 替身位区客户端 客户端, IO点位服务 IO表, 标签值服务 标签值)> 构建采集环境()
+    private static async Task<(PollingEngine engine, FakeBitAreaClient Client, IoPointService ioTable, TagValueService tagValue)> BuildSamplingEnvironment()
     {
-        var 客户端 = new 替身位区客户端();
-        var IO表 = new IO点位服务(new 允许全部权限守卫(), NullLogger<IO点位服务>.Instance);
+        var Client = new FakeBitAreaClient();
+        var ioTable = new IoPointService(new AllowAllPermissionGuard(), NullLogger<IoPointService>.Instance);
 
         // io-points.json 里的启用点必须还在 —— 否则本测试失去意义（防止读到被别的用例改小的表）
-        Assert.NotNull(IO表.查找点位("X0"));
-        Assert.NotNull(IO表.查找点位("X2"));
-        Assert.NotNull(IO表.查找点位("Y0"));
-        Assert.NotNull(IO表.查找点位("Y10"));
+        Assert.NotNull(ioTable.FindPoint("X0"));
+        Assert.NotNull(ioTable.FindPoint("X2"));
+        Assert.NotNull(ioTable.FindPoint("Y0"));
+        Assert.NotNull(ioTable.FindPoint("Y10"));
 
         // 一个非物理 IO 段的快组标签（M200）：用于证明 X/Y 块的失败不牵连其它采集
-        var 仓储 = new 替身标签仓储(new 标签定义
+        var Repository = new FakeTagRepository(new TagDefinition
         {
-            名称 = "测试M200",
-            地址 = "M200",
-            数据类型 = 标签数据类型.布尔,
-            访问 = 标签访问.读取,
-            分组 = 标签分组.快,
+            Name = "测试M200",
+            Address = "M200",
+            DataType = TagDataType.Boolean,
+            AccessQuery = TagAccessQuery.Read,
+            Group = TagGroup.Fast,
         });
 
-        var 标签值 = new 标签值服务(NullLogger<标签值服务>.Instance);
+        var tagValue = new TagValueService(NullLogger<TagValueService>.Instance);
 
-        var 引擎 = new 轮询引擎(
-            客户端,
-            仓储,
-            IO表,
-            new 汇川地址解析器(PLC系列.小型PLC),
-            标签值,
-            new 轮询选项 { 快间隔毫秒 = 50, 慢间隔毫秒 = 100, 事件间隔毫秒 = 100 },
-            new PLC连接选项(),
-            NullLogger<轮询引擎>.Instance);
+        var engine = new PollingEngine(
+            Client,
+            Repository,
+            ioTable,
+            new InovanceAddressParser(PlcSeries.SmallPlc),
+            tagValue,
+            new PollingOptions { FastIntervalMilliseconds = 50, SlowIntervalMilliseconds = 100, EventIntervalMilliseconds = 100 },
+            new PlcConnectionOptions(),
+            NullLogger<PollingEngine>.Instance);
 
-        await 引擎.异步启动();
+        await engine.StartAsync();
 
-        return (引擎, 客户端, IO表, 标签值);
+        return (engine, Client, ioTable, tagValue);
     }
 
     // ── 形态①：X 的首位区（离散输入）读不通 → 异常回退到线圈区 ──────────
 
     [Fact]
-    public async Task 真机_离散输入区无应答时应回退线圈区并跟随物理状态()
+    public async Task RealDevice_DiscreteInputAreaNoneShouldRespondWhenShouldFallbackCoilAreaAndFollowPhysicalState()
     {
-        var (引擎, 客户端, IO表, _) = await 构建采集环境();
+        var (engine, Client, ioTable, _) = await BuildSamplingEnvironment();
 
-        await using (引擎)
+        await using (engine)
         {
-            客户端.XY离散行为 = 位区行为.抛异常;    // X 的首位区读不通（该机型没有这块离散输入）
+            Client.XYDiscreteRowAs = BitAreaRowAs.ThrowException;    // X 的首位区读不通（该机型没有这块离散输入）
 
             // 物理状态：X0 上料到位、X2 安全门常闭、X7 急停常闭、Y0 气缸、Y10 蜂鸣器
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
-            客户端.设置物理状态(替身位区客户端.X基址 + 2, true);
-            客户端.设置物理状态(替身位区客户端.X基址 + 7, true);
-            客户端.设置物理状态(Y基址 + 0, true);
-            客户端.设置物理状态(Y基址 + 8, true);
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 2, true);
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 7, true);
+            Client.SetPhysicalState(YBaseAddress + 0, true);
+            Client.SetPhysicalState(YBaseAddress + 8, true);
 
-            await 异步等待直到(() => IO表.获取状态("X0").时间戳 != DateTime.MinValue, "X0 首轮采集");
-            await 异步等待直到(() => IO表.获取状态("Y0").时间戳 != DateTime.MinValue, "Y0 首轮采集");
+            await WaitUntilAsync(() => ioTable.GetState("X0").timeStamp != DateTime.MinValue, "X0 首轮采集");
+            await WaitUntilAsync(() => ioTable.GetState("Y0").timeStamp != DateTime.MinValue, "Y0 首轮采集");
 
             // 展示值 = 真机物理状态（常闭点按配置反相）
-            Assert.Equal(!IO表.查找点位("X0")!.取反, IO表.获取状态("X0").是否开启);
-            Assert.Equal(!IO表.查找点位("X2")!.取反, IO表.获取状态("X2").是否开启);
-            Assert.Equal(!IO表.查找点位("X7")!.取反, IO表.获取状态("X7").是否开启);
-            Assert.True(IO表.获取状态("Y0").是否开启, "Y0 气缸物理闭合时应为 ON");
-            Assert.True(IO表.获取状态("Y10").是否开启, "Y10 蜂鸣器物理闭合时应为 ON");
+            Assert.Equal(!ioTable.FindPoint("X0")!.Negate, ioTable.GetState("X0").IsOpenStart);
+            Assert.Equal(!ioTable.FindPoint("X2")!.Negate, ioTable.GetState("X2").IsOpenStart);
+            Assert.Equal(!ioTable.FindPoint("X7")!.Negate, ioTable.GetState("X7").IsOpenStart);
+            Assert.True(ioTable.GetState("Y0").IsOpenStart, "Y0 气缸物理闭合时应为 ON");
+            Assert.True(ioTable.GetState("Y10").IsOpenStart, "Y10 蜂鸣器物理闭合时应为 ON");
 
             // 对比项：未闭合的点必须为 OFF（防止"读出全 1"这类假成功）
-            Assert.False(IO表.获取状态("X1").是否开启, "X1 物理断开时应为 OFF");
-            Assert.False(IO表.获取状态("X10").是否开启, "X10 物理断开时应为 OFF");
+            Assert.False(ioTable.GetState("X1").IsOpenStart, "X1 物理断开时应为 OFF");
+            Assert.False(ioTable.GetState("X10").IsOpenStart, "X10 物理断开时应为 OFF");
 
             // 实时性：物理状态变化后展示值必须跟着变（不是停在首轮的固定值）
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, false);
-            await 异步等待直到(() => !IO表.获取状态("X0").是否开启, "X0 物理断开后应变为 OFF");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, false);
+            await WaitUntilAsync(() => !ioTable.GetState("X0").IsOpenStart, "X0 物理断开后应变为 OFF");
 
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
-            await 异步等待直到(() => IO表.获取状态("X0").是否开启, "X0 物理闭合后应恢复 ON");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
+            await WaitUntilAsync(() => ioTable.GetState("X0").IsOpenStart, "X0 物理闭合后应恢复 ON");
         }
     }
 
     // ── 形态②：X 的首位区读取成功但恒 0、另一位区有物理信号 → 自愈切换 ──
 
     [Fact]
-    public async Task 真机_离散输入区恒读零时应切到有信号的线圈区并跟随物理状态()
+    public async Task RealDevice_DiscreteInputAreaAlwaysReadZeroWhenShouldSwitchToHasSignalCoilAreaAndFollowPhysicalState()
     {
-        var (引擎, 客户端, IO表, _) = await 构建采集环境();
+        var (engine, Client, ioTable, _) = await BuildSamplingEnvironment();
 
-        await using (引擎)
+        await using (engine)
         {
-            客户端.XY离散行为 = 位区行为.恒读零;    // 离散区读取"成功"但恒 0（该机型 X 在线圈表）
-            客户端.XY线圈行为 = 位区行为.按物理状态; // 物理状态在线圈区
+            Client.XYDiscreteRowAs = BitAreaRowAs.AlwaysReadZero;    // 离散区读取"成功"但恒 0（该机型 X 在线圈表）
+            Client.XYCoilRowAs = BitAreaRowAs.ByPhysicalState; // 物理状态在线圈区
 
             // 初始全部断开（两个位区都是 0）：此时不应有值，也不该误切
-            await 异步等待直到(() => IO表.获取状态("X0").时间戳 != DateTime.MinValue, "X0 首轮采集");
-            Assert.False(IO表.获取状态("X0").是否开启, "物理断开时应为 OFF");
+            await WaitUntilAsync(() => ioTable.GetState("X0").timeStamp != DateTime.MinValue, "X0 首轮采集");
+            Assert.False(ioTable.GetState("X0").IsOpenStart, "物理断开时应为 OFF");
 
             // 任一点闭合 → 下一周期探测到线圈区的信号 → 切换并展示
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
-            await 异步等待直到(() => IO表.获取状态("X0").是否开启, "X0 闭合后应经线圈区读到 ON");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
+            await WaitUntilAsync(() => ioTable.GetState("X0").IsOpenStart, "X0 闭合后应经线圈区读到 ON");
 
             // Y 一直在线圈区（默认），同样应读到物理状态
-            客户端.设置物理状态(Y基址 + 0, true);
-            await 异步等待直到(() => IO表.获取状态("Y0").是否开启, "Y0 闭合后应读到 ON");
+            Client.SetPhysicalState(YBaseAddress + 0, true);
+            await WaitUntilAsync(() => ioTable.GetState("Y0").IsOpenStart, "Y0 闭合后应读到 ON");
 
             // 切换之后持续跟随物理变化（100ms 周期实时性）
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, false);
-            await 异步等待直到(() => !IO表.获取状态("X0").是否开启, "X0 断开后应回到 OFF");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, false);
+            await WaitUntilAsync(() => !ioTable.GetState("X0").IsOpenStart, "X0 断开后应回到 OFF");
 
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
-            await 异步等待直到(() => IO表.获取状态("X0").是否开启, "X0 再次闭合后应恢复 ON");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
+            await WaitUntilAsync(() => ioTable.GetState("X0").IsOpenStart, "X0 再次闭合后应恢复 ON");
 
             // 常闭点经切换后采集仍按配置反相（X2 取反：原始闭合 → 逻辑 OFF）
-            var X2刷新前 = IO表.获取状态("X2").时间戳;
-            var X2期望值 = !IO表.查找点位("X2")!.取反;
-            客户端.设置物理状态(替身位区客户端.X基址 + 2, true);
-            await 异步等待直到(
-                () => IO表.获取状态("X2").时间戳 > X2刷新前
-                      && IO表.获取状态("X2").是否开启 == X2期望值,
+            var x2RefreshBefore = ioTable.GetState("X2").timeStamp;
+            var x2ExpectedValue = !ioTable.FindPoint("X2")!.Negate;
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 2, true);
+            await WaitUntilAsync(
+                () => ioTable.GetState("X2").timeStamp > x2RefreshBefore
+                      && ioTable.GetState("X2").IsOpenStart == x2ExpectedValue,
                 "X2 闭合后应刷新为反相逻辑值");
-            Assert.Equal(X2期望值, IO表.获取状态("X2").是否开启);
+            Assert.Equal(x2ExpectedValue, ioTable.GetState("X2").IsOpenStart);
 
             // 切换成功后走的是线圈区：应随周期持续读取（取样后再比较，避免与用例耗时耦合）
-            var 切换后线圈读次数 = 客户端.X段线圈读次数;
+            var switchAfterCoilReadCount = Client.XSectionCoilReadCount;
             await Task.Delay(300);
 
-            Assert.True(客户端.X段线圈读次数 > 切换后线圈读次数,
-                $"线圈区应持续读取，实际 {客户端.X段线圈读次数}");
+            Assert.True(Client.XSectionCoilReadCount > switchAfterCoilReadCount,
+                $"线圈区应持续读取，实际 {Client.XSectionCoilReadCount}");
         }
     }
 
     // ── 标准固件：X 就在离散输入区 → 不得误切，空闲时零探测开销 ────────
 
     [Fact]
-    public async Task 标准固件_离散输入区有信号时不得切换到线圈区()
+    public async Task StandardFirmItem_DiscreteInputAreaHasSignalWhenMustNotSwitchToCoilArea()
     {
-        var (引擎, 客户端, IO表, _) = await 构建采集环境();
+        var (engine, Client, ioTable, _) = await BuildSamplingEnvironment();
 
-        await using (引擎)
+        await using (engine)
         {
-            客户端.XY离散行为 = 位区行为.按物理状态;  // 离散区就是物理 IO（当前口径的默认）
-            客户端.XY线圈行为 = 位区行为.抛异常;       // 备用位区不可用（不该被探到）
+            Client.XYDiscreteRowAs = BitAreaRowAs.ByPhysicalState;  // 离散区就是物理 IO（当前口径的默认）
+            Client.XYCoilRowAs = BitAreaRowAs.ThrowException;       // 备用位区不可用（不该被探到）
 
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
-            客户端.设置物理状态(Y基址 + 0, true);     // 两个块都有信号：都不该探测备用位区
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
+            Client.SetPhysicalState(YBaseAddress + 0, true);     // 两个块都有信号：都不该探测备用位区
 
-            await 异步等待直到(() => IO表.获取状态("X0").是否开启, "X0 应从离散输入区读到 ON");
+            await WaitUntilAsync(() => ioTable.GetState("X0").IsOpenStart, "X0 应从离散输入区读到 ON");
 
             // 有信号时不探测备用位区（零开销）——Y 走线圈区，故只断言 X 地址段
-            Assert.Equal(0, 客户端.X段线圈读次数);
+            Assert.Equal(0, Client.XSectionCoilReadCount);
 
             // 全部断开（全 0）→ 离散区已证明是活的（X0 曾闭合）→ 不再探测备用位区。
             // 2026-10-15 修复前：此处会探测备用区，连续 3 次失败后停——而一旦备用区
             // 返回无关位（失效形态③），整块就被永久切到错误位区（现场 X 区错乱的真因）。
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, false);
-            await 异步等待直到(() => !IO表.获取状态("X0").是否开启, "X0 断开后应为 OFF");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, false);
+            await WaitUntilAsync(() => !ioTable.GetState("X0").IsOpenStart, "X0 断开后应为 OFF");
 
-            var X时间戳 = IO表.获取状态("X0").时间戳;
+            var xTimeStamp = ioTable.GetState("X0").timeStamp;
 
             await Task.Delay(350);
 
             // ① 主区被证明是活的之后，任何全 0 都不再触发探测（零开销、无误切风险）
-            Assert.Equal(0, 客户端.X段线圈读次数);
+            Assert.Equal(0, Client.XSectionCoilReadCount);
 
             // ② 主通道不受影响：离散输入区仍每周期读取、时间戳推进
-            Assert.True(客户端.X段离散读次数 > 6,
-                $"离散输入区应持续读取，实际 {客户端.X段离散读次数}");
-            Assert.True(IO表.获取状态("X0").时间戳 > X时间戳, "X0 时间戳应随周期推进");
+            Assert.True(Client.XSectionDiscreteReadCount > 6,
+                $"离散输入区应持续读取，实际 {Client.XSectionDiscreteReadCount}");
+            Assert.True(ioTable.GetState("X0").timeStamp > xTimeStamp, "X0 时间戳应随周期推进");
 
             // ③ 物理信号恢复时主通道立即恢复展示（没有误切到线圈区）
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
-            await 异步等待直到(() => IO表.获取状态("X0").是否开启, "X0 闭合后应恢复 ON");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
+            await WaitUntilAsync(() => ioTable.GetState("X0").IsOpenStart, "X0 闭合后应恢复 ON");
         }
     }
 
@@ -227,44 +227,44 @@ public sealed class IO位区回退测试
     /// 错误位区。始终有信号的块（Y、其余 X）从未探测所以正常——正是报障的分布特征。</para>
     /// </summary>
     [Fact]
-    public async Task 真机_主区曾有信号时不得被备用区的无关位误导()
+    public async Task RealDevice_MasterAreaEverHasSignalWhenMustNotBeSpareAreaNoneCloseBitWrongDerive()
     {
-        var (引擎, 客户端, IO表, _) = await 构建采集环境();
+        var (engine, Client, ioTable, _) = await BuildSamplingEnvironment();
 
-        await using (引擎)
+        await using (engine)
         {
-            客户端.XY离散行为 = 位区行为.按物理状态;  // 离散区就是物理 IO（权威主区）
-            客户端.XY线圈行为 = 位区行为.按物理状态;  // 备用区也有数据（无关/杂散）
+            Client.XYDiscreteRowAs = BitAreaRowAs.ByPhysicalState;  // 离散区就是物理 IO（权威主区）
+            Client.XYCoilRowAs = BitAreaRowAs.ByPhysicalState;  // 备用区也有数据（无关/杂散）
 
             // X0 先闭合一次：证明离散区是活的；Y0 常闭：Y 块同样证明活性、不参与探测
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
-            客户端.设置物理状态(Y基址 + 0, true);
-            await 异步等待直到(() => IO表.获取状态("X0").是否开启, "X0 首轮应读到 ON");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
+            Client.SetPhysicalState(YBaseAddress + 0, true);
+            await WaitUntilAsync(() => ioTable.GetState("X0").IsOpenStart, "X0 首轮应读到 ON");
 
             // 机器空闲：全部输入物理断开；同时备用区（线圈区）出现无关位
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, false);
-            客户端.设置线圈附加位(替身位区客户端.X基址 + 5, true);   // X6 的杂散位
-            客户端.设置线圈附加位(替身位区客户端.X基址 + 11, true);  // X13 的杂散位
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, false);
+            Client.SetCoilAdditionalBit(FakeBitAreaClient.XBaseAddress + 5, true);   // X6 的杂散位
+            Client.SetCoilAdditionalBit(FakeBitAreaClient.XBaseAddress + 11, true);  // X13 的杂散位
 
-            await 异步等待直到(() => !IO表.获取状态("X0").是否开启, "X0 物理断开后应为 OFF");
+            await WaitUntilAsync(() => !ioTable.GetState("X0").IsOpenStart, "X0 物理断开后应为 OFF");
 
-            var X时间戳 = IO表.获取状态("X0").时间戳;
+            var xTimeStamp = ioTable.GetState("X0").timeStamp;
 
             await Task.Delay(350);
 
             // ① 绝不被误导：主区证明过活性后，即使备用区有无关位也不探测、不切换
-            Assert.Equal(0, 客户端.X段线圈读次数);
+            Assert.Equal(0, Client.XSectionCoilReadCount);
 
             // ② 展示值始终跟随物理状态（杂散位不得漏到任何 X 点上）
-            Assert.False(IO表.获取状态("X0").是否开启, "X0 应保持 OFF");
-            Assert.False(IO表.获取状态("X6").是否开启, "X6 未启用也不得显示杂散位的 ON");
+            Assert.False(ioTable.GetState("X0").IsOpenStart, "X0 应保持 OFF");
+            Assert.False(ioTable.GetState("X6").IsOpenStart, "X6 未启用也不得显示杂散位的 ON");
 
             // ③ 时间戳持续推进（采集没有停）
-            Assert.True(IO表.获取状态("X0").时间戳 > X时间戳, "X0 时间戳应随周期推进");
+            Assert.True(ioTable.GetState("X0").timeStamp > xTimeStamp, "X0 时间戳应随周期推进");
 
             // ④ 物理信号恢复后立即正确展示
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
-            await 异步等待直到(() => IO表.获取状态("X0").是否开启, "X0 闭合后应恢复 ON");
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
+            await WaitUntilAsync(() => ioTable.GetState("X0").IsOpenStart, "X0 闭合后应恢复 ON");
         }
     }
 
@@ -275,77 +275,77 @@ public sealed class IO位区回退测试
     /// 用配置显式指定 <c>X区域=线圈</c> 直接走 FC01，不猜、不切。
     /// </summary>
     [Fact]
-    public async Task 配置覆盖_X区域线圈时应直接走FC01读取()
+    public async Task ConfigOverwrite_XAreaCoilWhenShouldDirectConnectUseFC01Read()
     {
-        var (引擎, 客户端, IO表, _) = await 构建采集环境();
+        var (engine, Client, ioTable, _) = await BuildSamplingEnvironment();
 
         // 显式覆盖：X 区位区 = 线圈（与默认相反，验证覆盖在两个方向都有效）
-        IO表.表格.元.X区域 = "线圈";
+        ioTable.DataGrid.Element.XArea = "线圈";
 
         // 覆盖后重建采集计划才会生效（与现场改 io-points.json 后重启同路径）
-        await 引擎.异步重建方案列表();
+        await engine.RebuildPlanListAsync();
 
-        await using (引擎)
+        await using (engine)
         {
-            客户端.XY线圈行为 = 位区行为.按物理状态;
-            客户端.XY离散行为 = 位区行为.按物理状态;
+            Client.XYCoilRowAs = BitAreaRowAs.ByPhysicalState;
+            Client.XYDiscreteRowAs = BitAreaRowAs.ByPhysicalState;
 
-            客户端.设置物理状态(替身位区客户端.X基址 + 0, true);
+            Client.SetPhysicalState(FakeBitAreaClient.XBaseAddress + 0, true);
 
-            await 异步等待直到(() => IO表.获取状态("X0").是否开启, "X0 应经线圈区读到 ON");
+            await WaitUntilAsync(() => ioTable.GetState("X0").IsOpenStart, "X0 应经线圈区读到 ON");
 
-            var 覆盖后X段线圈读次数 = 客户端.X段线圈读次数;
-            var 覆盖后X段离散读次数 = 客户端.X段离散读次数;
+            var overwriteAfterXSectionCoilReadCount = Client.XSectionCoilReadCount;
+            var overwriteAfterXSectionDiscreteReadCount = Client.XSectionDiscreteReadCount;
 
             await Task.Delay(350);
 
             // X 块只走线圈区：线圈读次数持续增长，离散读次数不再变化
-            Assert.True(客户端.X段线圈读次数 > 覆盖后X段线圈读次数,
-                $"线圈区应持续读取，实际 {客户端.X段线圈读次数}");
-            Assert.Equal(覆盖后X段离散读次数, 客户端.X段离散读次数);
+            Assert.True(Client.XSectionCoilReadCount > overwriteAfterXSectionCoilReadCount,
+                $"线圈区应持续读取，实际 {Client.XSectionCoilReadCount}");
+            Assert.Equal(overwriteAfterXSectionDiscreteReadCount, Client.XSectionDiscreteReadCount);
         }
     }
 
     // ── 共同约束：单块故障不牵连同周期其它采集 ───────────────────────────
 
     [Fact]
-    public async Task 真机_位区切换只探测一次且不中断其它采集()
+    public async Task RealDevice_BitAreaSwitchOnlyProbeOnceAndNotDisconnectOtherSampling()
     {
-        var (引擎, 客户端, IO表, 标签值) = await 构建采集环境();
+        var (engine, Client, ioTable, tagValue) = await BuildSamplingEnvironment();
 
-        await using (引擎)
+        await using (engine)
         {
             // X 的首位区（离散输入）读不通：抛异常 → 回退线圈区并记住
-            客户端.XY离散行为 = 位区行为.抛异常;
+            Client.XYDiscreteRowAs = BitAreaRowAs.ThrowException;
 
             // 等首轮把 X / Y 两块都跑完
-            await 异步等待直到(
-                () => IO表.获取状态("X0").时间戳 != DateTime.MinValue
-                      && IO表.获取状态("Y0").时间戳 != DateTime.MinValue
-                      && 标签值.获取新值("测试M200").是否有效,
+            await WaitUntilAsync(
+                () => ioTable.GetState("X0").timeStamp != DateTime.MinValue
+                      && ioTable.GetState("Y0").timeStamp != DateTime.MinValue
+                      && tagValue.GetNewValue("测试M200").IsValid,
                 "X / Y 首轮采集");
 
             // 回退后的空闲探测也要收敛（连续 3 次失败后停止）后再取样
             await Task.Delay(400);
 
-            var X时间戳 = IO表.获取状态("X0").时间戳;
-            var 标签时间戳 = 标签值.获取新值("测试M200").时间戳;
-            var 离散尝试次数 = 客户端.物理Io离散读次数;
+            var xTimeStamp = ioTable.GetState("X0").timeStamp;
+            var tagTimeStamp = tagValue.GetNewValue("测试M200").timeStamp;
+            var discreteTryCount = Client.PhysicalIoDiscreteReadCount;
 
             // 再跑若干个快组周期（50ms × 6 以上）
             await Task.Delay(400);
 
             // ① 位区选择已收敛：不再回到读不通的离散区反复试错
-            Assert.Equal(离散尝试次数, 客户端.物理Io离散读次数);
+            Assert.Equal(discreteTryCount, Client.PhysicalIoDiscreteReadCount);
 
             // ② X / Y 持续刷新（不是首轮之后冻结在默认值）
-            Assert.True(IO表.获取状态("X0").时间戳 > X时间戳, "X0 时间戳应随周期推进");
-            Assert.True(IO表.获取状态("Y0").时间戳 != DateTime.MinValue, "Y0 应被持续采集");
+            Assert.True(ioTable.GetState("X0").timeStamp > xTimeStamp, "X0 时间戳应随周期推进");
+            Assert.True(ioTable.GetState("Y0").timeStamp != DateTime.MinValue, "Y0 应被持续采集");
 
             // ③ 其它采集不受牵连：同周期的标签轮询照常运行
-            Assert.True(标签值.获取新值("测试M200").时间戳 > 标签时间戳, "标签时间戳应随周期推进");
-            Assert.True(客户端.标签线圈读次数 > 6,
-                $"非物理 IO 段的线圈读取应持续进行，实际 {客户端.标签线圈读次数}");
+            Assert.True(tagValue.GetNewValue("测试M200").timeStamp > tagTimeStamp, "标签时间戳应随周期推进");
+            Assert.True(Client.TagCoilReadCount > 6,
+                $"非物理 IO 段的线圈读取应持续进行，实际 {Client.TagCoilReadCount}");
         }
     }
 }

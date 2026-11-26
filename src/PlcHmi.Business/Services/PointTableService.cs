@@ -1,13 +1,13 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.通信.Modbus;
-using 上位机.通信.配方;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Communication.Recipe;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 通用点表服务：锁附示教与点胶示教共用同一套读写。
@@ -18,328 +18,328 @@ namespace 上位机.业务.服务;
 /// <para><b>写入时机硬约束：</b>只有在「保存坐标点」或「参数写入」时才写 PLC；
 /// 下发前逐点做坐标范围校验，防止从未示教的空点把轴驱动到原点。</para>
 /// </summary>
-public sealed partial class 点表服务 : 点表服务接口
+public sealed partial class PointTableService : IPointTableService
 {
-    private readonly Modbus客户端接口 _客户端;
-    private readonly 标签值服务接口 _值列表;
-    private readonly 配方服务接口 _配方;
-    private readonly 配方配置 _配置;
-    private readonly 权限守卫接口 _权限;
-    private readonly ILogger<点表服务> _日志;
+    private readonly IModbusClient _client;
+    private readonly ITagValueService _valueList;
+    private readonly IRecipeService _recipe;
+    private readonly RecipeConfig _config;
+    private readonly IPermissionGuard _permission;
+    private readonly ILogger<PointTableService> _log;
 
     /// <summary>表键 → 地址映射。</summary>
-    private readonly Dictionary<string, 点表地址映射> _映射 = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PointTableAddressMap> _map = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>表键 → 当前行缓存（永远包含全部点）。</summary>
-    private readonly Dictionary<string, List<点值行>> _缓存 = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<PointValueRow>> _bufferStore = new(StringComparer.OrdinalIgnoreCase);
 
-    public 点表服务(
-        Modbus客户端接口 客户端,
-        标签值服务接口 值列表,
-        配方服务接口 配方,
-        配方配置 配置对象,
-        权限守卫接口 权限,
-        ILogger<点表服务> 日志)
+    public PointTableService(
+        IModbusClient Client,
+        ITagValueService ValueList,
+        IRecipeService Recipe,
+        RecipeConfig configPairObject,
+        IPermissionGuard Permission,
+        ILogger<PointTableService> Log)
     {
-        _客户端 = 客户端;
-        _值列表 = 值列表;
-        _配方 = 配方;
-        _配置 = 配置对象;
-        _权限 = 权限;
-        _日志 = 日志;
+        _client = Client;
+        _valueList = ValueList;
+        _recipe = Recipe;
+        _config = configPairObject;
+        _permission = Permission;
+        _log = Log;
 
-        foreach (var 表项 in _配置.点表.点表)
+        foreach (var TableEntry in _config.PointTable.PointTable)
         {
-            _映射[表项.键] = new 点表地址映射(表项);
-            _缓存[表项.键] = 全空行(表项);
+            _map[TableEntry.Key] = new PointTableAddressMap(TableEntry);
+            _bufferStore[TableEntry.Key] = AllEmptyLine(TableEntry);
         }
     }
 
     /// <inheritdoc />
-    public event EventHandler<string>? 点表已变更;
+    public event EventHandler<string>? pointTableChanged;
 
     /// <inheritdoc />
-    public IReadOnlyList<点表定义> 全部点表 => _配置.点表.点表;
+    public IReadOnlyList<PointTableDefinition> AllPointTable => _config.PointTable.PointTable;
 
     /// <inheritdoc />
-    public 点表定义 表(string 键) =>
-        _配置.点表.查找(键)
+    public PointTableDefinition Table(string Key) =>
+        _config.PointTable.Find(Key)
         ?? throw new InvalidOperationException(
-            $"未配置点表「{键}」（config/recipe-config.json 的 pointTables）。");
+            $"未配置点表「{Key}」（config/recipe-config.json 的 pointTables）。");
 
     /// <inheritdoc />
-    public int 点数(string 键) => _映射[表(键).键].点数;
+    public int PointCount(string Key) => _map[Table(Key).Key].PointCount;
 
     /// <inheritdoc />
     /// <remarks>
     /// 返回内部行缓存（列表结构在建表后稳定，仅元素值会变）。
     /// <b>仅限界面线程访问</b>：采集/后台线程请改用事件 + 深拷贝口径。
     /// </remarks>
-    public IReadOnlyList<点值行> 当前点表(string 键) => _缓存[表(键).键];
+    public IReadOnlyList<PointValueRow> CurrentPointTable(string Key) => _bufferStore[Table(Key).Key];
 
     // ── 初始化与加载 ────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public Task 异步初始化(CancellationToken 取消令牌 = default)
+    public Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        foreach (var 表项 in _配置.点表.点表)
+        foreach (var TableEntry in _config.PointTable.PointTable)
         {
-            从机种快照填充(表项);
+            SlaveStationKindSnapshotFill(TableEntry);
         }
 
-        _日志.LogInformation(
+        _log.LogInformation(
             "已按机种 {No} 的快照载入 {Count} 张点表",
-            _配方.当前配方号, _配置.点表.点表.Count);
+            _recipe.CurrentRecipeNumber, _config.PointTable.PointTable.Count);
 
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public Task 异步加载点表(string 键, CancellationToken 取消令牌 = default)
+    public Task LoadPointTableAsync(string Key, CancellationToken cancellationToken = default)
     {
-        var 表项 = 表(键);
+        var TableEntry = Table(Key);
 
-        从机种快照填充(表项);
-        点表已变更?.Invoke(this, 表项.键);
+        SlaveStationKindSnapshotFill(TableEntry);
+        pointTableChanged?.Invoke(this, TableEntry.Key);
 
-        _日志.LogDebug("已按机种快照载入点表 {Table}", 表项.显示名称);
+        _log.LogDebug("已按机种快照载入点表 {Table}", TableEntry.DisplayName);
         return Task.CompletedTask;
     }
 
     // ── 内存编辑 ────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public void 设置点值(string 键, int 序号, string 列键, double 值)
+    public void SetPointValue(string Key, int Sequence, string ColumnKey, double Value)
     {
-        var 表项 = 表(键);
-        var 映射项 = _映射[表项.键];
+        var TableEntry = Table(Key);
+        var mapItem = _map[TableEntry.Key];
 
-        if (!映射项.序号合法(序号))
+        if (!mapItem.IndexValid(Sequence))
         {
             return;
         }
 
-        var 行项 = _缓存[表项.键][序号];
+        var rowItem = _bufferStore[TableEntry.Key][Sequence];
 
         // 变化检测：值没变不发事件。曾经每次调用都触发 点表已变更，
         // 界面为整行重建行 VM——输入框每键触发（即使值相同）都在白做工
-        if (行项.取(列键) == 值)
+        if (rowItem.Take(ColumnKey) == Value)
         {
             return;
         }
 
-        行项.设(列键, 值);
-        点表已变更?.Invoke(this, 表项.键);
+        rowItem.setup(ColumnKey, Value);
+        pointTableChanged?.Invoke(this, TableEntry.Key);
     }
 
     /// <inheritdoc />
-    public void 清空点(string 键, int 序号)
+    public void ClearEmptyPoint(string Key, int Sequence)
     {
-        var 表项 = 表(键);
-        var 映射项 = _映射[表项.键];
+        var TableEntry = Table(Key);
+        var mapItem = _map[TableEntry.Key];
 
-        if (!映射项.序号合法(序号))
+        if (!mapItem.IndexValid(Sequence))
         {
             return;
         }
 
-        _缓存[表项.键][序号] = new 点值行 { 序号 = 序号 };
-        _日志.LogInformation("已清空 {Table} 第 {Point} 点", 表项.显示名称, 序号 + 1);
-        点表已变更?.Invoke(this, 表项.键);
+        _bufferStore[TableEntry.Key][Sequence] = new PointValueRow { Sequence = Sequence };
+        _log.LogInformation("已清空 {Table} 第 {Point} 点", TableEntry.DisplayName, Sequence + 1);
+        pointTableChanged?.Invoke(this, TableEntry.Key);
     }
 
     /// <inheritdoc />
-    public 点值行 读取当前位置(string 键)
+    public PointValueRow ReadCurrentPosition(string Key)
     {
-        var 表项 = 表(键);
-        var 映射项 = _映射[表项.键];
+        var TableEntry = Table(Key);
+        var mapItem = _map[TableEntry.Key];
 
         // 从空行出发：只填"参与保存坐标且带位置标签"的列。
         // 其余列（指令码、浮高，或本表未列入 保存坐标列 的轴）由调用方沿用目标点自身的值，
         // 不能借别的点的缓存来填——否则会把第 1 点的指令码/浮高复制到所选点。
-        var 行项 = new 点值行();
+        var rowItem = new PointValueRow();
 
-        foreach (var 列项 in 表项.坐标列)
+        foreach (var columnItem in TableEntry.CoordinateColumn)
         {
-            if (string.IsNullOrWhiteSpace(列项.位置标签) || !表项.是否参与保存坐标(列项.键))
+            if (string.IsNullOrWhiteSpace(columnItem.PositionTag) || !TableEntry.IsAndSaveCoordinate(columnItem.Key))
             {
                 continue;
             }
 
             // 浮高来自测高地址（D240），不是 Z 轴位置：这里不填，由 异步示教当前位置 单独读
-            if (是浮高表(表项)
-                && string.Equals(列项.键, 浮高列键, StringComparison.OrdinalIgnoreCase))
+            if (IsFloatHeightTable(TableEntry)
+                && string.Equals(columnItem.Key, floatHeightColumnKey, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            if (_值列表.尝试获取双精度(列项.位置标签, out var 值))
+            if (_valueList.TryGetDouble(columnItem.PositionTag, out var Value))
             {
-                行项.设(列项.键, 值);
+                rowItem.setup(columnItem.Key, Value);
             }
         }
 
-        _ = 映射项;
-        return 行项;
+        _ = mapItem;
+        return rowItem;
     }
 
     // ── 示教与下发 ──────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task 异步示教当前位置(string 键, int 序号, CancellationToken 取消令牌 = default)
+    public async Task TeachCurrentPositionAsync(string Key, int Sequence, CancellationToken cancellationToken = default)
     {
-        _权限.要求(权限.编辑示教);
+        _permission.WantRequire(Permission.EditTeach);
 
-        var 表项 = 表(键);
-        var 映射项 = _映射[表项.键];
+        var TableEntry = Table(Key);
+        var mapItem = _map[TableEntry.Key];
 
-        if (!映射项.序号合法(序号))
+        if (!mapItem.IndexValid(Sequence))
         {
-            throw new ArgumentOutOfRangeException(nameof(序号), 序号, "点序号超出范围。");
+            throw new ArgumentOutOfRangeException(nameof(Sequence), Sequence, "点序号超出范围。");
         }
 
-        var 采集值 = 读取当前位置(键);
-        var 行项 = _缓存[表项.键][序号];
+        var samplingValue = ReadCurrentPosition(Key);
+        var rowItem = _bufferStore[TableEntry.Key][Sequence];
 
         // 浮高只对锁附表生效（2026-10-24 现场口径：点胶示教不写浮高）。
         // 由测高机构给出（独立地址），不是任何轴的位置：配了地址就必须读成功，
         // 否则宁可不示教——把 Z 轴位置或 0 写进浮高列更难查
-        var 需要浮高 = 是浮高表(表项)
-                       && 表项.查找列(浮高列键) is not null
-                       && 表项.是否参与保存坐标(浮高列键);
+        var needFloatHeight = IsFloatHeightTable(TableEntry)
+                       && TableEntry.FindColumn(floatHeightColumnKey) is not null
+                       && TableEntry.IsAndSaveCoordinate(floatHeightColumnKey);
 
-        var 浮高值 = 需要浮高 ? await 异步读取浮高(表项, 取消令牌).ConfigureAwait(false) : null;
+        var floatHeightValue = needFloatHeight ? await ReadFloatHeightAsync(TableEntry, cancellationToken).ConfigureAwait(false) : null;
 
-        if (需要浮高 && 浮高值 is null)
+        if (needFloatHeight && floatHeightValue is null)
         {
             throw new InvalidOperationException(
-                $"读取当前浮高（D{表项.当前浮高地址}）失败，已拒绝示教——避免把错误的浮高写进点表。");
+                $"读取当前浮高（D{TableEntry.CurrentFloatHeightAddress}）失败，已拒绝示教——避免把错误的浮高写进点表。");
         }
 
-        foreach (var 列项 in 表项.列)
+        foreach (var columnItem in TableEntry.Column)
         {
-            var 用当前位置 = !string.IsNullOrWhiteSpace(列项.位置标签) && 表项.是否参与保存坐标(列项.键);
-            var 值 = 用当前位置 ? 采集值.取(列项.键) : 行项.取(列项.键);
+            var useCurrentPosition = !string.IsNullOrWhiteSpace(columnItem.PositionTag) && TableEntry.IsAndSaveCoordinate(columnItem.Key);
+            var Value = useCurrentPosition ? samplingValue.Take(columnItem.Key) : rowItem.Take(columnItem.Key);
 
-            if (用当前位置
-                && 浮高值 is { } 已有浮高
-                && string.Equals(列项.键, 浮高列键, StringComparison.OrdinalIgnoreCase))
+            if (useCurrentPosition
+                && floatHeightValue is { } alreadyHasFloatHeight
+                && string.Equals(columnItem.Key, floatHeightColumnKey, StringComparison.OrdinalIgnoreCase))
             {
-                值 = 已有浮高;
+                Value = alreadyHasFloatHeight;
             }
 
-            if (列项.数据类型 != 标签数据类型.UInt16 && 列项.数据类型 != 标签数据类型.Int16
-                && (值 < 表项.最小值 || 值 > 表项.最大值))
+            if (columnItem.DataType != TagDataType.UInt16 && columnItem.DataType != TagDataType.Int16
+                && (Value < TableEntry.MinValue || Value > TableEntry.MaxValue))
             {
                 throw new InvalidOperationException(
-                    $"当前位置 {列项.显示名称} = {值:0.00} 超出允许范围"
-                    + $"（{表项.最小值:0.00} ~ {表项.最大值:0.00}），已拒绝示教。");
+                    $"当前位置 {columnItem.DisplayName} = {Value:0.00} 超出允许范围"
+                    + $"（{TableEntry.MinValue:0.00} ~ {TableEntry.MaxValue:0.00}），已拒绝示教。");
             }
 
-            行项.设(列项.键, 值);
+            rowItem.setup(columnItem.Key, Value);
         }
 
-        await 异步写入单点(表项, 映射项, 序号, 取消令牌).ConfigureAwait(false);
+        await WriteSinglePointAsync(TableEntry, mapItem, Sequence, cancellationToken).ConfigureAwait(false);
 
         // 不带落盘 point-tables.json（点表整段属于机种），但必须把这个点并入机种快照：
         // 否则"示教完切页再回来"同样会看到旧值（与下发同一条数据链）
-        await 异步并入机种快照(表项, [序号], 取消令牌).ConfigureAwait(false);
+        await AndInMachineModelSnapshotAsync(TableEntry, [Sequence], cancellationToken).ConfigureAwait(false);
 
-        _日志.LogInformation("{Table} 已示教第 {Point} 点并保存到本机种", 表项.显示名称, 序号 + 1);
-        点表已变更?.Invoke(this, 表项.键);
+        _log.LogInformation("{Table} 已示教第 {Point} 点并保存到本机种", TableEntry.DisplayName, Sequence + 1);
+        pointTableChanged?.Invoke(this, TableEntry.Key);
     }
 
     /// <inheritdoc />
-    public async Task 异步写入点表(string 键, CancellationToken 取消令牌 = default)
+    public async Task WritePointTableAsync(string Key, CancellationToken cancellationToken = default)
     {
-        _权限.要求(权限.编辑示教);
+        _permission.WantRequire(Permission.EditTeach);
 
-        var 表项 = 表(键);
-        var 映射项 = _映射[表项.键];
+        var TableEntry = Table(Key);
+        var mapItem = _map[TableEntry.Key];
 
-        if (!_客户端.是否已连接)
+        if (!_client.IsConnected)
         {
             throw new InvalidOperationException("PLC 未连接，无法下发点表。");
         }
 
         // 下发前逐点校验：未示教的点缓存的是 0，直接写会把轴驱动到原点
-        var 无效 = new List<string>();
+        var Invalid = new List<string>();
 
-        for (var 序号 = 0; 序号 < 映射项.点数; 序号++)
+        for (var Sequence = 0; Sequence < mapItem.PointCount; Sequence++)
         {
-            var 行项 = _缓存[表项.键][序号];
+            var rowItem = _bufferStore[TableEntry.Key][Sequence];
 
-            foreach (var 列项 in 表项.坐标列)
+            foreach (var columnItem in TableEntry.CoordinateColumn)
             {
-                var 值 = 行项.取(列项.键);
+                var Value = rowItem.Take(columnItem.Key);
 
-                if (值 < 表项.最小值 || 值 > 表项.最大值)
+                if (Value < TableEntry.MinValue || Value > TableEntry.MaxValue)
                 {
-                    无效.Add($"第 {序号 + 1:00} 点 {列项.显示名称}（{值:0.##}）");
+                    Invalid.Add($"第 {Sequence + 1:00} 点 {columnItem.DisplayName}（{Value:0.##}）");
                     break;
                 }
             }
         }
 
-        if (无效.Count > 0)
+        if (Invalid.Count > 0)
         {
             throw new InvalidOperationException(
-                $"点表「{表项.显示名称}」有 {无效.Count} 个点超出坐标范围"
-                + $"（{表项.最小值:0.00} ~ {表项.最大值:0.00}），已拒绝下发。请先完成示教：\n"
-                + string.Join("\n", 无效.Take(5))
-                + (无效.Count > 5 ? $"\n……共 {无效.Count} 个" : string.Empty));
+                $"点表「{TableEntry.DisplayName}」有 {Invalid.Count} 个点超出坐标范围"
+                + $"（{TableEntry.MinValue:0.00} ~ {TableEntry.MaxValue:0.00}），已拒绝下发。请先完成示教：\n"
+                + string.Join("\n", Invalid.Take(5))
+                + (Invalid.Count > 5 ? $"\n……共 {Invalid.Count} 个" : string.Empty));
         }
 
-        foreach (var 列项 in 表项.列)
+        foreach (var columnItem in TableEntry.Column)
         {
-            var 缓冲区 = new ushort[映射项.列块字(列项.键)];
+            var BufferArea = new ushort[mapItem.ColumnBlockWord(columnItem.Key)];
 
-            for (var 序号 = 0; 序号 < 映射项.点数; 序号++)
+            for (var Sequence = 0; Sequence < mapItem.PointCount; Sequence++)
             {
-                var 寄存器列表 = 寄存器编解码器.编码(
-                    列项.数据类型, _缓存[表项.键][序号].取(列项.键), 字顺序.小字节序);
+                var registerList = RegisterCodec.Encode(
+                    columnItem.DataType, _bufferStore[TableEntry.Key][Sequence].Take(columnItem.Key), WordOrder.LittleEndian);
 
-                var 偏移量 = 序号 * 列项.字每点位;
-                Array.Copy(寄存器列表, 0, 缓冲区, 偏移量, 列项.字每点位);
+                var OffsetValue = Sequence * columnItem.WordPerPointBit;
+                Array.Copy(registerList, 0, BufferArea, OffsetValue, columnItem.WordPerPointBit);
             }
 
-            await _客户端
-                .异步写入多个寄存器(列项.基址, 缓冲区, 取消令牌)
+            await _client
+                .WriteMultiRegisterAsync(columnItem.BaseAddress, BufferArea, cancellationToken)
                 .ConfigureAwait(false);
         }
 
         // 写 PLC 成功后并入本机种快照：页面重新进入是从"机种快照"装载的，
         // 不并入就会"下发完切页再回来数据不见了"（2026-10-16 现场问题）
-        await 异步并入机种快照(表项, Enumerable.Range(0, 映射项.点数).ToList(), 取消令牌)
+        await AndInMachineModelSnapshotAsync(TableEntry, Enumerable.Range(0, mapItem.PointCount).ToList(), cancellationToken)
             .ConfigureAwait(false);
 
-        _日志.LogInformation("已下发点表 {Table}（{Count} 点）并保存到本机种", 表项.显示名称, 映射项.点数);
+        _log.LogInformation("已下发点表 {Table}（{Count} 点）并保存到本机种", TableEntry.DisplayName, mapItem.PointCount);
     }
 
     /// <summary>写单个点的全部列（每列一次写，占 1–4 字）。</summary>
-    private async Task 异步写入单点(
-        点表定义 表项, 点表地址映射 映射项, int 序号, CancellationToken 取消令牌)
+    private async Task WriteSinglePointAsync(
+        PointTableDefinition TableEntry, PointTableAddressMap mapItem, int Sequence, CancellationToken cancellationToken)
     {
-        if (!_客户端.是否已连接)
+        if (!_client.IsConnected)
         {
             throw new InvalidOperationException("PLC 未连接，无法写入示教点。");
         }
 
-        foreach (var 列项 in 表项.列)
+        foreach (var columnItem in TableEntry.Column)
         {
-            var 寄存器列表 = 寄存器编解码器.编码(
-                列项.数据类型, _缓存[表项.键][序号].取(列项.键), 字顺序.小字节序);
+            var registerList = RegisterCodec.Encode(
+                columnItem.DataType, _bufferStore[TableEntry.Key][Sequence].Take(columnItem.Key), WordOrder.LittleEndian);
 
-            var 地址值 = 映射项.地址(序号, 列项.键);
+            var addressValue = mapItem.Address(Sequence, columnItem.Key);
 
-            if (寄存器列表.Length == 1)
+            if (registerList.Length == 1)
             {
-                await _客户端.异步写入单个寄存器(地址值, 寄存器列表[0], 取消令牌)
+                await _client.WriteSingleRegisterAsync(addressValue, registerList[0], cancellationToken)
                     .ConfigureAwait(false);
             }
             else
             {
-                await _客户端.异步写入多个寄存器(地址值, 寄存器列表, 取消令牌)
+                await _client.WriteMultiRegisterAsync(addressValue, registerList, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -347,15 +347,15 @@ public sealed partial class 点表服务 : 点表服务接口
 
     // ── 内部 ────────────────────────────────────────────────────────────
 
-    private static List<点值行> 全空行(点表定义 表项)
+    private static List<PointValueRow> AllEmptyLine(PointTableDefinition TableEntry)
     {
-        var 列表 = new List<点值行>(表项.点数);
+        var list = new List<PointValueRow>(TableEntry.PointCount);
 
-        for (var 序号 = 0; 序号 < 表项.点数; 序号++)
+        for (var Sequence = 0; Sequence < TableEntry.PointCount; Sequence++)
         {
-            列表.Add(new 点值行 { 序号 = 序号 });
+            list.Add(new PointValueRow { Sequence = Sequence });
         }
 
-        return 列表;
+        return list;
     }
 }

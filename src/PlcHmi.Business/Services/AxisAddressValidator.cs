@@ -1,8 +1,8 @@
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 轴地址校验器。
@@ -16,64 +16,64 @@ namespace 上位机.业务.服务;
 /// 地址能否解析、元素类型是否正确（速度/位置必须 D 区、命令必须 M 区或 D/R 字内位），
 /// 以及<b>本次提交内</b>的地址重叠。校验必须落在服务层——界面隐藏入口只是防误触。</para>
 /// </summary>
-internal sealed class 轴地址校验器
+internal sealed class AxisAddressValidator
 {
-    private readonly 地址解析器接口 _解析器;
+    private readonly IAddressParser _parser;
 
-    public 轴地址校验器(地址解析器接口 解析器) => _解析器 = 解析器;
+    public AxisAddressValidator(IAddressParser Parser) => _parser = Parser;
 
     /// <summary>校验一张候选轴地址表；返回全部错误（空集合表示通过）。</summary>
-    public 轴地址校验 校验(轴地址表格 候选)
+    public AxisAddressValidate Validate(AxisAddressTable candidate)
     {
-        ArgumentNullException.ThrowIfNull(候选);
+        ArgumentNullException.ThrowIfNull(candidate);
 
-        var 错误列表 = new List<string>();
-        var 被占用 = new List<被占用范围>();
+        var errorList = new List<string>();
+        var beOccupied = new List<OccupiedRange>();
 
-        foreach (var 条目项 in 候选.轴列表)
+        foreach (var EntryItem in candidate.AxisList)
         {
-            var 轴号 = 条目项.轴;
+            var axisNumber = EntryItem.Axis;
 
-            添加寄存器(错误列表, 被占用, $"{轴号} 轴定位速度", 条目项.定位速度地址, 软元素.D, 2, 允许空: false);
+            AddRegister(errorList, beOccupied, $"{axisNumber} 轴定位速度", EntryItem.PositioningSpeedAddress, SoftElement.D, 2, allowEmpty: false);
 
             // 点动档位：六轴共用同一个速度档位地址（2026-10-13 现场要求），
             // 因此不进逐轴占用表（六轴相同地址不算重叠），但仍校验其可解析。
             // 一致性在下面的"档位地址必须六轴一致"检查里保证。
-            添加寄存器(错误列表, new List<被占用范围>(), $"{轴号} 轴点动档位",
-                条目项.点动速度等级地址, 软元素.D, 1, 允许空: false);
+            AddRegister(errorList, new List<OccupiedRange>(), $"{axisNumber} 轴点动档位",
+                EntryItem.JogSpeedLevelAddress, SoftElement.D, 1, allowEmpty: false);
 
             // 当前位置允许留空：某些轴（如点胶 Z、ZZ）没有独立位置回读
-            添加寄存器(错误列表, 被占用, $"{轴号} 轴当前位置", 条目项.位置地址, 软元素.D, 2, 允许空: true);
+            AddRegister(errorList, beOccupied, $"{axisNumber} 轴当前位置", EntryItem.PositionAddress, SoftElement.D, 2, allowEmpty: true);
 
-            添加线圈(错误列表, 被占用, $"{轴号} 轴回零", 条目项.回零地址);
-            添加线圈(错误列表, 被占用, $"{轴号} 轴正向点动", 条目项.点动正转地址);
-            添加线圈(错误列表, 被占用, $"{轴号} 轴反向点动", 条目项.点动反转地址);
+            AddCoil(errorList, beOccupied, $"{axisNumber} 轴回零", EntryItem.HomeAddress);
+            AddCoil(errorList, beOccupied, $"{axisNumber} 轴正向点动", EntryItem.JogForwardAddress);
+            AddCoil(errorList, beOccupied, $"{axisNumber} 轴反向点动", EntryItem.JogReverseAddress);
         }
 
         // 点动档位必须六轴共用同一个地址（切档一次，六轴同时生效）
-        var 档位地址集合 = 候选.轴列表
-            .Select(条目项 => 条目项.点动速度等级地址.Trim())
+        var gearAddressCollection = candidate.AxisList
+            .Select(EntryItem => EntryItem.JogSpeedLevelAddress.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (档位地址集合.Count > 1)
+        if (gearAddressCollection.Count > 1)
         {
-            错误列表.Add(
+            errorList.Add(
                 "点动档位地址必须六轴共用同一个"
-                + $"（当前 {档位地址集合.Count} 个：{string.Join("、", 档位地址集合)}）。");
+                + $"（当前 {gearAddressCollection.Count} 个：{string.Join("、", gearAddressCollection)}）。");
         }
 
-        检查重叠(错误列表, 被占用);
+        CheckOverlap(errorList, beOccupied);
 
-        return new 轴地址校验 { 是否有效 = 错误列表.Count == 0, 错误集合 = 错误列表 };
+        return new AxisAddressValidate { IsValid = errorList.Count == 0, ErrorCollection = errorList };
     }
 
     // ── 校验辅助 ────────────────────────────────────────────────────────
 
     /// <summary>一条已占用的地址区间（用于重叠检查）。</summary>
-    private sealed record 被占用范围(string 标签, 软元素 元素, int 启动, int 数量, int 位序号 = -1)
+    private sealed record OccupiedRange(string Tag, SoftElement ElementItem, int Start, int Count, int BitIndex = -1)
     {
-        public int 结束边界 => 启动 + 数量;
+        public int EndBoundary => Start + Count;
     }
 
     /// <summary>
@@ -81,55 +81,55 @@ internal sealed class 轴地址校验器
     /// <para>同字的两个字内位（如 D1210.2 与 D1210.3）互不冲突；
     /// 字内位与整字读写仍判冲突——整字写会把位覆盖掉。</para>
     /// </summary>
-    private static bool 是否冲突(被占用范围 甲, 被占用范围 乙)
+    private static bool IsConflict(OccupiedRange item, OccupiedRange item2)
     {
-        if (甲.元素 != 乙.元素)
+        if (item.ElementItem != item2.ElementItem)
         {
             return false;
         }
 
-        if (甲.位序号 >= 0 && 乙.位序号 >= 0)
+        if (item.BitIndex >= 0 && item2.BitIndex >= 0)
         {
-            return 甲.启动 == 乙.启动 && 甲.位序号 == 乙.位序号;
+            return item.Start == item2.Start && item.BitIndex == item2.BitIndex;
         }
 
-        return 甲.启动 < 乙.结束边界 && 乙.启动 < 甲.结束边界;
+        return item.Start < item2.EndBoundary && item2.Start < item.EndBoundary;
     }
 
-    private void 添加寄存器(
-        List<string> 错误列表,
-        List<被占用范围> 被占用,
-        string 标签名,
-        string 地址值,
-        软元素 期望,
-        int 寄存器数量项,
-        bool 允许空)
+    private void AddRegister(
+        List<string> errorList,
+        List<OccupiedRange> beOccupied,
+        string TagName,
+        string addressValue,
+        SoftElement expected,
+        int registerCountItem,
+        bool allowEmpty)
     {
-        if (string.IsNullOrWhiteSpace(地址值))
+        if (string.IsNullOrWhiteSpace(addressValue))
         {
-            if (!允许空)
+            if (!allowEmpty)
             {
-                错误列表.Add($"{标签名}：地址不能为空。");
+                errorList.Add($"{TagName}：地址不能为空。");
             }
 
             return;
         }
 
-        var 文本 = 补全前缀(地址值.Trim(), 期望);
+        var Text = FillAllPrefix(addressValue.Trim(), expected);
 
-        if (!_解析器.尝试解析(文本, out var PLC地址) || PLC地址 is null)
+        if (!_parser.TryParse(Text, out var PlcAddress) || PlcAddress is null)
         {
-            错误列表.Add($"{标签名}：「{地址值}」不是有效的软元件地址。");
+            errorList.Add($"{TagName}：「{addressValue}」不是有效的软元件地址。");
             return;
         }
 
-        if (PLC地址.元素 != 期望)
+        if (PlcAddress.ElementItem != expected)
         {
-            错误列表.Add($"{标签名}：「{地址值}」必须是 {期望} 区地址（当前解析为 {PLC地址.元素} 区）。");
+            errorList.Add($"{TagName}：「{addressValue}」必须是 {expected} 区地址（当前解析为 {PlcAddress.ElementItem} 区）。");
             return;
         }
 
-        被占用.Add(new 被占用范围(标签名, PLC地址.元素, PLC地址.Modbus地址, 寄存器数量项));
+        beOccupied.Add(new OccupiedRange(TagName, PlcAddress.ElementItem, PlcAddress.ModbusAddress, registerCountItem));
     }
 
     /// <summary>
@@ -144,69 +144,69 @@ internal sealed class 轴地址校验器
     /// <para>只对 <b>期望就是 D 区</b> 且输入全是数字的情况补 <c>D</c>：命令类字段（点动 / 回零）
     /// 允许 M 区线圈或 D 区字内位，裸数字无法判断意图，仍要求写明前缀。</para>
     /// </summary>
-    private static string 补全前缀(string 地址值, 软元素 期望)
+    private static string FillAllPrefix(string addressValue, SoftElement expected)
     {
-        if (期望 != 软元素.D || 地址值.Length == 0)
+        if (expected != SoftElement.D || addressValue.Length == 0)
         {
-            return 地址值;
+            return addressValue;
         }
 
-        return 地址值.All(字符 => char.IsAsciiDigit(字符)) ? "D" + 地址值 : 地址值;
+        return addressValue.All(character => char.IsAsciiDigit(character)) ? "D" + addressValue : addressValue;
     }
 
-    private void 添加线圈(List<string> 错误列表, List<被占用范围> 被占用, string 标签名, string 地址值)
+    private void AddCoil(List<string> errorList, List<OccupiedRange> beOccupied, string TagName, string addressValue)
     {
-        if (string.IsNullOrWhiteSpace(地址值))
+        if (string.IsNullOrWhiteSpace(addressValue))
         {
             // 回零地址允许留空：留空即表示该轴不提供回零按钮
             return;
         }
 
-        if (!_解析器.尝试解析(地址值, out var PLC地址) || PLC地址 is null)
+        if (!_parser.TryParse(addressValue, out var PlcAddress) || PlcAddress is null)
         {
-            错误列表.Add($"{标签名}：「{地址值}」不是有效的软元件地址。");
+            errorList.Add($"{TagName}：「{addressValue}」不是有效的软元件地址。");
             return;
         }
 
         // 点动/回零命令允许两种写法：M 区线圈，或 D/R 字内位
         // （汇川位打包：BOOL 占 D 的一位，如 X 轴正向点动 D1210.2）。
         // 上位机对 D 位走"读-改-写"，不直接驱动 Y 输出，硬约束保持不变。
-        if (PLC地址.是字内位 && PLC地址.元素 is 软元素.D or 软元素.R)
+        if (PlcAddress.IsIntraWordBit && PlcAddress.ElementItem is SoftElement.D or SoftElement.R)
         {
-            被占用.Add(new 被占用范围(标签名, PLC地址.元素, PLC地址.Modbus地址, 1, PLC地址.位序号));
+            beOccupied.Add(new OccupiedRange(TagName, PlcAddress.ElementItem, PlcAddress.ModbusAddress, 1, PlcAddress.BitIndex));
             return;
         }
 
-        if (PLC地址.元素 != 软元素.M)
+        if (PlcAddress.ElementItem != SoftElement.M)
         {
-            错误列表.Add(
-                $"{标签名}：「{地址值}」必须是 M 区地址或 D/R 区字内位（如 D1210.2，当前解析为 {PLC地址.元素} 区）。"
+            errorList.Add(
+                $"{TagName}：「{addressValue}」必须是 M 区地址或 D/R 区字内位（如 D1210.2，当前解析为 {PlcAddress.ElementItem} 区）。"
                 + "上位机只置位内部继电器/命令位，由 PLC 程序决定何时驱动 Y 输出。");
             return;
         }
 
-        被占用.Add(new 被占用范围(标签名, PLC地址.元素, PLC地址.Modbus地址, 1));
+        beOccupied.Add(new OccupiedRange(TagName, PlcAddress.ElementItem, PlcAddress.ModbusAddress, 1));
     }
 
-    private static void 检查重叠(List<string> 错误列表, List<被占用范围> 被占用)
+    private static void CheckOverlap(List<string> errorList, List<OccupiedRange> beOccupied)
     {
         // 只比同软元件区：D100 与 M100 的 Modbus 地址都是 100，跨区比较会误报
-        for (var 条目 = 0; 条目 < 被占用.Count; 条目++)
+        for (var Entry = 0; Entry < beOccupied.Count; Entry++)
         {
-            for (var 内层序号 = 条目 + 1; 内层序号 < 被占用.Count; 内层序号++)
+            for (var innerLayerIndex = Entry + 1; innerLayerIndex < beOccupied.Count; innerLayerIndex++)
             {
-                var 甲 = 被占用[条目];
-                var 乙 = 被占用[内层序号];
+                var item = beOccupied[Entry];
+                var item2 = beOccupied[innerLayerIndex];
 
-                if (甲.元素 != 乙.元素)
+                if (item.ElementItem != item2.ElementItem)
                 {
                     continue;
                 }
 
-                if (是否冲突(甲, 乙))
+                if (IsConflict(item, item2))
                 {
-                    错误列表.Add(
-                        $"{甲.标签}（{甲.元素}{甲.启动}）与 {乙.标签}（{乙.元素}{乙.启动}）地址重叠。");
+                    errorList.Add(
+                        $"{item.Tag}（{item.ElementItem}{item.Start}）与 {item2.Tag}（{item2.ElementItem}{item2.Start}）地址重叠。");
                 }
             }
         }

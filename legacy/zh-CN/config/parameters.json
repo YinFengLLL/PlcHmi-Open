@@ -1,0 +1,10 @@
+{
+  "当前参数": {
+    "X.LocateSpeed": 150,
+    "Y.LocateSpeed": 100,
+    "Z.LocateSpeed": 50,
+    "ZZ.LocateSpeed": 20,
+    "GlueX.LocateSpeed": 60,
+    "GlueZ.LocateSpeed": 50
+  }
+}

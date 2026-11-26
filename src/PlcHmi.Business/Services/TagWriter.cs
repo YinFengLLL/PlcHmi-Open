@@ -1,22 +1,22 @@
 using Microsoft.Extensions.Logging;
-using 上位机.通信.Modbus;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.异常;
-using 上位机.核心.模型;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Exceptions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 点位写入器。把“按名称写值”统一转换为地址解析 + 编码 + Modbus 写操作。
 /// <para>所有写命令都应经过这里，以便统一做权限校验、范围校验与串行化。</para>
 /// </summary>
-public sealed class 标签写入器
+public sealed class TagWriter
 {
-    private readonly Modbus客户端接口 _客户端;
-    private readonly 标签仓储接口 _标签;
-    private readonly 地址解析器接口 _解析器;
-    private readonly ILogger<标签写入器> _日志;
+    private readonly IModbusClient _client;
+    private readonly ITagRepository _tag;
+    private readonly IAddressParser _parser;
+    private readonly ILogger<TagWriter> _log;
 
     /// <summary>
     /// D 字内位「读-改-写」的进程内串行锁。
@@ -24,49 +24,49 @@ public sealed class 标签写入器
     /// 两次上位机写命令并发交错会把彼此的位改回去，必须串行化。
     /// 注意这只能防上位机自身并发，与 PLC 程序并发写同一 D 字仍有竞态（见文档）。</para>
     /// </summary>
-    private static readonly SemaphoreSlim 字位写锁 = new(1, 1);
+    private static readonly SemaphoreSlim wordBitWriteLock = new(1, 1);
 
-    public 标签写入器(
-        Modbus客户端接口 客户端,
-        标签仓储接口 标签列表,
-        地址解析器接口 解析器,
-        ILogger<标签写入器> 日志)
+    public TagWriter(
+        IModbusClient Client,
+        ITagRepository tagList,
+        IAddressParser Parser,
+        ILogger<TagWriter> Log)
     {
-        _客户端 = 客户端;
-        _标签 = 标签列表;
-        _解析器 = 解析器;
-        _日志 = 日志;
+        _client = Client;
+        _tag = tagList;
+        _parser = Parser;
+        _log = Log;
     }
 
     /// <summary>按点位名写入布尔值。</summary>
-    public async Task 异步写入布尔(string 标签名称, bool 值, CancellationToken 取消令牌 = default)
+    public async Task WriteBooleanAsync(string TagFullName, bool Value, CancellationToken cancellationToken = default)
     {
-        var (标签项, 地址值) = 解析可写(标签名称);
+        var (tagItem, addressValue) = ParseWritable(TagFullName);
 
-        if (地址值.是字内位)
+        if (addressValue.IsIntraWordBit)
         {
-            await 异步写入字内位核心(地址值, 值, 取消令牌).ConfigureAwait(false);
+            await WriteIntraWordBitCoreAsync(addressValue, Value, cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            校验线圈区域(地址值, 标签名称);
-            await _客户端.异步写入单个线圈(地址值.Modbus地址, 值, 取消令牌).ConfigureAwait(false);
+            ValidateCoilArea(addressValue, TagFullName);
+            await _client.WriteSingleCoilAsync(addressValue.ModbusAddress, Value, cancellationToken).ConfigureAwait(false);
         }
 
-        _日志.LogDebug("写入 {Tag} = {Value}", 标签项.名称, 值);
+        _log.LogDebug("写入 {Tag} = {Value}", tagItem.Name, Value);
     }
 
     /// <summary>
     /// 写线圈前的最后一道防线（R4）：上位机只允许置位 <b>M 区内部继电器</b>，
-    /// Y 物理输出由 PLC 程序联锁决定。此前 <see cref="异步写入线圈地址"/> 有 M 区校验，
+    /// Y 物理输出由 PLC 程序联锁决定。此前 <see cref="WriteCoilAddressAsync"/> 有 M 区校验，
     /// 而按点位名写入的路径没有——tags.json 被手工改错即可越权驱动物理输出。
     /// </summary>
-    private static void 校验线圈区域(PLC地址 地址值, string 标签名称)
+    private static void ValidateCoilArea(PlcAddress addressValue, string TagFullName)
     {
-        if (地址值.元素 != 软元素.M)
+        if (addressValue.ElementItem != SoftElement.M)
         {
             throw new InvalidOperationException(
-                $"点位「{标签名称}」解析为 {地址值.元素} 区，拒绝写入。"
+                $"点位「{TagFullName}」解析为 {addressValue.ElementItem} 区，拒绝写入。"
                 + "上位机只允许操作 M 区内部继电器，由 PLC 程序决定何时驱动 Y 输出。");
         }
     }
@@ -80,20 +80,20 @@ public sealed class 标签写入器
     /// <para><b>仍然强制 M 区</b>：这是"上位机不直接驱动 Y 输出"这条硬约束的最后一道防线，
     /// 即使配置文件被手工改错，也不会执行到真实输出点。</para>
     /// </summary>
-    public async Task 异步写入线圈地址(
-        string 地址值, bool 值, CancellationToken 取消令牌 = default)
+    public async Task WriteCoilAddressAsync(
+        string addressValue, bool Value, CancellationToken cancellationToken = default)
     {
-        var 已解析 = _解析器.解析(地址值);
+        var resolved = _parser.Parse(addressValue);
 
-        if (已解析.元素 != 软元素.M)
+        if (resolved.ElementItem != SoftElement.M)
         {
             throw new InvalidOperationException(
-                $"「{地址值}」必须是 M 区地址（当前解析为 {已解析.元素} 区）。"
+                $"「{addressValue}」必须是 M 区地址（当前解析为 {resolved.ElementItem} 区）。"
                 + "上位机只允许操作内部继电器，由 PLC 程序决定何时驱动 Y 输出。");
         }
 
-        await _客户端.异步写入单个线圈(已解析.Modbus地址, 值, 取消令牌).ConfigureAwait(false);
-        _日志.LogInformation("按地址写入线圈 {Address} = {Value}", 地址值, 值);
+        await _client.WriteSingleCoilAsync(resolved.ModbusAddress, Value, cancellationToken).ConfigureAwait(false);
+        _log.LogInformation("按地址写入线圈 {Address} = {Value}", addressValue, Value);
     }
 
     /// <summary>
@@ -103,21 +103,21 @@ public sealed class 标签写入器
     ///
     /// <para><b>强制 D 区</b>：延时值属于 PLC 参数字，写错区（如线圈）没有意义且危险。</para>
     /// </summary>
-    public async Task 异步写入寄存器地址(
-        string 地址值, int 值, CancellationToken 取消令牌 = default)
+    public async Task WriteRegisterAddressAsync(
+        string addressValue, int Value, CancellationToken cancellationToken = default)
     {
-        var 已解析 = _解析器.解析(地址值);
+        var resolved = _parser.Parse(addressValue);
 
-        if (已解析.元素 != 软元素.D)
+        if (resolved.ElementItem != SoftElement.D)
         {
             throw new InvalidOperationException(
-                $"「{地址值}」必须是 D 区地址（当前解析为 {已解析.元素} 区）。");
+                $"「{addressValue}」必须是 D 区地址（当前解析为 {resolved.ElementItem} 区）。");
         }
 
-        var 寄存器项 = checked((ushort)值);   // 超出 0–65535 立刻抛，绝不静默截断
-        await _客户端.异步写入单个寄存器(已解析.Modbus地址, 寄存器项, 取消令牌)
+        var registerItem = checked((ushort)Value);   // 超出 0–65535 立刻抛，绝不静默截断
+        await _client.WriteSingleRegisterAsync(resolved.ModbusAddress, registerItem, cancellationToken)
             .ConfigureAwait(false);
-        _日志.LogInformation("按地址写入寄存器 {Address} = {Value}", 地址值, 寄存器项);
+        _log.LogInformation("按地址写入寄存器 {Address} = {Value}", addressValue, registerItem);
     }
 
     /// <summary>
@@ -132,25 +132,25 @@ public sealed class 标签写入器
     ///
     /// <para><b>强制 D 区</b>：延时值属于 PLC 参数字，写错区（如线圈）没有意义且危险。</para>
     /// </summary>
-    public async Task 异步写入寄存器地址32(
-        string 地址值, int 值, CancellationToken 取消令牌 = default)
+    public async Task WriteRegisterAddress32Async(
+        string addressValue, int Value, CancellationToken cancellationToken = default)
     {
-        var 已解析 = _解析器.解析(地址值);
+        var resolved = _parser.Parse(addressValue);
 
-        if (已解析.元素 != 软元素.D)
+        if (resolved.ElementItem != SoftElement.D)
         {
             throw new InvalidOperationException(
-                $"「{地址值}」必须是 D 区地址（当前解析为 {已解析.元素} 区）。");
+                $"「{addressValue}」必须是 D 区地址（当前解析为 {resolved.ElementItem} 区）。");
         }
 
-        var 寄存器列表 = 寄存器编解码器.编码(标签数据类型.Int32, 值, 字顺序.小字节序);
+        var registerList = RegisterCodec.Encode(TagDataType.Int32, Value, WordOrder.LittleEndian);
 
-        await _客户端.异步写入多个寄存器(已解析.Modbus地址, 寄存器列表, 取消令牌)
+        await _client.WriteMultiRegisterAsync(resolved.ModbusAddress, registerList, cancellationToken)
             .ConfigureAwait(false);
 
-        _日志.LogInformation(
+        _log.LogInformation(
             "按地址写入 32 位寄存器 {Address} = {Value}（占 {Count} 字，低字在前）",
-            地址值, 值, 寄存器列表.Length);
+            addressValue, Value, registerList.Length);
     }
 
     /// <summary>
@@ -160,56 +160,56 @@ public sealed class 标签写入器
     /// <para><b>2026-10-17 现场要求：</b>参数页延时区要<b>回读</b>——延时值由 PLC 程序也可能改写
     /// （切换机种、HMI 旁的操作面板），界面必须显示 PLC 当下真实值，而不是本地配置值。</para>
     ///
-    /// <para><b>字序走 <c>寄存器编解码器</c>（红线 R1）</b>：与写入侧 <see cref="异步写入寄存器地址32"/>
+    /// <para><b>字序走 <c>寄存器编解码器</c>（红线 R1）</b>：与写入侧 <see cref="WriteRegisterAddress32Async"/>
     /// 用的是同一份实现，读回与写出严格互逆。</para>
     ///
     /// <para><b>强制 D 区</b>：与写入侧同口径。</para>
     /// </summary>
-    public async Task<int> 异步读取寄存器地址32(
-        string 地址值, CancellationToken 取消令牌 = default)
+    public async Task<int> ReadRegisterAddress32Async(
+        string addressValue, CancellationToken cancellationToken = default)
     {
-        var 已解析 = _解析器.解析(地址值);
+        var resolved = _parser.Parse(addressValue);
 
-        if (已解析.元素 != 软元素.D)
+        if (resolved.ElementItem != SoftElement.D)
         {
             throw new InvalidOperationException(
-                $"「{地址值}」必须是 D 区地址（当前解析为 {已解析.元素} 区）。");
+                $"「{addressValue}」必须是 D 区地址（当前解析为 {resolved.ElementItem} 区）。");
         }
 
-        var 寄存器列表 = await _客户端
-            .异步读取保持寄存器(已解析.Modbus地址, 2, 取消令牌)
+        var registerList = await _client
+            .ReadHoldingRegisterAsync(resolved.ModbusAddress, 2, cancellationToken)
             .ConfigureAwait(false);
 
-        if (寄存器列表.Length < 2)
+        if (registerList.Length < 2)
         {
             throw new InvalidOperationException(
-                $"从 {地址值} 读取 2 个字时 PLC 只返回 {寄存器列表.Length} 个，已中止。");
+                $"从 {addressValue} 读取 2 个字时 PLC 只返回 {registerList.Length} 个，已中止。");
         }
 
-        return 寄存器编解码器.解码(标签数据类型.Int32, 寄存器列表, 字顺序.小字节序) is int 值
-            ? 值
-            : throw new InvalidOperationException($"解码 {地址值} 的 32 位整数失败。");
+        return RegisterCodec.Decode(TagDataType.Int32, registerList, WordOrder.LittleEndian) is int Value
+            ? Value
+            : throw new InvalidOperationException($"解码 {addressValue} 的 32 位整数失败。");
     }
 
     /// <summary>
     /// 按<b>软元件地址</b>直接读一个线圈（布尔），不要求该地址预先在 <c>tags.json</c> 里定义。
     /// <para>给参数页按钮区回读用：按钮状态由 PLC 程序或手动页都可能改写，界面要显示真实状态。</para>
     /// </summary>
-    public async Task<bool> 异步读取线圈地址(string 地址值, CancellationToken 取消令牌 = default)
+    public async Task<bool> ReadCoilAddressAsync(string addressValue, CancellationToken cancellationToken = default)
     {
-        var 已解析 = _解析器.解析(地址值);
+        var resolved = _parser.Parse(addressValue);
 
-        if (已解析.元素 != 软元素.M)
+        if (resolved.ElementItem != SoftElement.M)
         {
             throw new InvalidOperationException(
-                $"「{地址值}」必须是 M 区线圈地址（当前解析为 {已解析.元素} 区）。");
+                $"「{addressValue}」必须是 M 区线圈地址（当前解析为 {resolved.ElementItem} 区）。");
         }
 
-        var 线圈列表 = await _客户端
-            .异步读取线圈(已解析.Modbus地址, 1, 取消令牌)
+        var coilList = await _client
+            .ReadCoilAsync(resolved.ModbusAddress, 1, cancellationToken)
             .ConfigureAwait(false);
 
-        return 线圈列表.Length > 0 && 线圈列表[0];
+        return coilList.Length > 0 && coilList[0];
     }
 
     /// <summary>
@@ -220,111 +220,111 @@ public sealed class 标签写入器
     /// 与 PLC 程序并发写同一 D 字的竞态无法在上位机侧消除，
     /// 需 PLC 侧保证命令字只由上位机写（或走 OPC UA 变量节点直写位）。</para>
     /// </summary>
-    private async Task 异步写入字内位核心(PLC地址 地址值, bool 值, CancellationToken 取消令牌)
+    private async Task WriteIntraWordBitCoreAsync(PlcAddress addressValue, bool Value, CancellationToken cancellationToken)
     {
-        await 字位写锁.WaitAsync(取消令牌).ConfigureAwait(false);
+        await wordBitWriteLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var 寄存器列表 = await _客户端.异步读取保持寄存器(地址值.Modbus地址, 1, 取消令牌)
+            var registerList = await _client.ReadHoldingRegisterAsync(addressValue.ModbusAddress, 1, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (寄存器列表.Length < 1)
+            if (registerList.Length < 1)
             {
                 throw new InvalidOperationException(
-                    $"写入字内位 {地址值.来源} 失败：读回的寄存器为空。");
+                    $"写入字内位 {addressValue.Source} 失败：读回的寄存器为空。");
             }
 
-            var 字值 = 寄存器列表[0];
-            var 位掩码 = (ushort)(1 << 地址值.位序号);
-            var 新字值 = (ushort)(值 ? 字值 | 位掩码 : 字值 & ~位掩码);
+            var wordValue = registerList[0];
+            var bitMask = (ushort)(1 << addressValue.BitIndex);
+            var newWordValue = (ushort)(Value ? wordValue | bitMask : wordValue & ~bitMask);
 
             // 刻意不做"值相同就跳过"的优化：点动方向命令里"停止"是安全出口，
             // 必须把目标状态真正写下去，不能因为一次读回恰好相符就省掉写。
-            await _客户端.异步写入单个寄存器(地址值.Modbus地址, 新字值, 取消令牌)
+            await _client.WriteSingleRegisterAsync(addressValue.ModbusAddress, newWordValue, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
         {
-            字位写锁.Release();
+            wordBitWriteLock.Release();
         }
 
-        _日志.LogInformation("写字内位 {Address}（D 字第 {Bit} 位） = {Value}",
-            地址值.来源, 地址值.位序号, 值);
+        _log.LogInformation("写字内位 {Address}（D 字第 {Bit} 位） = {Value}",
+            addressValue.Source, addressValue.BitIndex, Value);
     }
 
     /// <summary>按点位名写入数值（含范围校验）。</summary>
-    public async Task 异步写入数值(string 标签名称, double 值, CancellationToken 取消令牌 = default)
+    public async Task WriteNumericValueAsync(string TagFullName, double Value, CancellationToken cancellationToken = default)
     {
-        var (标签项, 地址值) = 解析可写(标签名称);
-        校验范围(标签项, 值);
+        var (tagItem, addressValue) = ParseWritable(TagFullName);
+        ValidateRange(tagItem, Value);
 
         // 显示值还原为原始值
-        var 原始值 = 标签项.缩放 != 0 ? (值 - 标签项.偏移) / 标签项.缩放 : 值;
+        var SourceValue = tagItem.Scale != 0 ? (Value - tagItem.Offset) / tagItem.Scale : Value;
 
-        if (地址值.区域 == Modbus区域.线圈)
+        if (addressValue.Area == ModbusArea.Coil)
         {
-            校验线圈区域(地址值, 标签名称);
-            await _客户端.异步写入单个线圈(地址值.Modbus地址, 原始值 != 0, 取消令牌).ConfigureAwait(false);
+            ValidateCoilArea(addressValue, TagFullName);
+            await _client.WriteSingleCoilAsync(addressValue.ModbusAddress, SourceValue != 0, cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            var 寄存器列表 = 寄存器编解码器.编码(标签项.数据类型, 原始值, 标签项.字顺序);
+            var registerList = RegisterCodec.Encode(tagItem.DataType, SourceValue, tagItem.WordOrder);
 
-            if (寄存器列表.Length == 1)
+            if (registerList.Length == 1)
             {
-                await _客户端.异步写入单个寄存器(地址值.Modbus地址, 寄存器列表[0], 取消令牌)
+                await _client.WriteSingleRegisterAsync(addressValue.ModbusAddress, registerList[0], cancellationToken)
                     .ConfigureAwait(false);
             }
             else
             {
-                await _客户端.异步写入多个寄存器(地址值.Modbus地址, 寄存器列表, 取消令牌)
+                await _client.WriteMultiRegisterAsync(addressValue.ModbusAddress, registerList, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
 
-        _日志.LogDebug("写入 {Tag} = {Value}{Unit}", 标签项.名称, 值, 标签项.单元 ?? string.Empty);
+        _log.LogDebug("写入 {Tag} = {Value}{Unit}", tagItem.Name, Value, tagItem.Unit ?? string.Empty);
     }
 
     /// <summary>短脉冲写命令：置位后延时复位，用于启动/停止这类按钮式命令。</summary>
-    public async Task 异步脉冲(string 标签名称, TimeSpan 时长, CancellationToken 取消令牌 = default)
+    public async Task PulseAsync(string TagFullName, TimeSpan whenLong, CancellationToken cancellationToken = default)
     {
-        await 异步写入布尔(标签名称, true, 取消令牌).ConfigureAwait(false);
+        await WriteBooleanAsync(TagFullName, true, cancellationToken).ConfigureAwait(false);
 
         try
         {
-            await Task.Delay(时长, 取消令牌).ConfigureAwait(false);
+            await Task.Delay(whenLong, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             // 即使取消也要复位，避免命令点一直保持
-            await 异步写入布尔(标签名称, false, CancellationToken.None).ConfigureAwait(false);
+            await WriteBooleanAsync(TagFullName, false, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
-    private (标签定义 标签, PLC地址 地址) 解析可写(string 标签名称)
+    private (TagDefinition Tag, PlcAddress Address) ParseWritable(string TagFullName)
     {
-        var 标签项 = _标签.查找(标签名称)
-                  ?? throw new InvalidOperationException($"点位 \"{标签名称}\" 未在 tags.json 中定义。");
+        var tagItem = _tag.Find(TagFullName)
+                  ?? throw new InvalidOperationException($"点位 \"{TagFullName}\" 未在 tags.json 中定义。");
 
-        if (!标签项.可写入)
+        if (!tagItem.Writable)
         {
-            throw new InvalidOperationException($"点位 \"{标签名称}\" 为只读，不允许写入。");
+            throw new InvalidOperationException($"点位 \"{TagFullName}\" 为只读，不允许写入。");
         }
 
-        var 地址值 = _解析器.解析(标签项.地址);
-        return (标签项, 地址值);
+        var addressValue = _parser.Parse(tagItem.Address);
+        return (tagItem, addressValue);
     }
 
-    private static void 校验范围(标签定义 标签项, double 值)
+    private static void ValidateRange(TagDefinition tagItem, double Value)
     {
-        if (标签项.最小.HasValue && 值 < 标签项.最小.Value)
+        if (tagItem.Min.HasValue && Value < tagItem.Min.Value)
         {
-            throw new 标签值超范围异常(标签项.名称, 值, 标签项.最小, 标签项.最大);
+            throw new TagValueOutOfRangeException(tagItem.Name, Value, tagItem.Min, tagItem.Max);
         }
 
-        if (标签项.最大.HasValue && 值 > 标签项.最大.Value)
+        if (tagItem.Max.HasValue && Value > tagItem.Max.Value)
         {
-            throw new 标签值超范围异常(标签项.名称, 值, 标签项.最小, 标签项.最大);
+            throw new TagValueOutOfRangeException(tagItem.Name, Value, tagItem.Min, tagItem.Max);
         }
     }
 }

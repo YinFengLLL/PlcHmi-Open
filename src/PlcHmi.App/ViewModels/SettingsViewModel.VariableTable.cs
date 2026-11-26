@@ -1,12 +1,12 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using 上位机.应用.服务;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.App.Services;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>
 /// 系统设置页 · 汇川变量表区（导入 / 浏览，仅管理员）。
@@ -15,78 +15,78 @@ namespace 上位机.应用.视图模型;
 /// variables.json → 替换内存表），与连接参数、运行模式没有耦合，混在一个文件里只会
 /// 让这个本就接近 400 行的界面类继续膨胀（见 <c>tools/check_thresholds.py</c>）。</para>
 /// </summary>
-public sealed partial class 设置视图模型
+public sealed partial class SettingsViewModel
 {
-    [ObservableProperty] private string _变量表条目数文本 = "0 条";
+    [ObservableProperty] private string _variableTableEntryNumberText = "0 条";
 
     /// <summary>导入汇川变量表 CSV：解析校验后原子落盘 variables.json 并替换内存表。</summary>
     [RelayCommand]
-    private async Task 异步导入变量表()
+    private async Task ImportVariableTableAsync()
     {
-        if (!可导入变量表)
+        if (!ImportableVariableTable)
         {
-            _对话框.提示("权限不足", "只有管理员可以导入变量表。");
+            _dialog.Hint("权限不足", "只有管理员可以导入变量表。");
             return;
         }
 
-        if (_变量表 is null)
+        if (_variableTable is null)
         {
-            _对话框.提示("不可用", "变量表服务未就绪。");
+            _dialog.Hint("不可用", "变量表服务未就绪。");
             return;
         }
 
-        var 文件路径 = _文件对话框.选择打开文件("导入汇川变量表", 文件对话框服务.CSV筛选);
+        var filePath = _fileDialog.SelectOpenFile("导入汇川变量表", FileDialogService.csvFilter);
 
-        if (string.IsNullOrEmpty(文件路径))
+        if (string.IsNullOrEmpty(filePath))
         {
             return;
         }
 
-        if (!_对话框.确认("导入变量表",
-                $"确认从以下文件导入变量表？\n\n{文件路径}\n\n导入会整体替换当前变量表（variables.json）。"))
+        if (!_dialog.Confirm("导入变量表",
+                $"确认从以下文件导入变量表？\n\n{filePath}\n\n导入会整体替换当前变量表（variables.json）。"))
         {
             return;
         }
 
         try
         {
-            是否忙碌 = true;
+            IsBusy = true;
 
-            var 结果 = await _变量表.异步导入(文件路径);
+            var result = await _variableTable.ImportAsync(filePath);
 
-            刷新变量表显示();
-            _对话框.提示("导入完成", $"{结果.摘要}\n\n绑定该变量的配置会在下次启动时重新回填地址；"
+            RefreshVariableTableShow();
+            _dialog.Hint("导入完成", $"{result.Summary}\n\n绑定该变量的配置会在下次启动时重新回填地址；"
                                      + "OPC UA 模式的符号寻址立即按新表生效。");
         }
-        catch (InvalidOperationException 异常)
+        catch (InvalidOperationException exception)
         {
-            _对话框.错误信息("导入失败", 异常.Message);
+            _dialog.ErrorInfo("导入失败", exception.Message);
         }
-        catch (System.IO.IOException 异常)
+        catch (System.IO.IOException exception)
         {
-            _日志.LogError(异常, "导入变量表失败：{File}", 文件路径);
-            _对话框.错误信息("导入失败", $"读取文件失败：{异常.Message}");
+            _log.LogError(exception, "导入变量表失败：{File}", filePath);
+            _dialog.ErrorInfo("导入失败", $"读取文件失败：{exception.Message}");
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
     /// <summary>浏览当前变量表（搜索 / 只读查看）。</summary>
     [RelayCommand]
-    private void 查看变量表()
+    private void CheckSeeVariableTable()
     {
-        if (_变量表 is null)
+        if (_variableTable is null)
         {
-            _对话框.提示("不可用", "变量表服务未就绪。");
+            _dialog.Hint("不可用", "变量表服务未就绪。");
             return;
         }
 
         // 浏览复用选择对话框：选不选都只影响对话框返回值，不写任何配置
-        视图.变量选择对话框.显示(_变量表.条目集合, "变量表浏览");
+        Views.VariableSelectDialog.Show(_variableTable.EntryCollection, "变量表浏览");
     }
 
-    private void 刷新变量表显示() =>
-        变量表条目数文本 = $"{(_变量表?.条目集合.Count ?? 0)} 条";
+    private void RefreshVariableTableShow() =>
+        VariableTableEntryNumberText = $"{(_variableTable?.EntryCollection.Count ?? 0)} 条";
 }

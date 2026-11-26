@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.核心.枚举;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Enums;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 轴地址的"输入书写形式"与保存链路测试。
@@ -24,114 +24,114 @@ namespace 上位机.上位机测试;
 /// 与其它碰配置文件的用例同集合，禁用并行。</para>
 /// </summary>
 [Collection("config-files")]
-public class 轴地址输入格式测试
+public class AxisAddressInputFormatTest
 {
-    private static 轴地址服务 新服务() =>
+    private static AxisAddressService NewService() =>
         new(
-            配方配置加载器.加载(out _),
-            new 标签仓储(NullLogger<标签仓储>.Instance),
-            new 汇川地址解析器(PLC系列.小型PLC),
-            new 替身轮询引擎(),
-            new 允许全部权限守卫(),
-            NullLogger<轴地址服务>.Instance);
+            RecipeConfigLoader.Load(out _),
+            new TagRepository(NullLogger<TagRepository>.Instance),
+            new InovanceAddressParser(PlcSeries.SmallPlc),
+            new FakePollingEngine(),
+            new AllowAllPermissionGuard(),
+            NullLogger<AxisAddressService>.Instance);
 
     [Fact]
-    public void 定位速度地址省前缀应被受理()
+    public void PositioningSpeedAddressOmitPrefixShouldBeAccepted()
     {
-        var 服务实例 = 新服务();
-        var 候选 = 服务实例.表格.克隆();
+        var serviceInstance = NewService();
+        var candidate = serviceInstance.DataGrid.Clone();
 
-        候选.查找("X")!.定位速度地址 = "1252";
+        candidate.Find("X")!.PositioningSpeedAddress = "1252";
 
         // 校验与写入必须同口径：服务写入用的就是宽松解析
-        Assert.True(服务实例.校验(候选).是否有效, "裸寄存器号应按 D 区受理");
+        Assert.True(serviceInstance.Validate(candidate).IsValid, "裸寄存器号应按 D 区受理");
     }
 
     [Fact]
-    public void 命令类地址省前缀仍应被拒绝()
+    public void CommandCategoryAddressOmitPrefixShouldStillBeRejected()
     {
-        var 服务实例 = 新服务();
-        var 候选 = 服务实例.表格.克隆();
+        var serviceInstance = NewService();
+        var candidate = serviceInstance.DataGrid.Clone();
 
         // 点动 / 回零允许 M 区线圈或 D 区字内位：裸数字无法判断意图，必须写明前缀
-        候选.查找("X")!.点动正转地址 = "470";
+        candidate.Find("X")!.JogForwardAddress = "470";
 
-        var 校验项 = 服务实例.校验(候选);
+        var validateItem = serviceInstance.Validate(candidate);
 
-        Assert.False(校验项.是否有效);
-        Assert.Contains(校验项.错误集合, 事件参数 =>
-            事件参数.Contains("不是有效的软元件地址", StringComparison.Ordinal));
+        Assert.False(validateItem.IsValid);
+        Assert.Contains(validateItem.ErrorCollection, eventArgs =>
+            eventArgs.Contains("不是有效的软元件地址", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task 只改定位速度地址应能落盘并回读()
+    public async Task OnlyChangePositioningSpeedAddressShouldBeAbleToPersistAndReadBack()
     {
-        var (配方路径, 标签路径, 原始配方, 原始标签) = 备份配置();
+        var (recipePath, tagPath, originalRecipe, originalTag) = BackupConfig();
 
         try
         {
-            var 服务实例 = 新服务();
-            var 候选 = 服务实例.表格.克隆();
+            var serviceInstance = NewService();
+            var candidate = serviceInstance.DataGrid.Clone();
 
             // 模拟参数页「轴速度」表里改定位速度地址（唯一编辑入口）
-            候选.查找("X")!.定位速度地址 = "D1252";
+            candidate.Find("X")!.PositioningSpeedAddress = "D1252";
 
-            Assert.True(服务实例.校验(候选).是否有效);
+            Assert.True(serviceInstance.Validate(candidate).IsValid);
 
-            await 服务实例.异步保存(候选);
+            await serviceInstance.SaveAsync(candidate);
 
-            Assert.Equal("D1252", 服务实例.表格.查找("X")!.定位速度地址);
-            Assert.Contains("\"地址\": 1252", await File.ReadAllTextAsync(配方路径), StringComparison.Ordinal);
+            Assert.Equal("D1252", serviceInstance.DataGrid.Find("X")!.PositioningSpeedAddress);
+            Assert.Contains("\"address\": 1252", await File.ReadAllTextAsync(recipePath), StringComparison.Ordinal);
         }
         finally
         {
-            还原配置(配方路径, 标签路径, 原始配方, 原始标签);
+            RestoreConfig(recipePath, tagPath, originalRecipe, originalTag);
         }
     }
 
     [Fact]
-    public async Task 裸寄存器号保存后应规范为带前缀并写进tags()
+    public async Task RawRegisterNumberSaveAfterShouldRuleRangeAsWithPrefixAndWriteEntertags()
     {
-        var (配方路径, 标签路径, 原始配方, 原始标签) = 备份配置();
+        var (recipePath, tagPath, originalRecipe, originalTag) = BackupConfig();
 
         try
         {
-            var 服务实例 = 新服务();
-            var 候选 = 服务实例.表格.克隆();
+            var serviceInstance = NewService();
+            var candidate = serviceInstance.DataGrid.Clone();
 
             // 现场习惯：全选地址格后直接填寄存器号（省掉前缀）
-            候选.查找("X")!.定位速度地址 = "1252";
-            候选.查找("X")!.位置地址 = "1221";
+            candidate.Find("X")!.PositioningSpeedAddress = "1252";
+            candidate.Find("X")!.PositionAddress = "1221";
 
-            await 服务实例.异步保存(候选);
+            await serviceInstance.SaveAsync(candidate);
 
             // 回读一律是带前缀的规范写法（界面显示的就是它）
-            Assert.Equal("D1252", 服务实例.表格.查找("X")!.定位速度地址);
-            Assert.Equal("D1221", 服务实例.表格.查找("X")!.位置地址);
+            Assert.Equal("D1252", serviceInstance.DataGrid.Find("X")!.PositioningSpeedAddress);
+            Assert.Equal("D1221", serviceInstance.DataGrid.Find("X")!.PositionAddress);
 
             // 位置地址落在 tags.json，必须是能解析的软元件符号，否则采集计划会静默跳过该点位
-            Assert.Contains("\"AxisXPosition\"", await File.ReadAllTextAsync(标签路径), StringComparison.Ordinal);
-            Assert.Contains("\"D1221\"", await File.ReadAllTextAsync(标签路径), StringComparison.Ordinal);
+            Assert.Contains("\"AxisXPosition\"", await File.ReadAllTextAsync(tagPath), StringComparison.Ordinal);
+            Assert.Contains("\"D1221\"", await File.ReadAllTextAsync(tagPath), StringComparison.Ordinal);
         }
         finally
         {
-            还原配置(配方路径, 标签路径, 原始配方, 原始标签);
+            RestoreConfig(recipePath, tagPath, originalRecipe, originalTag);
         }
     }
 
     // ── 配置备份 / 还原 ─────────────────────────────────────────────────
 
-    private static (string 配方路径, string 标签路径, string 原始配方, string 原始标签) 备份配置()
+    private static (string recipePath, string tagPath, string originalRecipe, string originalTag) BackupConfig()
     {
-        var 配方路径 = 配置路径.配方配置;
-        var 标签路径 = 配置路径.标签集合;
+        var recipePath = ConfigPath.RecipeConfig;
+        var tagPath = ConfigPath.TagCollection;
 
-        return (配方路径, 标签路径, File.ReadAllText(配方路径), File.ReadAllText(标签路径));
+        return (recipePath, tagPath, File.ReadAllText(recipePath), File.ReadAllText(tagPath));
     }
 
-    private static void 还原配置(string 配方路径, string 标签路径, string 原始配方, string 原始标签)
+    private static void RestoreConfig(string recipePath, string tagPath, string originalRecipe, string originalTag)
     {
-        File.WriteAllText(配方路径, 原始配方);
-        File.WriteAllText(标签路径, 原始标签);
+        File.WriteAllText(recipePath, originalRecipe);
+        File.WriteAllText(tagPath, originalTag);
     }
 }

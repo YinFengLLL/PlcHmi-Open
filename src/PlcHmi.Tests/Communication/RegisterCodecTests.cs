@@ -1,127 +1,127 @@
-using 上位机.通信.Modbus;
-using 上位机.核心.枚举;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Enums;
 using Xunit;
 
-namespace 上位机.上位机测试.通信;
+namespace PlcHmi.Tests.Communication;
 
 /// <summary>
 /// 寄存器编解码测试。
 /// <para>重点验证汇川默认的 <b>CDAB</b>（低字在前）字序处理。</para>
 /// </summary>
-public class 寄存器编解码器测试
+public class RegisterCodecTest
 {
     // ── 16 位 ─────────────────────────────────────────────────────────
 
     [Fact]
-    public void 解码UInt16()
+    public void DecodeUInt16()
     {
-        var 结果值 = 寄存器编解码器.解码(标签数据类型.UInt16, new ushort[] { 1234 });
-        Assert.Equal((ushort)1234, Assert.IsType<ushort>(结果值));
+        var resultValue = RegisterCodec.Decode(TagDataType.UInt16, new ushort[] { 1234 });
+        Assert.Equal((ushort)1234, Assert.IsType<ushort>(resultValue));
     }
 
     [Fact]
-    public void 解码Int16_负数()
+    public void DecodeInt16_NegativeNumber()
     {
         // -100 的补码为 0xFF9C
-        var 结果值 = 寄存器编解码器.解码(标签数据类型.Int16, new ushort[] { 0xFF9C });
-        Assert.Equal((short)-100, 结果值);
+        var resultValue = RegisterCodec.Decode(TagDataType.Int16, new ushort[] { 0xFF9C });
+        Assert.Equal((short)-100, resultValue);
     }
 
     [Fact]
-    public void 编码Int16_负数()
+    public void EncodeInt16_NegativeNumber()
     {
-        var 寄存器列表 = 寄存器编解码器.编码(标签数据类型.Int16, -100);
-        Assert.Single(寄存器列表);
-        Assert.Equal(0xFF9C, 寄存器列表[0]);
+        var registerList = RegisterCodec.Encode(TagDataType.Int16, -100);
+        Assert.Single(registerList);
+        Assert.Equal(0xFF9C, registerList[0]);
     }
 
     // ── 32 位字序（核心）────────────────────────────────────────────────
 
     [Fact]
-    public void 编码Float32_CDAB低字在前_符合汇川默认()
+    public void EncodeFloat32_CDABLowWordAtBefore_SymbolValidInovanceDefault()
     {
         // 3.14f = 0x4048F5C3
         // CDAB 下：低字 0xF5C3 在第一个寄存器，高字 0x4048 在第二个
-        var 寄存器列表 = 寄存器编解码器.编码(标签数据类型.Float32, 3.14f, 字顺序.小字节序);
+        var registerList = RegisterCodec.Encode(TagDataType.Float32, 3.14f, WordOrder.LittleEndian);
 
-        Assert.Equal(2, 寄存器列表.Length);
-        Assert.Equal(0xF5C3, 寄存器列表[0]);   // 低字
-        Assert.Equal(0x4048, 寄存器列表[1]);   // 高字
+        Assert.Equal(2, registerList.Length);
+        Assert.Equal(0xF5C3, registerList[0]);   // 低字
+        Assert.Equal(0x4048, registerList[1]);   // 高字
     }
 
     [Fact]
-    public void 编码Float32_ABCD高字在前()
+    public void EncodeFloat32_ABCDHighWordAtBefore()
     {
-        var 寄存器列表 = 寄存器编解码器.编码(标签数据类型.Float32, 3.14f, 字顺序.大字节序);
+        var registerList = RegisterCodec.Encode(TagDataType.Float32, 3.14f, WordOrder.BigEndian);
 
-        Assert.Equal(0x4048, 寄存器列表[0]);   // 高字
-        Assert.Equal(0xF5C3, 寄存器列表[1]);   // 低字
+        Assert.Equal(0x4048, registerList[0]);   // 高字
+        Assert.Equal(0xF5C3, registerList[1]);   // 低字
     }
 
     [Fact]
-    public void 解码Float32_CDAB低字在前()
+    public void DecodeFloat32_CDABLowWordAtBefore()
     {
-        var 值 = 寄存器编解码器.解码(标签数据类型.Float32, new ushort[] { 0xF5C3, 0x4048 }, 字顺序.小字节序);
+        var Value = RegisterCodec.Decode(TagDataType.Float32, new ushort[] { 0xF5C3, 0x4048 }, WordOrder.LittleEndian);
 
-        Assert.Equal(3.14f, (float)值, precision: 5);
+        Assert.Equal(3.14f, (float)Value, precision: 5);
     }
 
     [Fact]
-    public void 解码Float32_ABCD高字在前()
+    public void DecodeFloat32_ABCDHighWordAtBefore()
     {
-        var 值 = 寄存器编解码器.解码(标签数据类型.Float32, new ushort[] { 0x4048, 0xF5C3 }, 字顺序.大字节序);
+        var Value = RegisterCodec.Decode(TagDataType.Float32, new ushort[] { 0x4048, 0xF5C3 }, WordOrder.BigEndian);
 
-        Assert.Equal(3.14f, (float)值, precision: 5);
+        Assert.Equal(3.14f, (float)Value, precision: 5);
     }
 
     [Fact]
-    public void 编码解码UInt32_应往返一致()
+    public void EncodeDecodeUInt32_ShouldRoundTripConsistent()
     {
-        const uint 原始 = 123456789u;
+        const uint Original = 123456789u;
 
-        var 寄存器列表 = 寄存器编解码器.编码(标签数据类型.UInt32, 原始, 字顺序.小字节序);
-        var 已解码 = 寄存器编解码器.解码(标签数据类型.UInt32, 寄存器列表, 字顺序.小字节序);
+        var registerList = RegisterCodec.Encode(TagDataType.UInt32, Original, WordOrder.LittleEndian);
+        var decoded = RegisterCodec.Decode(TagDataType.UInt32, registerList, WordOrder.LittleEndian);
 
-        Assert.Equal(原始, 已解码);
+        Assert.Equal(Original, decoded);
     }
 
     [Fact]
-    public void 编码解码Int32_负数应往返一致()
+    public void EncodeDecodeInt32_NegativeNumberShouldRoundTripConsistent()
     {
-        const int 原始 = -987654;
+        const int Original = -987654;
 
-        var 寄存器列表 = 寄存器编解码器.编码(标签数据类型.Int32, 原始, 字顺序.小字节序);
-        var 已解码 = 寄存器编解码器.解码(标签数据类型.Int32, 寄存器列表, 字顺序.小字节序);
+        var registerList = RegisterCodec.Encode(TagDataType.Int32, Original, WordOrder.LittleEndian);
+        var decoded = RegisterCodec.Decode(TagDataType.Int32, registerList, WordOrder.LittleEndian);
 
-        Assert.Equal(原始, 已解码);
+        Assert.Equal(Original, decoded);
     }
 
     [Fact]
-    public void 编码解码Float32_应往返一致()
+    public void EncodeDecodeFloat32_ShouldRoundTripConsistent()
     {
-        const float 原始 = 350.55f;
+        const float Original = 350.55f;
 
-        var 寄存器列表 = 寄存器编解码器.编码(标签数据类型.Float32, 原始, 字顺序.小字节序);
-        var 已解码 = (float)寄存器编解码器.解码(标签数据类型.Float32, 寄存器列表, 字顺序.小字节序);
+        var registerList = RegisterCodec.Encode(TagDataType.Float32, Original, WordOrder.LittleEndian);
+        var decoded = (float)RegisterCodec.Decode(TagDataType.Float32, registerList, WordOrder.LittleEndian);
 
-        Assert.Equal(原始, 已解码, precision: 4);
+        Assert.Equal(Original, decoded, precision: 4);
     }
 
     // ── 字节与寄存器互转 ───────────────────────────────────────────────
 
     [Fact]
-    public void 寄存器转字节_应按大端拆字节()
+    public void RegisterConvertByte_ShouldByLargeSplitByte()
     {
-        var 字节 = 寄存器编解码器.寄存器转字节(new ushort[] { 0x1234, 0xABCD });
+        var byteValue = RegisterCodec.RegisterConvertByte(new ushort[] { 0x1234, 0xABCD });
 
-        Assert.Equal(new byte[] { 0x12, 0x34, 0xAB, 0xCD }, 字节);
+        Assert.Equal(new byte[] { 0x12, 0x34, 0xAB, 0xCD }, byteValue);
     }
 
     [Fact]
-    public void 字节转寄存器_应按大端组合()
+    public void ByteConvertRegister_ShouldByLargeGroupValid()
     {
-        var 寄存器列表 = 寄存器编解码器.字节转寄存器(new byte[] { 0x12, 0x34, 0xAB, 0xCD });
+        var registerList = RegisterCodec.ByteConvertRegister(new byte[] { 0x12, 0x34, 0xAB, 0xCD });
 
-        Assert.Equal(new ushort[] { 0x1234, 0xABCD }, 寄存器列表);
+        Assert.Equal(new ushort[] { 0x1234, 0xABCD }, registerList);
     }
 }

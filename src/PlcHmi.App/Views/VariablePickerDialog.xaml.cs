@@ -1,36 +1,36 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图;
+namespace PlcHmi.App.Views;
 
 /// <summary>
 /// 变量表选择对话框。按变量名 / 地址关键字过滤，供各配置编辑界面选取变量。
 ///
-/// <para><b>选定语义</b>：返回选中的 <see cref="变量表条目"/>；调用方负责用它的
+/// <para><b>选定语义</b>：返回选中的 <see cref="VariableTableEntry"/>；调用方负责用它的
 /// 软元件地址与数据类型回填各自字段。</para>
 /// </summary>
-public partial class 变量选择对话框 : Window
+public partial class VariableSelectDialog : Window
 {
-    private readonly IReadOnlyList<变量表条目> _全部条目;
+    private readonly IReadOnlyList<VariableTableEntry> _allEntry;
 
-    private 变量选择对话框(IReadOnlyList<变量表条目> 条目集合, string 标题文本)
+    private VariableSelectDialog(IReadOnlyList<VariableTableEntry> EntryCollection, string titleText)
     {
         InitializeComponent();
 
-        _全部条目 = 条目集合;
-        页眉文本.Text = 标题文本;
-        Title = 标题文本;
+        _allEntry = EntryCollection;
+        PageHeaderText.Text = titleText;
+        Title = titleText;
 
-        变量列表.ItemsSource = _全部条目;
-        Loaded += (_, _) => 搜索框.Focus();
+        VariableList.ItemsSource = _allEntry;
+        Loaded += (_, _) => SearchFrame.Focus();
     }
 
     /// <summary>弹出选择器。返回选中的变量条目；取消返回 <c>null</c>。</summary>
-    public static 变量表条目? 显示(IReadOnlyList<变量表条目> 条目集合, string 标题文本)
+    public static VariableTableEntry? Show(IReadOnlyList<VariableTableEntry> EntryCollection, string titleText)
     {
-        if (条目集合.Count == 0)
+        if (EntryCollection.Count == 0)
         {
             System.Windows.MessageBox.Show(
                 "变量表为空。请先在「系统设置」导入汇川变量表 CSV。",
@@ -38,41 +38,41 @@ public partial class 变量选择对话框 : Window
             return null;
         }
 
-        var 对话框 = new 变量选择对话框(条目集合, 标题文本)
+        var Dialog = new VariableSelectDialog(EntryCollection, titleText)
         {
             Owner = Application.Current.MainWindow,
         };
 
-        return 对话框.ShowDialog() == true ? 对话框.当前选中 : null;
+        return Dialog.ShowDialog() == true ? Dialog.CurrentSelected : null;
     }
 
     /// <summary>当前选中的变量条目。</summary>
-    public 变量表条目? 当前选中 => 变量列表.SelectedItem as 变量表条目;
+    public VariableTableEntry? CurrentSelected => VariableList.SelectedItem as VariableTableEntry;
 
     /// <summary>仅供自检使用：实例化但不显示（用于验证 XAML 资源能否解析）。</summary>
-    internal static Window 创建验证(IReadOnlyList<变量表条目> 条目集合) =>
-        new 变量选择对话框(条目集合, "从变量表选择变量");
+    internal static Window CreateVerify(IReadOnlyList<VariableTableEntry> EntryCollection) =>
+        new VariableSelectDialog(EntryCollection, "从变量表选择变量");
 
-    private void 搜索文本已变更(object 发送者, TextChangedEventArgs 事件参数)
+    private void SearchTextChanged(object sender, TextChangedEventArgs eventArgs)
     {
-        if (变量列表 is null)
+        if (VariableList is null)
         {
             return;   // 初始化过程中控件尚未就绪
         }
 
-        var 关键字 = 搜索框.Text.Trim();
+        var keyword = SearchFrame.Text.Trim();
 
-        变量列表.ItemsSource = 关键字.Length == 0
-            ? _全部条目
-            : _全部条目.Where(条目 =>
-                    条目.变量名.Contains(关键字, StringComparison.OrdinalIgnoreCase) ||
-                    条目.软元件地址.Contains(关键字, StringComparison.OrdinalIgnoreCase))
+        VariableList.ItemsSource = keyword.Length == 0
+            ? _allEntry
+            : _allEntry.Where(Entry =>
+                    Entry.VariableName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                    Entry.SoftElementAddress.Contains(keyword, StringComparison.OrdinalIgnoreCase))
                 .ToList();
     }
 
-    private void 确认(object 发送者, RoutedEventArgs 事件参数)
+    private void Confirm(object sender, RoutedEventArgs eventArgs)
     {
-        if (当前选中 is null)
+        if (CurrentSelected is null)
         {
             System.Windows.MessageBox.Show("请先在列表中选择一个变量。", "未选择",
                 MessageBoxButton.OK, MessageBoxImage.Information);
@@ -82,11 +82,11 @@ public partial class 变量选择对话框 : Window
         DialogResult = true;
     }
 
-    private void 取消(object 发送者, RoutedEventArgs 事件参数) => DialogResult = false;
+    private void Cancel(object sender, RoutedEventArgs eventArgs) => DialogResult = false;
 
-    private void 列表双击(object 发送者, MouseButtonEventArgs 事件参数)
+    private void ListDoubleHit(object sender, MouseButtonEventArgs eventArgs)
     {
-        if (当前选中 is not null)
+        if (CurrentSelected is not null)
         {
             DialogResult = true;
         }

@@ -1,9 +1,9 @@
-namespace 上位机.核心.枚举;
+namespace PlcHmi.Core.Enums;
 
 /// <summary>点位数据类型。</summary>
-public enum 标签数据类型
+public enum TagDataType
 {
-    布尔 = 0,
+    Boolean = 0,
     Int16 = 1,
     UInt16 = 2,
     Int32 = 3,
@@ -14,34 +14,34 @@ public enum 标签数据类型
 }
 
 /// <summary>点位访问权限。</summary>
-public enum 标签访问
+public enum TagAccessQuery
 {
     /// <summary>只读</summary>
-    读取 = 0,
+    Read = 0,
     /// <summary>只写</summary>
-    写入 = 1,
+    Write = 1,
     /// <summary>可读可写</summary>
-    读取写入 = 2,
+    ReadWrite = 2,
 }
 
 /// <summary>点位所属轮询分组。不同分组使用不同轮询周期。</summary>
-public enum 标签分组
+public enum TagGroup
 {
     /// <summary>命令组：不轮询，由写操作触发</summary>
-    命令 = 0,
+    Command = 0,
     /// <summary>快组：100ms，用于状态、IO、轴位置等实时性要求高的数据</summary>
-    快 = 1,
+    Fast = 1,
     /// <summary>慢组：500ms，用于产量、参数等变化缓慢的数据</summary>
-    慢 = 2,
+    Slow = 2,
     /// <summary>事件组：1000ms，用于报警字、诊断信息</summary>
-    事件 = 3,
+    Event = 3,
 }
 
 /// <summary>32 位数据的字序（大小端组合方式）。</summary>
-public enum 字顺序
+public enum WordOrder
 {
     /// <summary>高字在前（ABCD）：高 16 位存于低地址寄存器</summary>
-    大字节序 = 0,
+    BigEndian = 0,
     /// <summary>低字在前（CDAB）：汇川默认</summary>
-    小字节序 = 1,
+    LittleEndian = 1,
 }

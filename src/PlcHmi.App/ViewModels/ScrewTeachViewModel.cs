@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Logging;
-using 上位机.应用.服务;
-using 上位机.核心.抽象;
-using 上位机.核心.模型;
+using PlcHmi.App.Services;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>
 /// 锁附示教页 ViewModel。
@@ -14,22 +14,22 @@ namespace 上位机.应用.视图模型;
 /// <para>手动控制区只显示锁附 X/Y/Z/ZZ；动作按钮与辅助地址（拍照点、上料点、
 /// ZZ 轴设置、浮高开关…）由配置按分组驱动，地址均由管理员在「编辑地址」中维护。</para>
 /// </summary>
-public sealed partial class 锁附示教视图模型 : 点表示教视图模型
+public sealed partial class ScrewTeachViewModel : PointTableTeachViewModel
 {
-    public 锁附示教视图模型(
-        点表服务接口 点表服务,
-        页面地址服务接口 页面地址服务,
-        配方配置 配置对象,
-        手动控件服务接口 手动,
-        用户服务接口 用户,
-        标签值服务接口 值列表,
-        对话框服务接口 对话框,
-        页面上下文服务接口 页面上下文,
-        ILogger<锁附示教视图模型> 日志)
+    public ScrewTeachViewModel(
+        IPointTableService PointTableService,
+        IPageAddressService PageAddressService,
+        RecipeConfig configPairObject,
+        IManualWidgetService Manual,
+        IUserService User,
+        ITagValueService ValueList,
+        IDialogService Dialog,
+        IPageContextService PageContext,
+        ILogger<ScrewTeachViewModel> Log)
         // 点码写 D651：锁附与点胶两张点表各写各自的字（现场口径 2026-10-14）
-        : base("锁附", 页面上下文寄存器.锁附示教点码, 点表服务, 页面地址服务, 配置对象, 手动, 用户, 值列表, 对话框, 页面上下文, 日志)
+        : base("锁附", PageContextRegister.screwTeachPointCode, PointTableService, PageAddressService, configPairObject, Manual, User, ValueList, Dialog, PageContext, Log)
     {
-        标题 = "锁附示教";
-        副标题 = "锁附 X / Y / 浮高 · 最多 30 点 · 坐标 XXXX.XX（MM） · 地址编辑仅管理员";
+        Title = "锁附示教";
+        Subtitle = "锁附 X / Y / 浮高 · 最多 30 点 · 坐标 XXXX.XX（MM） · 地址编辑仅管理员";
     }
 }

@@ -1,9 +1,9 @@
-namespace 上位机.核心.枚举;
+namespace PlcHmi.Core.Enums;
 
 /// <summary>
 /// 软元件类型。涵盖小型 PLC（EASY/H5U/H3U）与中型 PLC（AM600/AC800）两套体系。
 /// </summary>
-public enum 软元素
+public enum SoftElement
 {
     /// <summary>输入继电器（小型 PLC），八进制编号。EASY320 / EASY52X / H5U / H3U</summary>
     X = 0,
@@ -27,10 +27,10 @@ public enum 软元素
     R = 6,
 
     /// <summary>特殊辅助继电器，十进制编号。两种机型均存在，但地址基准不同。</summary>
-    特殊寄存器 = 7,
+    SpecialRegister = 7,
 
     /// <summary>特殊数据寄存器，十进制编号。两种机型均存在，但地址基准与功能码不同。</summary>
-    系统寄存器 = 8,
+    SystemUnifiedRegister = 8,
 
     /// <summary>定时器触点（小型 PLC），十进制编号。</summary>
     T = 9,
@@ -42,7 +42,7 @@ public enum 软元素
     Q = 20,
 
     /// <summary>输入接点（中型 PLC / AM600），按 <c>IX字节.位</c> 寻址。</summary>
-    接口 = 21,
+    Interface = 21,
 
     /// <summary>字寄存器（中型 PLC / AM600），16 位，十进制编号。</summary>
     MW = 22,

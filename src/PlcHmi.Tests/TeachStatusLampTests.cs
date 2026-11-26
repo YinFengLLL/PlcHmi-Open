@@ -1,13 +1,13 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 示教页顶部固定状态灯（各轴回原状态）的配置与校验测试。
@@ -18,134 +18,134 @@ namespace 上位机.上位机测试;
 /// <b>地址能被管理员改并落盘</b>、<b>写成 D 区必须被拒绝</b>（灯用 FC01 读位，D 区是字）。</para>
 /// </summary>
 [Collection("config-files")]
-public class 状态灯配置测试
+public class StatusLampConfigTest
 {
-    private static 页面地址服务 新服务(配方配置 配置项, Modbus客户端接口 连接)
+    private static PageAddressService NewService(RecipeConfig configItem, IModbusClient Connect)
     {
-        var 解析器 = new 汇川地址解析器(PLC系列.小型PLC);
+        var Parser = new InovanceAddressParser(PlcSeries.SmallPlc);
 
-        return new 页面地址服务(
-            连接,
-            new 标签写入器(连接, new 标签仓储(NullLogger<标签仓储>.Instance), 解析器,
-                NullLogger<标签写入器>.Instance),
-            配置项,
-            new 允许全部权限守卫(),
-            NullLogger<页面地址服务>.Instance);
+        return new PageAddressService(
+            Connect,
+            new TagWriter(Connect, new TagRepository(NullLogger<TagRepository>.Instance), Parser,
+                NullLogger<TagWriter>.Instance),
+            configItem,
+            new AllowAllPermissionGuard(),
+            NullLogger<PageAddressService>.Instance);
     }
 
     [Fact]
-    public async Task 配置缺条目时应按缺省地址合成状态灯()
+    public async Task ConfigMissingEntryWhenShouldByDefaultAddressValidAsStatusLamp()
     {
-        await using var 客户端 = new 替身Modbus客户端();
+        await using var Client = new FakeModbusClient();
 
         // 空配置 = 现场升级后 recipe-config.json 里还没有"状态灯"段
-        var 服务实例 = 新服务(new 配方配置(), 客户端);
+        var serviceInstance = NewService(new RecipeConfig(), Client);
 
-        var 列表 = 服务实例.状态灯("锁附");
+        var list = serviceInstance.StatusLamp("锁附");
 
-        var 灯项 = Assert.Single(列表);
-        Assert.Equal("回原状态灯", 灯项.键);
-        Assert.Equal("锁附", 灯项.分组);
-        Assert.Equal(状态灯项.缺省地址, 灯项.地址);
+        var lampItem = Assert.Single(list);
+        Assert.Equal("回原状态灯", lampItem.Key);
+        Assert.Equal("锁附", lampItem.Group);
+        Assert.Equal(StatusLampItem.defaultAddress, lampItem.Address);
     }
 
     [Fact]
-    public async Task 收集锁附页应含状态灯条目且不可删除()
+    public async Task CollectSetScrewPageShouldContainStatusLampEntryAndNotDeletable()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(配方配置加载器.加载(out _), 客户端);
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(RecipeConfigLoader.Load(out _), Client);
 
-        var 列表 = 服务实例.收集点表页("锁附");
+        var list = serviceInstance.CollectSetPointTablePage("锁附");
 
-        var 灯条目 = Assert.Single(列表, 项 => 项.类别 == "状态灯");
-        Assert.Equal("M430", 灯条目.地址文本);
-        Assert.Equal(标签数据类型.布尔.ToString(), 灯条目.数据类型文本);
+        var lampEntry = Assert.Single(list, Item => Item.Category == "状态灯");
+        Assert.Equal("M430", lampEntry.AddressText);
+        Assert.Equal(TagDataType.Boolean.ToString(), lampEntry.DataTypeText);
 
         // 固定元件：可改地址不可删（删了页面就没有灯，现场也不知道该找谁）
-        Assert.False(灯条目.可删除);
+        Assert.False(lampEntry.Deletable);
     }
 
     [Fact]
-    public async Task 点胶页状态灯应与锁附页各自独立()
+    public async Task DispensePageStatusLampShouldAndScrewPageEachIndependent()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(配方配置加载器.加载(out _), 客户端);
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(RecipeConfigLoader.Load(out _), Client);
 
-        Assert.Single(服务实例.状态灯("锁附"));
-        Assert.Single(服务实例.状态灯("点胶"));
+        Assert.Single(serviceInstance.StatusLamp("锁附"));
+        Assert.Single(serviceInstance.StatusLamp("点胶"));
 
         // 点胶页不应混入锁附分组的条目（分组过滤生效）
-        Assert.All(服务实例.状态灯("点胶"), 灯项 => Assert.Equal("点胶", 灯项.分组));
+        Assert.All(serviceInstance.StatusLamp("点胶"), lampItem => Assert.Equal("点胶", lampItem.Group));
     }
 
     [Fact]
-    public async Task 保存点表页应写回状态灯地址并按M区规范化()
+    public async Task SavePointTablePageShouldWriteBackStatusLampAddressAndByMAreaRuleRangeConvert()
     {
-        var 配方路径 = 配置路径.配方配置;
-        var 原始 = await File.ReadAllTextAsync(配方路径);
+        var recipePath = ConfigPath.RecipeConfig;
+        var Original = await File.ReadAllTextAsync(recipePath);
 
         try
         {
-            await using var 客户端 = new 替身Modbus客户端();
-            var 服务实例 = 新服务(配方配置加载器.加载(out _), 客户端);
+            await using var Client = new FakeModbusClient();
+            var serviceInstance = NewService(RecipeConfigLoader.Load(out _), Client);
 
-            var 请求 = new 地址编辑请求
+            var Request = new AddressEditRequest
             {
-                标题 = "锁附示教",
-                默认分组 = "锁附",
-                项集合 = 服务实例.收集点表页("锁附").ToList(),
+                Title = "锁附示教",
+                DefaultGroup = "锁附",
+                ItemCollection = serviceInstance.CollectSetPointTablePage("锁附").ToList(),
             };
 
             // 小写 + 无前缀规范化：现场手输时大小写随意，落盘必须统一成 M 区大写
-            请求.项集合.First(项 => 项.类别 == "状态灯").地址文本 = "m466";
+            Request.ItemCollection.First(Item => Item.Category == "状态灯").AddressText = "m466";
 
-            await 服务实例.异步保存点表页("锁附", 请求);
+            await serviceInstance.SavePointTablePageAsync("锁附", Request);
 
-            var 配置 = 配方配置加载器.加载(out _);
-            var 灯项 = 配置.状态灯.First(项 => 项.分组 == "锁附");
-            Assert.Equal("M466", 灯项.地址);
+            var Config = RecipeConfigLoader.Load(out _);
+            var lampItem = Config.StatusLamp.First(Item => Item.Group == "锁附");
+            Assert.Equal("M466", lampItem.Address);
 
             // 点胶分组不受影响（现场两页都用 M430）
-            Assert.Equal("M430", 配置.状态灯.First(项 => 项.分组 == "点胶").地址);
+            Assert.Equal("M430", Config.StatusLamp.First(Item => Item.Group == "点胶").Address);
         }
         finally
         {
-            await File.WriteAllTextAsync(配方路径, 原始);
+            await File.WriteAllTextAsync(recipePath, Original);
         }
     }
 
     [Fact]
-    public async Task 保存点表页时状态灯写成D区应被拒绝()
+    public async Task SavePointTablePageWhenStatusLampWriteAsDAreaShouldBeRejected()
     {
-        var 配方路径 = 配置路径.配方配置;
-        var 原始 = await File.ReadAllTextAsync(配方路径);
+        var recipePath = ConfigPath.RecipeConfig;
+        var Original = await File.ReadAllTextAsync(recipePath);
 
         try
         {
-            await using var 客户端 = new 替身Modbus客户端();
-            var 服务实例 = 新服务(配方配置加载器.加载(out _), 客户端);
+            await using var Client = new FakeModbusClient();
+            var serviceInstance = NewService(RecipeConfigLoader.Load(out _), Client);
 
-            var 请求 = new 地址编辑请求
+            var Request = new AddressEditRequest
             {
-                标题 = "锁附示教",
-                默认分组 = "锁附",
-                项集合 = 服务实例.收集点表页("锁附").ToList(),
+                Title = "锁附示教",
+                DefaultGroup = "锁附",
+                ItemCollection = serviceInstance.CollectSetPointTablePage("锁附").ToList(),
             };
 
             // D 区是字元件：灯用 FC01 读位，写错区会"能存但读错"，必须当场拒绝
-            请求.项集合.First(项 => 项.类别 == "状态灯").地址文本 = "D500";
+            Request.ItemCollection.First(Item => Item.Category == "状态灯").AddressText = "D500";
 
-            var 异常 = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => 服务实例.异步保存点表页("锁附", 请求));
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => serviceInstance.SavePointTablePageAsync("锁附", Request));
 
-            Assert.Contains("M 区", 异常.Message, StringComparison.Ordinal);
+            Assert.Contains("M 区", exception.Message, StringComparison.Ordinal);
 
             // 拒绝时不得改到磁盘上的配置
-            Assert.Equal(原始, await File.ReadAllTextAsync(配方路径));
+            Assert.Equal(Original, await File.ReadAllTextAsync(recipePath));
         }
         finally
         {
-            await File.WriteAllTextAsync(配方路径, 原始);
+            await File.WriteAllTextAsync(recipePath, Original);
         }
     }
 }

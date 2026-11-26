@@ -1,4 +1,4 @@
-namespace 上位机.应用.视图;
+namespace PlcHmi.App.Views;
 
 /// <summary>
 /// 运行监控页左下角状态条：通信 / 锁附 / 点胶 / 加工 / 已锁附颗数 / 报警。
@@ -9,10 +9,10 @@ namespace 上位机.应用.视图;
 /// <para>数据全部来自页面 DataContext（三盏灯、颗数、报警）与主窗口 DataContext（通信），
 /// 因此这里不定义依赖属性、也没有代码后置逻辑——控件自身不持有任何状态。</para>
 /// </summary>
-public partial class 运行状态条 : System.Windows.Controls.UserControl
+public partial class RunStatusStrip : System.Windows.Controls.UserControl
 {
     /// <summary>初始化组件。</summary>
-    public 运行状态条()
+    public RunStatusStrip()
     {
         InitializeComponent();
     }

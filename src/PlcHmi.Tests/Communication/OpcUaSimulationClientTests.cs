@@ -1,126 +1,126 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.通信.仿真;
-using 上位机.通信.汇川;
-using 上位机.通信.Modbus;
-using 上位机.通信.OPCUA;
-using 上位机.核心.抽象;
-using 上位机.核心.异常;
-using 上位机.核心.模型;
+using PlcHmi.Communication.Simulation;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Communication.OpcUa;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Exceptions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// OPC UA 客户端语义单测（经仿真实现）：验证“区域+地址 → NodeId → 读写”的完整路径，
 /// 以及 OPC UA 与 Modbus 两条协议路径共享同一份虚拟 PLC 数据。
 /// </summary>
-public class OPCUA仿真客户端测试
+public class OpcUaSimulationClientTest
 {
-    private static (仿真OPCUA客户端 OPCUA, 仿真Modbus客户端 Modbus, 虚拟PLC设备 设备) 创建双协议环境()
+    private static (SimulationOpcUaClient OPCUA, SimulationModbusClient Modbus, VirtualPlcDevice Device) CreateDoubleProtocolEnvironment()
     {
-        var 选项 = new PLC连接选项();
-        var 推导器 = new NodeId推导器(选项, new 汇川地址解析器(选项.系列));
-        var 设备 = new 虚拟PLC设备(NullLogger<虚拟PLC设备>.Instance);
+        var Options = new PlcConnectionOptions();
+        var Resolver = new NodeIdResolver(Options, new InovanceAddressParser(Options.Series));
+        var Device = new VirtualPlcDevice(NullLogger<VirtualPlcDevice>.Instance);
 
-        var opcua = new 仿真OPCUA客户端(设备, 推导器, NullLogger<仿真OPCUA客户端>.Instance);
-        var modbus = new 仿真Modbus客户端(设备, NullLogger<仿真Modbus客户端>.Instance);
+        var opcua = new SimulationOpcUaClient(Device, Resolver, NullLogger<SimulationOpcUaClient>.Instance);
+        var modbus = new SimulationModbusClient(Device, NullLogger<SimulationModbusClient>.Instance);
 
-        return (opcua, modbus, 设备);
+        return (opcua, modbus, Device);
     }
 
     [Fact]
-    public async Task 连接前读写_应抛未连接异常()
+    public async Task ConnectBeforeReadWrite_ShouldThrowDisconnectedException()
     {
-        var (opcua, _, _) = 创建双协议环境();
+        var (opcua, _, _) = CreateDoubleProtocolEnvironment();
 
-        var 异常 = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => opcua.异步读取保持寄存器(0, 1));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => opcua.ReadHoldingRegisterAsync(0, 1));
 
-        Assert.Contains("未连接", 异常.Message);
+        Assert.Contains("未连接", exception.Message);
     }
 
     [Fact]
-    public async Task 连接与断开_应正确翻转状态并启停虚拟设备()
+    public async Task ConnectAndDisconnect_ShouldBeCorrectToggleStateAndStartStopVirtualDevice()
     {
-        var (opcua, _, 设备) = 创建双协议环境();
+        var (opcua, _, Device) = CreateDoubleProtocolEnvironment();
 
-        Assert.False(opcua.是否已连接);
+        Assert.False(opcua.IsConnected);
 
-        await opcua.异步连接();
-        Assert.True(opcua.是否已连接);
+        await opcua.ConnectAsync();
+        Assert.True(opcua.IsConnected);
 
-        await opcua.异步断开();
-        Assert.False(opcua.是否已连接);
+        await opcua.DisconnectAsync();
+        Assert.False(opcua.IsConnected);
     }
 
     [Fact]
-    public async Task 读写保持寄存器_单点与批量_应往返一致()
+    public async Task ReadWriteHoldingRegister_SinglePointAndBatch_ShouldRoundTripConsistent()
     {
-        var (opcua, _, _) = 创建双协议环境();
-        await opcua.异步连接();
+        var (opcua, _, _) = CreateDoubleProtocolEnvironment();
+        await opcua.ConnectAsync();
 
-        await opcua.异步写入单个寄存器(100, 1234);
-        await opcua.异步写入多个寄存器(200, [11, 22, 33]);
+        await opcua.WriteSingleRegisterAsync(100, 1234);
+        await opcua.WriteMultiRegisterAsync(200, [11, 22, 33]);
 
-        var 单点 = await opcua.异步读取保持寄存器(100, 1);
-        var 批量 = await opcua.异步读取保持寄存器(200, 3);
+        var singlePoint = await opcua.ReadHoldingRegisterAsync(100, 1);
+        var batch = await opcua.ReadHoldingRegisterAsync(200, 3);
 
-        Assert.Equal((ushort)1234, 单点[0]);
-        Assert.Equal(new ushort[] { 11, 22, 33 }, 批量);
+        Assert.Equal((ushort)1234, singlePoint[0]);
+        Assert.Equal(new ushort[] { 11, 22, 33 }, batch);
     }
 
     [Fact]
-    public async Task 读写线圈_应往返一致()
+    public async Task ReadWriteCoil_ShouldRoundTripConsistent()
     {
-        var (opcua, _, _) = 创建双协议环境();
-        await opcua.异步连接();
+        var (opcua, _, _) = CreateDoubleProtocolEnvironment();
+        await opcua.ConnectAsync();
 
-        await opcua.异步写入多个线圈(300, [true, false, true, true]);
+        await opcua.WriteMultiCoilAsync(300, [true, false, true, true]);
 
-        var 读回 = await opcua.异步读取线圈(300, 4);
+        var ReadBackOnce = await opcua.ReadCoilAsync(300, 4);
 
-        Assert.Equal(new[] { true, false, true, true }, 读回);
+        Assert.Equal(new[] { true, false, true, true }, ReadBackOnce);
     }
 
     [Fact]
-    public async Task 读写X区_八进制地址路径_应正常工作()
+    public async Task ReadWriteXArea_OctalAddressPath_ShouldNormalWorkOperation()
     {
         // X 是物理输入 → 离散输入区（FC02）。八进制反解路径：63488+8 → X10（不是 X8）。
         // 2026-10-17 修正前 X 被放在线圈区，这里写线圈、读线圈都"通"，但真机上读的是无关位。
-        var (opcua, _, 设备) = 创建双协议环境();
-        await opcua.异步连接();
+        var (opcua, _, Device) = CreateDoubleProtocolEnvironment();
+        await opcua.ConnectAsync();
 
-        设备.内存.不安全设置离散输入(63496, true);   // X10（八进制 8 → 63488 + 8）
+        Device.memory.UnsafeSetDiscreteInput(63496, true);   // X10（八进制 8 → 63488 + 8）
 
-        var 读回 = await opcua.异步读取离散输入(63496, 1);
+        var ReadBackOnce = await opcua.ReadDiscreteInputAsync(63496, 1);
 
-        Assert.True(读回[0], "X10 应经离散输入区（FC02）读到");
+        Assert.True(ReadBackOnce[0], "X10 应经离散输入区（FC02）读到");
     }
 
     [Fact]
-    public async Task 与Modbus仿真客户端_共享同一虚拟设备数据()
+    public async Task AndModbusSimulationClient_TotalShareSameOneVirtualDeviceData()
     {
-        var (opcua, modbus, _) = 创建双协议环境();
-        await opcua.异步连接();
-        await modbus.异步连接();
+        var (opcua, modbus, _) = CreateDoubleProtocolEnvironment();
+        await opcua.ConnectAsync();
+        await modbus.ConnectAsync();
 
         // OPC UA 路径写、Modbus 路径读
-        await opcua.异步写入单个寄存器(100, 999);
-        Assert.Equal((ushort)999, (await modbus.异步读取保持寄存器(100, 1))[0]);
+        await opcua.WriteSingleRegisterAsync(100, 999);
+        Assert.Equal((ushort)999, (await modbus.ReadHoldingRegisterAsync(100, 1))[0]);
 
         // Modbus 路径写、OPC UA 路径读
-        await modbus.异步写入单个线圈(400, true);
-        Assert.True((await opcua.异步读取线圈(400, 1))[0]);
+        await modbus.WriteSingleCoilAsync(400, true);
+        Assert.True((await opcua.ReadCoilAsync(400, 1))[0]);
     }
 
     [Fact]
-    public async Task 读写操作_都会经过NodeId推导()
+    public async Task ReadWriteOperateOperation_BothWillViaBeyondNodeIdResolve()
     {
         // 无法映射的地址（保持寄存器区 65536 越界）应抛地址解析异常，
         // 证明客户端确实走了“区域+地址 → NodeId”推导而非直连内存
-        var (opcua, _, _) = 创建双协议环境();
-        await opcua.异步连接();
+        var (opcua, _, _) = CreateDoubleProtocolEnvironment();
+        await opcua.ConnectAsync();
 
-        await Assert.ThrowsAsync<地址解析异常>(
-            () => opcua.异步读取保持寄存器(65536, 1));
+        await Assert.ThrowsAsync<AddressParseException>(
+            () => opcua.ReadHoldingRegisterAsync(65536, 1));
     }
 }

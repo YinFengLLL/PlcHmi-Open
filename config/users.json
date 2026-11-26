@@ -1,28 +1,28 @@
 {
-  "用户": [
+  "user": [
     {
-      "名称": "operator",
-      "显示名称": "操作员",
-      "角色": "操作员",
-      "密码哈希": "u9AV4hMvIyy3ysT1SGaDM5OHzImFgir6R7/8WsbrW38=",
-      "盐值": "CGS8agjj+EVwQM1zy80boQ==",
-      "是否默认密码": true
+      "name": "operator",
+      "displayName": "操作员",
+      "role": "Operator",
+      "passwordHash": "u9AV4hMvIyy3ysT1SGaDM5OHzImFgir6R7/8WsbrW38=",
+      "salt": "CGS8agjj+EVwQM1zy80boQ==",
+      "isDefaultPassword": true
     },
     {
-      "名称": "engineer",
-      "显示名称": "工程师",
-      "角色": "工程师",
-      "密码哈希": "Tz/7Xnx4pEN+ACCwrOqrBbEhT7VS5qyvd50Jfn71OCs=",
-      "盐值": "Lw6a9pRteFkarAxJCkNFBQ==",
-      "是否默认密码": true
+      "name": "engineer",
+      "displayName": "工程师",
+      "role": "Engineer",
+      "passwordHash": "Tz/7Xnx4pEN+ACCwrOqrBbEhT7VS5qyvd50Jfn71OCs=",
+      "salt": "Lw6a9pRteFkarAxJCkNFBQ==",
+      "isDefaultPassword": true
     },
     {
-      "名称": "admin",
-      "显示名称": "管理员",
-      "角色": "管理员",
-      "密码哈希": "U2aVDtTf1n9iEImAWBISq3v8SHy3406pUh58uxPXVJU=",
-      "盐值": "LJ6N2DN9Pch1TLEicOsnrQ==",
-      "是否默认密码": true
+      "name": "admin",
+      "displayName": "管理员",
+      "role": "Admin",
+      "passwordHash": "U2aVDtTf1n9iEImAWBISq3v8SHy3406pUh58uxPXVJU=",
+      "salt": "LJ6N2DN9Pch1TLEicOsnrQ==",
+      "isDefaultPassword": true
     }
   ]
 }

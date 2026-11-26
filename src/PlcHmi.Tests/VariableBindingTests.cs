@@ -1,178 +1,178 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.通信.仿真;
-using 上位机.通信.汇川;
-using 上位机.通信.Modbus;
-using 上位机.通信.OPCUA;
-using 上位机.核心.抽象;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Communication.Simulation;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Communication.OpcUa;
+using PlcHmi.Core.Abstractions;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 变量绑定回填与 OPC UA 变量符号寻址单测：
 /// 地址回填、失效降级、NodeId 命中/回退、仿真客户端的类型化读写往返。
 /// </summary>
-public class 变量绑定与寻址测试
+public class VariableBindingAndAddressingTest
 {
     /// <summary>与样例变量表对应的文档（D1200 REAL / D1212 INT / M200 BOOL）。</summary>
-    private static 变量表文档 创建文档() => new()
+    private static VariableTableDocument CreateDocument() => new()
     {
-        条目集合 =
+        EntryCollection =
         [
-            new() { 变量名 = "X轴参数.r_定位速度", 软元件地址 = "D1200", 数据类型 = 标签数据类型.Float32 },
-            new() { 变量名 = "X轴命令.i_手动速度档位", 软元件地址 = "D1212", 数据类型 = 标签数据类型.Int16 },
-            new() { 变量名 = "系统状态.b_运行", 软元件地址 = "M200", 数据类型 = 标签数据类型.布尔 },
-            new() { 变量名 = "X轴命令.b_轴使能", 软元件地址 = "D1210.0", 数据类型 = 标签数据类型.布尔 },
+            new() { VariableName = "X轴参数.r_定位速度", SoftElementAddress = "D1200", DataType = TagDataType.Float32 },
+            new() { VariableName = "X轴命令.i_手动速度档位", SoftElementAddress = "D1212", DataType = TagDataType.Int16 },
+            new() { VariableName = "系统状态.b_运行", SoftElementAddress = "M200", DataType = TagDataType.Boolean },
+            new() { VariableName = "X轴命令.b_轴使能", SoftElementAddress = "D1210.0", DataType = TagDataType.Boolean },
         ],
     };
 
-    private static 地址解析器接口 创建解析器() => new 汇川地址解析器(PLC系列.小型PLC);
+    private static IAddressParser CreateParser() => new InovanceAddressParser(PlcSeries.SmallPlc);
 
-    private static (变量表服务 表, NodeId推导器 推导器) 创建推导器(变量表文档? 文档 = null)
+    private static (VariableTableService Table, NodeIdResolver Resolver) CreateResolver(VariableTableDocument? Document = null)
     {
-        var 表 = new 变量表服务(文档 ?? 创建文档(), 创建解析器(), NullLogger<变量表服务>.Instance);
-        var 推导器 = new NodeId推导器(new PLC连接选项(), new 汇川地址解析器(PLC系列.小型PLC), 表);
-        return (表, 推导器);
+        var Table = new VariableTableService(Document ?? CreateDocument(), CreateParser(), NullLogger<VariableTableService>.Instance);
+        var Resolver = new NodeIdResolver(new PlcConnectionOptions(), new InovanceAddressParser(PlcSeries.SmallPlc), Table);
+        return (Table, Resolver);
     }
 
     // ── 绑定回填 ────────────────────────────────────────────────────────
 
     [Fact]
-    public void 回填_变量存在_应返回变量地址()
+    public void Backfill_VariableStoreAt_ShouldReturnVariableAddress()
     {
-        var (表, _) = 创建推导器();
+        var (Table, _) = CreateResolver();
 
-        var 地址 = 变量绑定回填.解析地址("X轴参数.r_定位速度", 表, 创建解析器(), "D1600", out var 错误);
+        var Address = VariableBindingBackfill.ParseAddress("X轴参数.r_定位速度", Table, CreateParser(), "D1600", out var error);
 
-        Assert.Equal(string.Empty, 错误);
-        Assert.Equal("D1200", 地址);
+        Assert.Equal(string.Empty, error);
+        Assert.Equal("D1200", Address);
     }
 
     [Fact]
-    public void 回填_变量不存在_应保留原地址并说明原因()
+    public void Backfill_VariableNotExist_ShouldRetainOriginalAddressAndDescriptionOriginalReason()
     {
-        var (表, _) = 创建推导器();
+        var (Table, _) = CreateResolver();
 
-        var 地址 = 变量绑定回填.解析地址("不存在的变量", 表, 创建解析器(), "D1600", out var 错误);
+        var Address = VariableBindingBackfill.ParseAddress("不存在的变量", Table, CreateParser(), "D1600", out var error);
 
-        Assert.Contains("不在变量表中", 错误);
-        Assert.Equal("D1600", 地址);
+        Assert.Contains("不在变量表中", error);
+        Assert.Equal("D1600", Address);
     }
 
     [Fact]
-    public void 回填_字位地址_应接受并原样回填()
+    public void Backfill_WordBitAddress_ShouldAcceptAndOriginalSampleBackfill()
     {
         // D1210.0 是 D 字内位（汇川位打包）：2026-09-17 起按整字读-改-写可寻址
-        var (表, _) = 创建推导器();
+        var (Table, _) = CreateResolver();
 
-        var 地址 = 变量绑定回填.解析地址("X轴命令.b_轴使能", 表, 创建解析器(), "M220", out var 错误);
+        var Address = VariableBindingBackfill.ParseAddress("X轴命令.b_轴使能", Table, CreateParser(), "M220", out var error);
 
-        Assert.Equal(string.Empty, 错误);
-        Assert.Equal("D1210.0", 地址);
+        Assert.Equal(string.Empty, error);
+        Assert.Equal("D1210.0", Address);
     }
 
     [Fact]
-    public void 回填_未绑定_应保持原地址无错误()
+    public void Backfill_Unbound_ShouldKeepOriginalAddressNoneError()
     {
-        var (表, _) = 创建推导器();
+        var (Table, _) = CreateResolver();
 
-        var 地址 = 变量绑定回填.解析地址(null, 表, 创建解析器(), "M220", out var 错误);
+        var Address = VariableBindingBackfill.ParseAddress(null, Table, CreateParser(), "M220", out var error);
 
-        Assert.Equal(string.Empty, 错误);
-        Assert.Equal("M220", 地址);
+        Assert.Equal(string.Empty, error);
+        Assert.Equal("M220", Address);
     }
 
     [Fact]
-    public void 回填_配方配置_应批量回填参数项与控件地址()
+    public void Backfill_RecipeConfig_ShouldBatchBackfillParameterItemAndWidgetAddress()
     {
-        var 配置 = new 配方配置
+        var Config = new RecipeConfig
         {
-            参数 =
+            Parameter =
             [
-                new 配方参数规格 { 键 = "X.LocateSpeed", 名称 = "X 轴定位速度", 地址 = 1600, 变量 = "X轴参数.r_定位速度" },
+                new RecipeParameterSpec { Key = "X.LocateSpeed", Name = "X 轴定位速度", Address = 1600, Variable = "X轴参数.r_定位速度" },
             ],
-            控件 = new 配方控件配置 { 配方号地址 = 3330, 配方号变量 = "X轴命令.i_手动速度档位" },
+            Widget = new RecipeWidgetConfig { RecipeNumberAddress = 3330, RecipeNumberVariable = "X轴命令.i_手动速度档位" },
         };
 
-        var 警告 = 变量绑定回填.应用配方配置(配置, 创建文档(), 创建解析器());
+        var Warning = VariableBindingBackfill.ApplyRecipeConfig(Config, CreateDocument(), CreateParser());
 
-        Assert.Empty(警告);
-        Assert.Equal(1200, 配置.参数[0].地址);       // D1200 → 1200
-        Assert.Equal(1212, 配置.控件.配方号地址);    // D1212 → 1212
+        Assert.Empty(Warning);
+        Assert.Equal(1200, Config.Parameter[0].Address);       // D1200 → 1200
+        Assert.Equal(1212, Config.Widget.RecipeNumberAddress);    // D1212 → 1212
     }
 
     [Fact]
-    public void 回填_配方配置_变量失效应给出警告且不改地址()
+    public void Backfill_RecipeConfig_VariableFailEffectShouldGiveWarningAndNotChangeAddress()
     {
-        var 配置 = new 配方配置
+        var Config = new RecipeConfig
         {
-            参数 =
+            Parameter =
             [
-                new 配方参数规格 { 键 = "X.LocateSpeed", 名称 = "X 轴定位速度", 地址 = 1600, 变量 = "已删除的变量" },
+                new RecipeParameterSpec { Key = "X.LocateSpeed", Name = "X 轴定位速度", Address = 1600, Variable = "已删除的变量" },
             ],
         };
 
-        var 警告 = 变量绑定回填.应用配方配置(配置, 创建文档(), 创建解析器());
+        var Warning = VariableBindingBackfill.ApplyRecipeConfig(Config, CreateDocument(), CreateParser());
 
-        Assert.Single(警告);
-        Assert.Equal(1600, 配置.参数[0].地址);
+        Assert.Single(Warning);
+        Assert.Equal(1600, Config.Parameter[0].Address);
     }
 
     // ── OPC UA 变量符号寻址 ─────────────────────────────────────────────
 
     [Fact]
-    public void 推导器_变量命中_应按变量名生成NodeId()
+    public void Resolver_VariableHit_ShouldByVariableNameGenerateNodeId()
     {
-        var (_, 推导器) = 创建推导器();
+        var (_, Resolver) = CreateResolver();
 
-        Assert.True(推导器.尝试匹配变量(Modbus区域.保持寄存器, 1200, out _, out var 数量));
-        Assert.Equal(2, 数量);   // REAL 占 2 字
-        Assert.Equal("ns=2;s=X轴参数.r_定位速度", 推导器.推导变量文本("X轴参数.r_定位速度"));
+        Assert.True(Resolver.TryMatchVariable(ModbusArea.HoldingRegister, 1200, out _, out var Count));
+        Assert.Equal(2, Count);   // REAL 占 2 字
+        Assert.Equal("ns=2;s=X轴参数.r_定位速度", Resolver.ResolveVariableText("X轴参数.r_定位速度"));
     }
 
     [Fact]
-    public void 推导器_变量未命中_应回退软元件反解模板()
+    public void Resolver_VariableMiss_ShouldFallbackSoftElementReverseTemplate()
     {
-        var (_, 推导器) = 创建推导器();
+        var (_, Resolver) = CreateResolver();
 
-        Assert.False(推导器.尝试匹配变量(Modbus区域.保持寄存器, 1600, out _, out _));
-        Assert.Equal("ns=2;s=D1600", 推导器.推导文本(Modbus区域.保持寄存器, 1600));
+        Assert.False(Resolver.TryMatchVariable(ModbusArea.HoldingRegister, 1600, out _, out _));
+        Assert.Equal("ns=2;s=D1600", Resolver.ResolveText(ModbusArea.HoldingRegister, 1600));
     }
 
     [Fact]
-    public async Task 仿真客户端_变量绑定段_应按变量节点类型化读写往返()
+    public async Task SimulationClient_VariableBindingSection_ShouldByVariableSectionPointTypeConvertReadWriteRoundTrip()
     {
         // REAL 变量占 D1200–D1201：读(1200,2) 命中变量段 → 读 Float32 节点 →
         // 经寄存器编解码器（CDAB）拆为 2 个寄存器，与业务侧解码语义一致
-        var 文档 = 创建文档();
-        var 表 = new 变量表服务(文档, 创建解析器(), NullLogger<变量表服务>.Instance);
-        var 推导器 = new NodeId推导器(new PLC连接选项(), new 汇川地址解析器(PLC系列.小型PLC), 表);
-        var 设备 = new 虚拟PLC设备(NullLogger<虚拟PLC设备>.Instance);
-        var 客户端 = new 仿真OPCUA客户端(设备, 推导器, NullLogger<仿真OPCUA客户端>.Instance);
+        var Document = CreateDocument();
+        var Table = new VariableTableService(Document, CreateParser(), NullLogger<VariableTableService>.Instance);
+        var Resolver = new NodeIdResolver(new PlcConnectionOptions(), new InovanceAddressParser(PlcSeries.SmallPlc), Table);
+        var Device = new VirtualPlcDevice(NullLogger<VirtualPlcDevice>.Instance);
+        var Client = new SimulationOpcUaClient(Device, Resolver, NullLogger<SimulationOpcUaClient>.Instance);
         try
         {
-            await 客户端.异步连接();
+            await Client.ConnectAsync();
 
             // 写入 Float32 = 3.14 的寄存器对（CDAB：D1200=低字 0xF5C3，D1201=高字 0x4048）
-            await 客户端.异步写入多个寄存器(1200, 寄存器编解码器.编码(标签数据类型.Float32, 3.14));
+            await Client.WriteMultiRegisterAsync(1200, RegisterCodec.Encode(TagDataType.Float32, 3.14));
 
-            var 读回 = await 客户端.异步读取保持寄存器(1200, 2);
-            var 值 = 寄存器编解码器.解码(标签数据类型.Float32, 读回);
+            var ReadBackOnce = await Client.ReadHoldingRegisterAsync(1200, 2);
+            var Value = RegisterCodec.Decode(TagDataType.Float32, ReadBackOnce);
 
-            Assert.Equal(3.14, (float)值, 0.001);
+            Assert.Equal(3.14, (float)Value, 0.001);
 
             // 单字 INT 变量：按变量节点读写
-            await 客户端.异步写入单个寄存器(1212, 2);
-            var 档位 = await 客户端.异步读取保持寄存器(1212, 1);
-            Assert.Equal((ushort)2, 档位[0]);
+            await Client.WriteSingleRegisterAsync(1212, 2);
+            var gear = await Client.ReadHoldingRegisterAsync(1212, 1);
+            Assert.Equal((ushort)2, gear[0]);
         }
         finally
         {
-            await 客户端.DisposeAsync();
-            await 设备.DisposeAsync();
+            await Client.DisposeAsync();
+            await Device.DisposeAsync();
         }
     }
 }

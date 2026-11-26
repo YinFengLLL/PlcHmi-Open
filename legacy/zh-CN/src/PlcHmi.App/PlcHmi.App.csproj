@@ -1,0 +1,47 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\PlcHmi.Core\PlcHmi.Core.csproj" />
+    <ProjectReference Include="..\PlcHmi.Communication\PlcHmi.Communication.csproj" />
+    <ProjectReference Include="..\PlcHmi.Business\PlcHmi.Business.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
+  <!-- 现场配置文件随程序输出，便于免安装部署后直接改 JSON -->
+  <ItemGroup>
+    <None Include="..\..\config\**\*.*"
+          Link="config\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- 2026-11-26 开源版：不再嵌入公司 Logo，也不指定程序图标（顶栏只留文字、exe 用系统默认图标）。
+       需要自定义图标时，放一份 app.ico 到本目录并恢复下面两行即可：
+       <Resource Include="app.ico" /> 与 <ApplicationIcon>app.ico</ApplicationIcon> -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- 2026-10-12 现场要求：exe 直接叫「点胶锁付机」（AssemblyName 同时决定 exe 与主 DLL 名） -->
+    <AssemblyName>点胶锁付机</AssemblyName>
+    <!-- 只带中文资源：发布包根目录不再躺着一堆 de/es/fr/… 卫星语言文件夹 -->
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+    <!-- 2026-10-16：延时改 DINT（32 位毫秒）+ 工位状态条（M 区三灯 + 已锁附颗数）+ 下发点表自动并入本机种快照 -->
+    <!-- 2026-11-18：点胶示教点表 30 → 50 点（Y/Z 列基址随步长后移到 2800/2900），辅助地址结构体数组随之覆盖 D3500–D3899 -->
+    <!-- 对外公开版版本号：v1.0 = 截至 2026-11 的功能全集 -->
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Product>点胶锁付机上位机</Product>
+  </PropertyGroup>
+
+</Project>

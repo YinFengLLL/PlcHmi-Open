@@ -1,4 +1,4 @@
-<UserControl x:Class="上位机.应用.视图.环形占比图"
+<UserControl x:Class="PlcHmi.App.Views.DonutRatioChart"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid>
@@ -9,18 +9,18 @@
 
         <!-- 环形占比图：随布局实际尺寸原生重绘（旧版按 170×150 设计稿画好再套
              Viewbox 等比放大，全屏下非整数倍缩放会让中心读数发虚）。 -->
-        <Grid Grid.Row="0" x:Name="环形容器" Margin="0,4,0,0">
-            <Path x:Name="段甲" Fill="{DynamicResource SuccessBrush}" />
-            <Path x:Name="段乙" Fill="{DynamicResource DangerBrush}" />
+        <Grid Grid.Row="0" x:Name="DonutContainer" Margin="0,4,0,0">
+            <Path x:Name="Sectionitem" Fill="{DynamicResource SuccessBrush}" />
+            <Path x:Name="Sectionitem2" Fill="{DynamicResource DangerBrush}" />
 
             <!-- 中心读数：总量（字号随环半径缩放，见代码） -->
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
                         IsHitTestVisible="False">
-                <TextBlock x:Name="总量文本" Text="0"
+                <TextBlock x:Name="TotalAmountText" Text="0"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource TextPrimaryBrush}"
                            TextAlignment="Center" />
-                <TextBlock x:Name="总量标签文本" Text="总产量"
+                <TextBlock x:Name="TotalAmountTagText" Text="总产量"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            TextAlignment="Center" />
             </StackPanel>
@@ -32,19 +32,19 @@
                     HorizontalAlignment="Center" Margin="0,4,0,0">
             <Ellipse Width="10" Height="10" Fill="{DynamicResource SuccessBrush}"
                      VerticalAlignment="Center" />
-            <TextBlock Text="{Binding 标签甲, RelativeSource={RelativeSource AncestorType=UserControl}}"
+            <TextBlock Text="{Binding LabelA, RelativeSource={RelativeSource AncestorType=UserControl}}"
                        FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"
                        Margin="6,0,0,0" VerticalAlignment="Center" />
-            <TextBlock x:Name="甲值文本" Text="0 (—)" FontSize="13" FontWeight="SemiBold"
+            <TextBlock x:Name="ItemValueText" Text="0 (—)" FontSize="13" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextPrimaryBrush}"
                        Margin="7,0,18,0" VerticalAlignment="Center" />
 
             <Ellipse Width="10" Height="10" Fill="{DynamicResource DangerBrush}"
                      VerticalAlignment="Center" />
-            <TextBlock Text="{Binding 标签乙, RelativeSource={RelativeSource AncestorType=UserControl}}"
+            <TextBlock Text="{Binding LabelB, RelativeSource={RelativeSource AncestorType=UserControl}}"
                        FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"
                        Margin="6,0,0,0" VerticalAlignment="Center" />
-            <TextBlock x:Name="乙值文本" Text="0 (—)" FontSize="13" FontWeight="SemiBold"
+            <TextBlock x:Name="Item2ValueText" Text="0 (—)" FontSize="13" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextPrimaryBrush}"
                        Margin="7,0,0,0" VerticalAlignment="Center" />
         </StackPanel>

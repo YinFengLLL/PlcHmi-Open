@@ -1,6 +1,6 @@
-using 上位机.业务.配置;
+using PlcHmi.Business.Configuration;
 
-namespace 上位机.应用.服务;
+namespace PlcHmi.App.Services;
 
 /// <summary>
 /// 启动期的目录与配置准备。
@@ -11,7 +11,7 @@ namespace 上位机.应用.服务;
 /// <para>三件事的顺序有讲究：<b>先建目录、再补配置、最后预检可写</b>——
 /// 预检要探的就是补齐之后的状态（否则首次部署时 config/ 还是空的，预检通过是假象）。</para>
 /// </summary>
-public static class 启动准备
+public static class StartupPreparation
 {
     /// <summary>
     /// 执行启动期准备，返回（本次从出厂模板补齐的文件，目录可写性问题，老配置升级说明）。
@@ -19,29 +19,29 @@ public static class 启动准备
     /// 这个点写日志会直接丢进静默 logger。由调用方在日志就绪后统一打印。</para>
     /// </summary>
     public static (
-        IReadOnlyList<string> 补齐的配置,
-        IReadOnlyList<string> 可写性问题,
-        string? 升级说明) 执行()
+        IReadOnlyList<string> fillConfig,
+        IReadOnlyList<string> writabilityIssue,
+        string? upgradeDescription) Execute()
     {
-        配置路径.确保已创建();
+        ConfigPath.EnsureCreated();
 
         // 出厂配置补齐（只补缺失、绝不覆盖）：
         // 发布包里带的是「出厂配置/」模板而不是 config/。现场升级直接覆盖目录时，
         // 机种（recipes.json）、PLC 连接参数（appsettings.json）、账号等现场数据天然不会被冲掉；
         // 新版本新增的配置文件会在下次启动时自动补进 config/。
-        var 补齐的配置 = 配置路径.补齐缺失配置();
+        var fillConfig = ConfigPath.FillMissingConfig();
 
         // 老现场配置的结构升级（2026-11）：点胶点表 30 点 → 50 点。
         // 必须放在"补齐"之后、各加载器之前：发布包不覆盖现场 config/，
         // 不在这里升一次，现场装了新版本界面上仍然是 30 个点。
-        var 升级说明 = 配方配置迁移.应用(配置路径.配方配置);
+        var upgradeDescription = RecipeConfigMigration.App(ConfigPath.RecipeConfig);
 
         // 目录可写性预检：程序以 asInvoker 运行、配置写在程序目录下。
         // 装到 C:\Program Files\ 这类普通用户不可写的路径时，一切都要等
         // "操作员按下保存"才失败 —— 那时人已经在设备前面等着了。
         // 提前查出来，启动横幅直接说明原因。
-        var 可写性问题 = 配置路径.验证可写();
+        var writabilityIssue = ConfigPath.VerifyWritable();
 
-        return (补齐的配置, 可写性问题, 升级说明);
+        return (fillConfig, writabilityIssue, upgradeDescription);
     }
 }

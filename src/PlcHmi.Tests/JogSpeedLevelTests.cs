@@ -1,12 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 点动速度档位写入测试。
@@ -17,23 +17,23 @@ namespace 上位机.上位机测试;
 /// <para><b>为什么不需要手动使能</b>：档位是"参数设定"而不是动作机构——
 /// 与参数页的延时 / 按钮表一致；真正的动作仍受使能联锁保护。</para>
 /// </summary>
-public class 点动速度等级测试
+public class JogSpeedLevelTest
 {
-    private static 手动控件服务 新服务(配方配置 配置对象, 替身Modbus客户端 客户端)
+    private static ManualWidgetService NewService(RecipeConfig configPairObject, FakeModbusClient Client)
     {
-        var 解析器 = new 汇川地址解析器(PLC系列.小型PLC);
+        var Parser = new InovanceAddressParser(PlcSeries.SmallPlc);
 
-        return new 手动控件服务(
-            new 标签写入器(
-                客户端,
-                new 标签仓储(NullLogger<标签仓储>.Instance),
-                解析器,
-                NullLogger<标签写入器>.Instance),
-            客户端,
-            解析器,
-            配置对象,
-            new 允许全部权限守卫(),   // 本组用例不覆盖权限分支，显式声明
-            NullLogger<手动控件服务>.Instance);
+        return new ManualWidgetService(
+            new TagWriter(
+                Client,
+                new TagRepository(NullLogger<TagRepository>.Instance),
+                Parser,
+                NullLogger<TagWriter>.Instance),
+            Client,
+            Parser,
+            configPairObject,
+            new AllowAllPermissionGuard(),   // 本组用例不覆盖权限分支，显式声明
+            NullLogger<ManualWidgetService>.Instance);
     }
 
     [Theory]
@@ -45,55 +45,55 @@ public class 点动速度等级测试
     [InlineData("ZZ", 15)]
     [InlineData("GlueX", 15)]
     [InlineData("GlueZ", 15)]
-    public async Task 档位应写入该轴对应的寄存器(string 轴号, int 期望地址)
+    public async Task GearShouldWriteTheAxisPairShouldRegister(string axisNumber, int expectedAddress)
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(配方配置加载器.加载(out _), 客户端);
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(RecipeConfigLoader.Load(out _), Client);
 
-        await 服务实例.异步设置点动速度等级(轴号, 2);
+        await serviceInstance.SetJogSpeedLevelAsync(axisNumber, 2);
 
-        var 写入 = Assert.Single(客户端.寄存器写入);
+        var Write = Assert.Single(Client.RegisterWrite);
 
         // D 区基址为 0，因此 Modbus 地址 == D 序号
-        Assert.Equal(期望地址, 写入.地址);
-        Assert.Equal((ushort)2, 写入.值);
+        Assert.Equal(expectedAddress, Write.Address);
+        Assert.Equal((ushort)2, Write.Value);
     }
 
     [Theory]
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(-1)]
-    public async Task 越界档位值应被拒绝且不写PLC(int 等级)
+    public async Task BeyondBoundaryGearValueShouldBeRejectedAndNotWritePlc(int Level)
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(配方配置加载器.加载(out _), 客户端);
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(RecipeConfigLoader.Load(out _), Client);
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => 服务实例.异步设置点动速度等级("X", 等级));
+            () => serviceInstance.SetJogSpeedLevelAsync("X", Level));
 
-        Assert.Empty(客户端.寄存器写入);
+        Assert.Empty(Client.RegisterWrite);
     }
 
     [Fact]
-    public async Task 未配置档位地址的轴应被拒绝()
+    public async Task NotConfigGearAddressAxisShouldBeRejected()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 配置对象 = 配方配置加载器.加载(out _);
-        配置对象.点动速度等级.Clear();
+        await using var Client = new FakeModbusClient();
+        var configPairObject = RecipeConfigLoader.Load(out _);
+        configPairObject.JogSpeedLevel.Clear();
 
-        var 服务实例 = 新服务(配置对象, 客户端);
+        var serviceInstance = NewService(configPairObject, Client);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => 服务实例.异步设置点动速度等级("X", 点动速度等级地址.最小等级));
+            () => serviceInstance.SetJogSpeedLevelAsync("X", JogSpeedLevelAddress.MinLevel));
     }
 
     [Fact]
-    public async Task 不支持的轴应被拒绝()
+    public async Task UnsupportedAxisShouldBeRejected()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(配方配置加载器.加载(out _), 客户端);
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(RecipeConfigLoader.Load(out _), Client);
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => 服务实例.异步设置点动速度等级("Q", 1));
+            () => serviceInstance.SetJogSpeedLevelAsync("Q", 1));
     }
 }

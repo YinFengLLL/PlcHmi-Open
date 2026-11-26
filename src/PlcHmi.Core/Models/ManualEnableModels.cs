@@ -1,4 +1,4 @@
-namespace 上位机.核心.模型;
+namespace PlcHmi.Core.Models;
 
 /// <summary>
 /// 手动使能信号（现场约定 2026-10-15）。
@@ -12,13 +12,13 @@ namespace 上位机.核心.模型;
 /// 只写一次的写法会让两边状态悄悄分叉：界面上"已使能"，PLC 侧却认为"未使能"，
 /// 操作员按点动没反应却查不出原因。周期性重写保证 PLC 侧最终与界面一致。</para>
 ///
-/// <para><b>为什么地址写死在代码里：</b>与 <see cref="页面上下文寄存器"/> 同类——
+/// <para><b>为什么地址写死在代码里：</b>与 <see cref="PageContextRegister"/> 同类——
 /// 它是现场约定的固定握手信号，不属于机种数据、也不参与参数表校验。
 /// <c>tags.json</c> 里的 <c>ManualEnable</c> 点位也指向同一地址（用于监视显示），
 /// 但写入路径以本常量为准：现场升级时不会因为旧配置里的地址而写到别的位上去。</para>
 /// </summary>
-public static class 手动使能寄存器
+public static class ManualEnableRegister
 {
     /// <summary>手动使能线圈：M666（置位 = 允许手动动作，复位 = 禁止）。</summary>
-    public const int 线圈 = 666;
+    public const int Coil = 666;
 }

@@ -1,7 +1,7 @@
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
 
-namespace 上位机.上位机测试.替身;
+namespace PlcHmi.Tests.Fake;
 
 /// <summary>
 /// 连接管理器的测试替身：只记录 Start / Stop 被调用的次数，不真的起循环。
@@ -10,20 +10,20 @@ namespace 上位机.上位机测试.替身;
 /// 通信客户端每次连接时才读共享参数。这条链路是连接参数管理的关键一环，
 /// 用替身就能直接断言"保存后确实重启了连接"，而不用碰真实网络。</para>
 /// </summary>
-public sealed class 替身连接管理器 : 连接管理器接口
+public sealed class FakeConnectManager : IConnectManager
 {
-    private int _启动次数;
-    private int _停止次数;
-    private 连接状态 _状态值 = 连接状态.已断开;
+    private int _startCount;
+    private int _stopCount;
+    private ConnectionState _stateValue = ConnectionState.Disconnected;
 
     /// <summary>StartAsync 被调用的次数。</summary>
-    public int 启动次数 => _启动次数;
+    public int StartCount => _startCount;
 
     /// <summary>StopAsync 被调用的次数。</summary>
-    public int 停止次数 => _停止次数;
+    public int StopCount => _stopCount;
 
     /// <summary>按计数推断是否处于"运行中"（Start 多于 Stop）。</summary>
-    public bool 是否运行中 => _启动次数 > _停止次数;
+    public bool IsRunning => _startCount > _stopCount;
 
     /// <summary>
     /// 连接状态。<b>赋值会真的触发 <see cref="状态值已变更"/></b> —— 替身必须忠实于契约。
@@ -32,35 +32,35 @@ public sealed class 替身连接管理器 : 连接管理器接口
     /// 任何"监听状态变化"的测试用例都会<b>静默通过却什么也没验证</b>。
     /// 一个不会发事件的替身，比没有替身更危险。</para>
     /// </summary>
-    public 连接状态 状态
+    public ConnectionState State
     {
-        get => _状态值;
+        get => _stateValue;
         set
         {
-            if (_状态值 == value)
+            if (_stateValue == value)
             {
                 return;
             }
 
-            _状态值 = value;
-            状态已变更?.Invoke(this, value);
+            _stateValue = value;
+            StateChanged?.Invoke(this, value);
         }
     }
 
     /// <inheritdoc />
-    public event EventHandler<连接状态>? 状态已变更;
+    public event EventHandler<ConnectionState>? StateChanged;
 
     /// <inheritdoc />
-    public Task 异步启动(CancellationToken 取消令牌 = default)
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
-        Interlocked.Increment(ref _启动次数);
+        Interlocked.Increment(ref _startCount);
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public Task 异步停止(CancellationToken 取消令牌 = default)
+    public Task StopAsync(CancellationToken cancellationToken = default)
     {
-        Interlocked.Increment(ref _停止次数);
+        Interlocked.Increment(ref _stopCount);
         return Task.CompletedTask;
     }
 }

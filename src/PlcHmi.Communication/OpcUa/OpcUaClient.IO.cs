@@ -1,10 +1,10 @@
 using Opc.Ua;
 using Opc.Ua.Client;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.通信.Modbus;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Communication.Modbus;
 
-namespace 上位机.通信.OPCUA;
+namespace PlcHmi.Communication.OpcUa;
 
 /// <summary>
 /// OPC UA 客户端的读写语义部分。
@@ -18,300 +18,300 @@ namespace 上位机.通信.OPCUA;
 /// <item>其余连续地址合并为一次批量请求</item>
 /// </list>
 /// </summary>
-public sealed partial class OPCUA客户端
+public sealed partial class OpcUaClient
 {
     // ── 读 ──────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public Task<bool[]> 异步读取线圈(int 地址值, int 数量值, CancellationToken 取消令牌 = default)
+    public Task<bool[]> ReadCoilAsync(int addressValue, int countValue, CancellationToken cancellationToken = default)
     {
-        校验数量(数量值, 最大批量节点数, "读线圈");
-        return 异步执行(会话 => 读位区域(会话, Modbus区域.线圈, 地址值, 数量值, 取消令牌), 取消令牌);
+        ValidateCount(countValue, maxBatchSectionPointCount, "读线圈");
+        return ExecuteAsync(Session => ReadBitAreaRange(Session, ModbusArea.Coil, addressValue, countValue, cancellationToken), cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<bool[]> 异步读取离散输入(int 地址值, int 数量值, CancellationToken 取消令牌 = default)
+    public Task<bool[]> ReadDiscreteInputAsync(int addressValue, int countValue, CancellationToken cancellationToken = default)
     {
-        校验数量(数量值, 最大批量节点数, "读离散输入");
-        return 异步执行(会话 => 读位区域(会话, Modbus区域.离散输入, 地址值, 数量值, 取消令牌), 取消令牌);
+        ValidateCount(countValue, maxBatchSectionPointCount, "读离散输入");
+        return ExecuteAsync(Session => ReadBitAreaRange(Session, ModbusArea.DiscreteInput, addressValue, countValue, cancellationToken), cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<ushort[]> 异步读取保持寄存器(int 地址值, int 数量值, CancellationToken 取消令牌 = default)
+    public Task<ushort[]> ReadHoldingRegisterAsync(int addressValue, int countValue, CancellationToken cancellationToken = default)
     {
-        校验数量(数量值, 最大批量节点数, "读保持寄存器");
-        return 异步执行(会话 => 读字区域(会话, Modbus区域.保持寄存器, 地址值, 数量值, 取消令牌), 取消令牌);
+        ValidateCount(countValue, maxBatchSectionPointCount, "读保持寄存器");
+        return ExecuteAsync(Session => ReadWordArea(Session, ModbusArea.HoldingRegister, addressValue, countValue, cancellationToken), cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task<ushort[]> 异步读取输入寄存器(int 地址值, int 数量值, CancellationToken 取消令牌 = default)
+    public Task<ushort[]> ReadInputRegisterAsync(int addressValue, int countValue, CancellationToken cancellationToken = default)
     {
-        校验数量(数量值, 最大批量节点数, "读输入寄存器");
-        return 异步执行(会话 => 读字区域(会话, Modbus区域.输入寄存器, 地址值, 数量值, 取消令牌), 取消令牌);
+        ValidateCount(countValue, maxBatchSectionPointCount, "读输入寄存器");
+        return ExecuteAsync(Session => ReadWordArea(Session, ModbusArea.InputRegister, addressValue, countValue, cancellationToken), cancellationToken);
     }
 
     // ── 写 ──────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public Task 异步写入单个线圈(int 地址值, bool 值, CancellationToken 取消令牌 = default) =>
-        异步执行(会话 => 写位区域(会话, Modbus区域.线圈, 地址值, [值], 取消令牌), 取消令牌);
+    public Task WriteSingleCoilAsync(int addressValue, bool Value, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(Session => WriteBitArea(Session, ModbusArea.Coil, addressValue, [Value], cancellationToken), cancellationToken);
 
     /// <inheritdoc />
-    public Task 异步写入单个寄存器(int 地址值, ushort 值, CancellationToken 取消令牌 = default) =>
-        异步执行(会话 => 写字区域(会话, Modbus区域.保持寄存器, 地址值, [值], 取消令牌), 取消令牌);
+    public Task WriteSingleRegisterAsync(int addressValue, ushort Value, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(Session => WriteWordArea(Session, ModbusArea.HoldingRegister, addressValue, [Value], cancellationToken), cancellationToken);
 
     /// <inheritdoc />
-    public Task 异步写入多个线圈(int 地址值, IReadOnlyList<bool> 值列表, CancellationToken 取消令牌 = default)
+    public Task WriteMultiCoilAsync(int addressValue, IReadOnlyList<bool> ValueList, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(值列表);
-        校验数量(值列表.Count, 最大批量节点数, "写多线圈");
-        return 异步执行(会话 => 写位区域(会话, Modbus区域.线圈, 地址值, 值列表, 取消令牌), 取消令牌);
+        ArgumentNullException.ThrowIfNull(ValueList);
+        ValidateCount(ValueList.Count, maxBatchSectionPointCount, "写多线圈");
+        return ExecuteAsync(Session => WriteBitArea(Session, ModbusArea.Coil, addressValue, ValueList, cancellationToken), cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task 异步写入多个寄存器(int 地址值, IReadOnlyList<ushort> 值列表, CancellationToken 取消令牌 = default)
+    public Task WriteMultiRegisterAsync(int addressValue, IReadOnlyList<ushort> ValueList, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(值列表);
-        校验数量(值列表.Count, 最大批量节点数, "写多寄存器");
-        return 异步执行(会话 => 写字区域(会话, Modbus区域.保持寄存器, 地址值, 值列表, 取消令牌), 取消令牌);
+        ArgumentNullException.ThrowIfNull(ValueList);
+        ValidateCount(ValueList.Count, maxBatchSectionPointCount, "写多寄存器");
+        return ExecuteAsync(Session => WriteWordArea(Session, ModbusArea.HoldingRegister, addressValue, ValueList, cancellationToken), cancellationToken);
     }
 
     // ── 执行骨架 ────────────────────────────────────────────────────────
 
     /// <summary>串行化执行一个读操作，并把 OPC UA 特有异常翻译为业务层通用异常。</summary>
-    private async Task<T> 异步执行<T>(Func<ISession, Task<T>> 动作, CancellationToken 取消令牌)
+    private async Task<T> ExecuteAsync<T>(Func<ISession, Task<T>> action, CancellationToken cancellationToken)
     {
-        await _写入闸锁.WaitAsync(取消令牌).ConfigureAwait(false);
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var 会话 = 确保已连接();
-            return await 动作(会话).ConfigureAwait(false);
+            var Session = EnsureConnected();
+            return await action(Session).ConfigureAwait(false);
         }
-        catch (ServiceResultException 异常)
+        catch (ServiceResultException exception)
         {
-            throw new InvalidOperationException($"OPC UA 操作失败：{异常.Message}", 异常);
+            throw new InvalidOperationException($"OPC UA 操作失败：{exception.Message}", exception);
         }
         finally
         {
-            _写入闸锁.Release();
+            _writeGate.Release();
         }
     }
 
     /// <summary>串行化执行一个写操作（无返回值）。</summary>
-    private async Task 异步执行(Func<ISession, Task> 动作, CancellationToken 取消令牌)
+    private async Task ExecuteAsync(Func<ISession, Task> action, CancellationToken cancellationToken)
     {
-        await _写入闸锁.WaitAsync(取消令牌).ConfigureAwait(false);
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var 会话 = 确保已连接();
-            await 动作(会话).ConfigureAwait(false);
+            var Session = EnsureConnected();
+            await action(Session).ConfigureAwait(false);
         }
-        catch (ServiceResultException 异常)
+        catch (ServiceResultException exception)
         {
-            throw new InvalidOperationException($"OPC UA 操作失败：{异常.Message}", 异常);
+            throw new InvalidOperationException($"OPC UA 操作失败：{exception.Message}", exception);
         }
         finally
         {
-            _写入闸锁.Release();
+            _writeGate.Release();
         }
     }
 
     /// <summary>读一段位区域：变量段读变量 Bool 节点，其余批量读后按原地址序拼回结果数组。</summary>
-    private async Task<bool[]> 读位区域(
-        ISession 会话, Modbus区域 区域值, int 地址值, int 数量值, CancellationToken 取消令牌)
+    private async Task<bool[]> ReadBitAreaRange(
+        ISession Session, ModbusArea areaValue, int addressValue, int countValue, CancellationToken cancellationToken)
     {
-        var 结果值 = new bool[数量值];
+        var resultValue = new bool[countValue];
 
-        foreach (var 块 in 切分操作块(区域值, 地址值, 数量值))
+        foreach (var block in SplitOperationBlock(areaValue, addressValue, countValue))
         {
-            if (块.变量 is { } 变量)
+            if (block.Variable is { } Variable)
             {
-                var 值列表 = await 批量读(会话, [_推导器.推导变量节点(变量.变量名)], 取消令牌)
+                var ValueList = await BatchRead(Session, [_resolver.ResolveVariableSectionPoint(Variable.VariableName)], cancellationToken)
                     .ConfigureAwait(false);
 
-                for (var 条目 = 0; 条目 < 块.数量; 条目++)
+                for (var Entry = 0; Entry < block.Count; Entry++)
                 {
-                    结果值[块.起始 - 地址值 + 条目] = Convert.ToBoolean(值列表[0].Value);
+                    resultValue[block.StartAt - addressValue + Entry] = Convert.ToBoolean(ValueList[0].Value);
                 }
 
                 continue;
             }
 
-            var 节点列表 = 构建节点列表(区域值, 块.起始, 块.数量);
-            var 批量值 = await 批量读(会话, 节点列表, 取消令牌).ConfigureAwait(false);
+            var sectionPointList = BuildSectionPointList(areaValue, block.StartAt, block.Count);
+            var batchValue = await BatchRead(Session, sectionPointList, cancellationToken).ConfigureAwait(false);
 
-            for (var 条目 = 0; 条目 < 块.数量; 条目++)
+            for (var Entry = 0; Entry < block.Count; Entry++)
             {
-                结果值[块.起始 - 地址值 + 条目] = Convert.ToBoolean(批量值[条目].Value);
+                resultValue[block.StartAt - addressValue + Entry] = Convert.ToBoolean(batchValue[Entry].Value);
             }
         }
 
-        return 结果值;
+        return resultValue;
     }
 
     /// <summary>读一段字区域。变量段经寄存器编解码器做类型↔寄存器转换，其余节点逐寄存器归一为 UInt16。</summary>
-    private async Task<ushort[]> 读字区域(
-        ISession 会话, Modbus区域 区域值, int 地址值, int 数量值, CancellationToken 取消令牌)
+    private async Task<ushort[]> ReadWordArea(
+        ISession Session, ModbusArea areaValue, int addressValue, int countValue, CancellationToken cancellationToken)
     {
-        var 结果值 = new ushort[数量值];
+        var resultValue = new ushort[countValue];
 
-        foreach (var 块 in 切分操作块(区域值, 地址值, 数量值))
+        foreach (var block in SplitOperationBlock(areaValue, addressValue, countValue))
         {
-            var 目标偏移 = 块.起始 - 地址值;
+            var targetOffset = block.StartAt - addressValue;
 
-            if (块.变量 is { } 变量 &&
-                await 尝试读变量块(会话, 变量, 块.数量, 结果值, 目标偏移, 取消令牌).ConfigureAwait(false))
+            if (block.Variable is { } Variable &&
+                await TryReadVariableBlock(Session, Variable, block.Count, resultValue, targetOffset, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
 
-            var 节点列表 = 构建节点列表(区域值, 块.起始, 块.数量);
-            var 值列表 = await 批量读(会话, 节点列表, 取消令牌).ConfigureAwait(false);
+            var sectionPointList = BuildSectionPointList(areaValue, block.StartAt, block.Count);
+            var ValueList = await BatchRead(Session, sectionPointList, cancellationToken).ConfigureAwait(false);
 
-            for (var 条目 = 0; 条目 < 块.数量; 条目++)
+            for (var Entry = 0; Entry < block.Count; Entry++)
             {
-                结果值[目标偏移 + 条目] = Convert.ToUInt16(值列表[条目].Value);
+                resultValue[targetOffset + Entry] = Convert.ToUInt16(ValueList[Entry].Value);
             }
         }
 
-        return 结果值;
+        return resultValue;
     }
 
-    private async Task 写位区域(
-        ISession 会话, Modbus区域 区域值, int 地址值, IReadOnlyList<bool> 值列表, CancellationToken 取消令牌)
+    private async Task WriteBitArea(
+        ISession Session, ModbusArea areaValue, int addressValue, IReadOnlyList<bool> ValueList, CancellationToken cancellationToken)
     {
-        foreach (var 块 in 切分操作块(区域值, 地址值, 值列表.Count))
+        foreach (var block in SplitOperationBlock(areaValue, addressValue, ValueList.Count))
         {
-            var 写入集合 = new WriteValueCollection();
+            var writeCollection = new WriteValueCollection();
 
-            if (块.变量 is { } 变量)
+            if (block.Variable is { } Variable)
             {
                 // 位变量的首地址即该 Bool 节点：块内全部值只对首地址有效，取第一个值写入
-                写入集合.Add(new WriteValue
+                writeCollection.Add(new WriteValue
                 {
-                    NodeId = _推导器.推导变量节点(变量.变量名),
+                    NodeId = _resolver.ResolveVariableSectionPoint(Variable.VariableName),
                     AttributeId = Attributes.Value,
-                    Value = new DataValue(new Variant(值列表[块.起始 - 地址值])),
+                    Value = new DataValue(new Variant(ValueList[block.StartAt - addressValue])),
                 });
 
-                await 批量写(会话, 写入集合, 取消令牌).ConfigureAwait(false);
+                await BatchWrite(Session, writeCollection, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            for (var 条目 = 0; 条目 < 块.数量; 条目++)
+            for (var Entry = 0; Entry < block.Count; Entry++)
             {
-                var 偏移 = 块.起始 - 地址值 + 条目;
-                写入集合.Add(new WriteValue
+                var Offset = block.StartAt - addressValue + Entry;
+                writeCollection.Add(new WriteValue
                 {
-                    NodeId = _推导器.推导(区域值, 块.起始 + 条目),
+                    NodeId = _resolver.Resolve(areaValue, block.StartAt + Entry),
                     AttributeId = Attributes.Value,
-                    Value = new DataValue(new Variant(值列表[偏移])),
+                    Value = new DataValue(new Variant(ValueList[Offset])),
                 });
             }
 
-            await 批量写(会话, 写入集合, 取消令牌).ConfigureAwait(false);
+            await BatchWrite(Session, writeCollection, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task 写字区域(
-        ISession 会话, Modbus区域 区域值, int 地址值, IReadOnlyList<ushort> 值列表, CancellationToken 取消令牌)
+    private async Task WriteWordArea(
+        ISession Session, ModbusArea areaValue, int addressValue, IReadOnlyList<ushort> ValueList, CancellationToken cancellationToken)
     {
-        foreach (var 块 in 切分操作块(区域值, 地址值, 值列表.Count))
+        foreach (var block in SplitOperationBlock(areaValue, addressValue, ValueList.Count))
         {
-            var 源偏移 = 块.起始 - 地址值;
+            var sourceOffset = block.StartAt - addressValue;
 
-            if (块.变量 is { } 变量 &&
-                await 尝试写变量块(会话, 变量, 值列表, 源偏移, 块.数量, 取消令牌).ConfigureAwait(false))
+            if (block.Variable is { } Variable &&
+                await TryWriteVariableBlock(Session, Variable, ValueList, sourceOffset, block.Count, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
 
-            var 写入集合 = new WriteValueCollection();
+            var writeCollection = new WriteValueCollection();
 
-            for (var 条目 = 0; 条目 < 块.数量; 条目++)
+            for (var Entry = 0; Entry < block.Count; Entry++)
             {
-                写入集合.Add(new WriteValue
+                writeCollection.Add(new WriteValue
                 {
-                    NodeId = _推导器.推导(区域值, 块.起始 + 条目),
+                    NodeId = _resolver.Resolve(areaValue, block.StartAt + Entry),
                     AttributeId = Attributes.Value,
-                    Value = new DataValue(new Variant(值列表[源偏移 + 条目])),
+                    Value = new DataValue(new Variant(ValueList[sourceOffset + Entry])),
                 });
             }
 
-            await 批量写(会话, 写入集合, 取消令牌).ConfigureAwait(false);
+            await BatchWrite(Session, writeCollection, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private List<NodeId> 构建节点列表(Modbus区域 区域值, int 段起始, int 段数量)
+    private List<NodeId> BuildSectionPointList(ModbusArea areaValue, int sectionStart, int sectionCount)
     {
-        var 节点列表 = new List<NodeId>(段数量);
+        var sectionPointList = new List<NodeId>(sectionCount);
 
-        for (var 条目 = 0; 条目 < 段数量; 条目++)
+        for (var Entry = 0; Entry < sectionCount; Entry++)
         {
-            节点列表.Add(_推导器.推导(区域值, 段起始 + 条目));
+            sectionPointList.Add(_resolver.Resolve(areaValue, sectionStart + Entry));
         }
 
-        return 节点列表;
+        return sectionPointList;
     }
 
     /// <summary>批量读一组节点，任一节点返回 Bad 状态码即抛出（调用方据此判定断线 / 地址无效）。</summary>
-    private static async Task<DataValueCollection> 批量读(
-        ISession 会话, IReadOnlyList<NodeId> 节点列表, CancellationToken 取消令牌)
+    private static async Task<DataValueCollection> BatchRead(
+        ISession Session, IReadOnlyList<NodeId> sectionPointList, CancellationToken cancellationToken)
     {
-        var 请求集合 = new ReadValueIdCollection(
-            节点列表.Select(节点 => new ReadValueId { NodeId = 节点, AttributeId = Attributes.Value }));
+        var requestCollection = new ReadValueIdCollection(
+            sectionPointList.Select(sectionPoint => new ReadValueId { NodeId = sectionPoint, AttributeId = Attributes.Value }));
 
         // 取消令牌必须贯通到真正的网络 IO：否则停止轮询时在途请求
         // 要等满 OperationTimeout 才能结束（连接管理器停止超时的来源之一）
-        var 响应 = await 会话.ReadAsync(null, 0, TimestampsToReturn.Neither, 请求集合, 取消令牌)
+        var response = await Session.ReadAsync(null, 0, TimestampsToReturn.Neither, requestCollection, cancellationToken)
             .ConfigureAwait(false);
 
-        foreach (var 诊断 in 响应.DiagnosticInfos)
+        foreach (var Diagnostic in response.DiagnosticInfos)
         {
-            if (诊断 is not null)
+            if (Diagnostic is not null)
             {
-                throw new InvalidOperationException($"OPC UA 服务端返回诊断信息：{诊断}");
+                throw new InvalidOperationException($"OPC UA 服务端返回诊断信息：{Diagnostic}");
             }
         }
 
-        foreach (var 值 in 响应.Results)
+        foreach (var Value in response.Results)
         {
-            if (StatusCode.IsBad(值.StatusCode))
+            if (StatusCode.IsBad(Value.StatusCode))
             {
-                throw new ServiceResultException(值.StatusCode);
+                throw new ServiceResultException(Value.StatusCode);
             }
         }
 
-        return 响应.Results;
+        return response.Results;
     }
 
-    private static async Task 批量写(ISession 会话, WriteValueCollection 写入集合, CancellationToken 取消令牌)
+    private static async Task BatchWrite(ISession Session, WriteValueCollection writeCollection, CancellationToken cancellationToken)
     {
-        var 响应 = await 会话.WriteAsync(null, 写入集合, 取消令牌).ConfigureAwait(false);
+        var response = await Session.WriteAsync(null, writeCollection, cancellationToken).ConfigureAwait(false);
 
-        foreach (var 诊断 in 响应.DiagnosticInfos)
+        foreach (var Diagnostic in response.DiagnosticInfos)
         {
-            if (诊断 is not null)
+            if (Diagnostic is not null)
             {
-                throw new InvalidOperationException($"OPC UA 服务端返回诊断信息：{诊断}");
+                throw new InvalidOperationException($"OPC UA 服务端返回诊断信息：{Diagnostic}");
             }
         }
 
-        foreach (var 状态码 in 响应.Results)
+        foreach (var stateCode in response.Results)
         {
-            if (StatusCode.IsBad(状态码))
+            if (StatusCode.IsBad(stateCode))
             {
-                throw new ServiceResultException(状态码);
+                throw new ServiceResultException(stateCode);
             }
         }
     }
 
-    private static void 校验数量(int 数量值, int 最大数量, string 操作)
+    private static void ValidateCount(int countValue, int maxCount, string operateOperation)
     {
-        if (数量值 <= 0 || 数量值 > 最大数量)
+        if (countValue <= 0 || countValue > maxCount)
         {
-            throw new ArgumentOutOfRangeException(nameof(数量值), 数量值,
-                $"{操作}：单次数量必须在 1-{最大数量} 之间。");
+            throw new ArgumentOutOfRangeException(nameof(countValue), countValue,
+                $"{operateOperation}：单次数量必须在 1-{maxCount} 之间。");
         }
     }
 }

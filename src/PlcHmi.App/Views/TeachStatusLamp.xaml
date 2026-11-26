@@ -1,9 +1,9 @@
-<UserControl x:Class="上位机.应用.视图.示教状态灯"
+<UserControl x:Class="PlcHmi.App.Views.TeachStatusLamp"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:sys="clr-namespace:System.Windows;assembly=PresentationFramework"
-             xmlns:conv="clr-namespace:上位机.应用.转换器"
-             xmlns:views="clr-namespace:上位机.应用.视图">
+             xmlns:conv="clr-namespace:PlcHmi.App.Converters"
+             xmlns:views="clr-namespace:PlcHmi.App.Views">
     <!--
         示教页顶部固定状态灯（锁附示教 / 点胶示教共用一份定义 → 两页显示必然一致）。
 
@@ -17,22 +17,22 @@
         与顶栏报警图标、连接指示点同一套做法。
     -->
     <UserControl.Resources>
-        <conv:布尔可见性转换器 x:Key="BoolToVis" />
-        <conv:资源键画刷转换器 x:Key="KeyToBrush" />
+        <conv:BooleanVisibilityConverter x:Key="BoolToVis" />
+        <conv:ResourceKeyBrushConverter x:Key="KeyToBrush" />
     </UserControl.Resources>
 
     <Border Padding="12,6" CornerRadius="8"
             Background="{DynamicResource SurfaceBrush}"
             BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1"
-            Visibility="{Binding 回原灯可见, Converter={StaticResource BoolToVis}}"
-            ToolTip="{Binding 回原地址提示}">
+            Visibility="{Binding ReturnToOriginLampVisible, Converter={StaticResource BoolToVis}}"
+            ToolTip="{Binding ReturnToOriginAddressHint}">
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <StackPanel.Style>
                 <Style TargetType="StackPanel">
                     <Style.Triggers>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>
-                                <Condition Binding="{Binding 回原闪烁}" Value="True" />
+                                <Condition Binding="{Binding ReturnToOriginFlickerBlink}" Value="True" />
                                 <!-- 加载时求值一次；系统动效设置中途修改不重估，可接受 -->
                                 <Condition Binding="{Binding Source={x:Static sys:SystemParameters.ClientAreaAnimation}}"
                                            Value="True" />
@@ -59,12 +59,12 @@
                 </Style>
             </StackPanel.Style>
 
-            <views:辉光状态灯 Fill="{Binding 回原状态颜色键, Converter={StaticResource KeyToBrush}}"
+            <views:GlowStatusLamp Fill="{Binding ReturnToOriginStateColorKey, Converter={StaticResource KeyToBrush}}"
                               Width="16" Height="16"
                               VerticalAlignment="Center"
                               Margin="{StaticResource GapRight8}" />
 
-            <TextBlock Text="{Binding 回原状态文本}"
+            <TextBlock Text="{Binding ReturnToOriginStateText}"
                        Style="{StaticResource BodyText}"
                        FontWeight="SemiBold"
                        VerticalAlignment="Center" />

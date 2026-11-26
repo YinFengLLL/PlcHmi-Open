@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace 上位机.应用.视图;
+namespace PlcHmi.App.Views;
 
 /// <summary>
 /// 轻量环形占比图（两段：甲 = 良品绿，乙 = 不良品红，自绘无第三方库）。
@@ -12,189 +12,189 @@ namespace 上位机.应用.视图;
 ///
 /// <para>总量为 0 时画灰色空环并显示"—"，不显示误导性的 100%。</para>
 /// </summary>
-public partial class 环形占比图 : UserControl
+public partial class DonutRatioChart : UserControl
 {
     /// <summary>环形容器可用尺寸下限：低于此值不绘制，等布局给出真实尺寸再画。</summary>
-    private const double 最小宽 = 120;
+    private const double minWidth = 120;
 
-    private const double 最小高 = 120;
+    private const double minHeight = 120;
 
     /// <summary>外半径上限：全屏时环不该随空间无限变大，超出后留白居中。</summary>
-    private const double 最大外半径 = 140;
+    private const double maxOuterRadius = 140;
 
     /// <summary>本轮绘制使用的圆环几何参数（由容器实际尺寸推算）。</summary>
-    private double _中心x;
+    private double _centerx;
 
-    private double _中心y;
+    private double _centery;
 
-    private double _外半径;
+    private double _outerRadius;
 
-    private double _内半径;
+    private double _innerRadius;
 
-    public static readonly DependencyProperty 值甲Property = DependencyProperty.Register(
-        nameof(值甲), typeof(double), typeof(环形占比图),
-        new PropertyMetadata(0d, 数据已变更));
+    public static readonly DependencyProperty valueAProperty = DependencyProperty.Register(
+        nameof(ValueA), typeof(double), typeof(DonutRatioChart),
+        new PropertyMetadata(0d, DataChanged));
 
-    public static readonly DependencyProperty 值乙Property = DependencyProperty.Register(
-        nameof(值乙), typeof(double), typeof(环形占比图),
-        new PropertyMetadata(0d, 数据已变更));
+    public static readonly DependencyProperty valueBProperty = DependencyProperty.Register(
+        nameof(ValueB), typeof(double), typeof(DonutRatioChart),
+        new PropertyMetadata(0d, DataChanged));
 
-    public static readonly DependencyProperty 标签甲Property = DependencyProperty.Register(
-        nameof(标签甲), typeof(string), typeof(环形占比图),
+    public static readonly DependencyProperty labelAProperty = DependencyProperty.Register(
+        nameof(LabelA), typeof(string), typeof(DonutRatioChart),
         new PropertyMetadata("良品"));
 
-    public static readonly DependencyProperty 标签乙Property = DependencyProperty.Register(
-        nameof(标签乙), typeof(string), typeof(环形占比图),
+    public static readonly DependencyProperty labelBProperty = DependencyProperty.Register(
+        nameof(LabelB), typeof(string), typeof(DonutRatioChart),
         new PropertyMetadata("不良品"));
 
     /// <summary>甲段数值（良品数量）。</summary>
-    public double 值甲
+    public double ValueA
     {
-        get => (double)GetValue(值甲Property);
-        set => SetValue(值甲Property, value);
+        get => (double)GetValue(valueAProperty);
+        set => SetValue(valueAProperty, value);
     }
 
     /// <summary>乙段数值（不良品数量）。</summary>
-    public double 值乙
+    public double ValueB
     {
-        get => (double)GetValue(值乙Property);
-        set => SetValue(值乙Property, value);
+        get => (double)GetValue(valueBProperty);
+        set => SetValue(valueBProperty, value);
     }
 
     /// <summary>甲段图例名称。</summary>
-    public string 标签甲
+    public string LabelA
     {
-        get => (string)GetValue(标签甲Property);
-        set => SetValue(标签甲Property, value);
+        get => (string)GetValue(labelAProperty);
+        set => SetValue(labelAProperty, value);
     }
 
     /// <summary>乙段图例名称。</summary>
-    public string 标签乙
+    public string LabelB
     {
-        get => (string)GetValue(标签乙Property);
-        set => SetValue(标签乙Property, value);
+        get => (string)GetValue(labelBProperty);
+        set => SetValue(labelBProperty, value);
     }
 
-    public 环形占比图()
+    public DonutRatioChart()
     {
         InitializeComponent();
 
         // 尺寸变化（首次布局、窗口缩放、全屏切换）都按新尺寸重算圆环几何 ——
         // 不再放大"设计稿"，中心读数字号也随环半径走，全屏下依然锐利
-        SizeChanged += (_, _) => 重建图形();
+        SizeChanged += (_, _) => RebuildChartShape();
     }
 
-    private static void 数据已变更(DependencyObject 发送者, DependencyPropertyChangedEventArgs 事件参数) =>
-        ((环形占比图)发送者).重建图形();
+    private static void DataChanged(DependencyObject sender, DependencyPropertyChangedEventArgs eventArgs) =>
+        ((DonutRatioChart)sender).RebuildChartShape();
 
-    private void 重建图形()
+    private void RebuildChartShape()
     {
         // 依赖属性回调可能早于首次布局（ActualWidth 还是 0）：等 SizeChanged 再画
-        if (环形容器.ActualWidth < 最小宽 || 环形容器.ActualHeight < 最小高)
+        if (DonutContainer.ActualWidth < minWidth || DonutContainer.ActualHeight < minHeight)
         {
             return;
         }
 
         // 圆环按容器短边取半径，保持与旧版相近的留白比例
-        _外半径 = Math.Min(最大外半径, Math.Min(环形容器.ActualWidth, 环形容器.ActualHeight) / 2 * 0.82);
-        _内半径 = _外半径 * 0.62;
-        _中心x = 环形容器.ActualWidth / 2;
-        _中心y = 环形容器.ActualHeight / 2;
+        _outerRadius = Math.Min(maxOuterRadius, Math.Min(DonutContainer.ActualWidth, DonutContainer.ActualHeight) / 2 * 0.82);
+        _innerRadius = _outerRadius * 0.62;
+        _centerx = DonutContainer.ActualWidth / 2;
+        _centery = DonutContainer.ActualHeight / 2;
 
         // 中心读数随环变大：设计稿时代它是靠 Viewbox 整体放大才看得清的
-        总量文本.FontSize = Math.Max(18, _外半径 * 0.42);
-        总量标签文本.FontSize = Math.Max(10, _外半径 * 0.15);
-        总量标签文本.Margin = new Thickness(0, Math.Max(2, _外半径 * 0.06), 0, 0);
+        TotalAmountText.FontSize = Math.Max(18, _outerRadius * 0.42);
+        TotalAmountTagText.FontSize = Math.Max(10, _outerRadius * 0.15);
+        TotalAmountTagText.Margin = new Thickness(0, Math.Max(2, _outerRadius * 0.06), 0, 0);
 
-        var 甲 = Math.Max(0, 值甲);
-        var 乙 = Math.Max(0, 值乙);
-        var 总量 = 甲 + 乙;
+        var item = Math.Max(0, ValueA);
+        var item2 = Math.Max(0, ValueB);
+        var totalAmount = item + item2;
 
-        if (总量 <= 0)
+        if (totalAmount <= 0)
         {
             // 空数据：灰色整环，比例显示 "—"，不制造 100% 的假象
-            段甲.Data = 空心圆环();
-            段甲.Fill = 找画刷("BorderBrush");
-            段乙.Data = null;
-            总量文本.Text = "0";
-            甲值文本.Text = "0 (—)";
-            乙值文本.Text = "0 (—)";
+            Sectionitem.Data = HollowRing();
+            Sectionitem.Fill = FindBrush("BorderBrush");
+            Sectionitem2.Data = null;
+            TotalAmountText.Text = "0";
+            ItemValueText.Text = "0 (—)";
+            Item2ValueText.Text = "0 (—)";
             return;
         }
 
-        var 甲百分比 = 100 * 甲 / 总量;
-        var 乙百分比 = 100 * 乙 / 总量;
+        var percentA = 100 * item / totalAmount;
+        var percentB = 100 * item2 / totalAmount;
 
-        if (乙 <= 0)
+        if (item2 <= 0)
         {
-            段甲.Data = 空心圆环();
-            段甲.Fill = 找画刷("SuccessBrush");
-            段乙.Data = null;
+            Sectionitem.Data = HollowRing();
+            Sectionitem.Fill = FindBrush("SuccessBrush");
+            Sectionitem2.Data = null;
         }
-        else if (甲 <= 0)
+        else if (item <= 0)
         {
-            段甲.Data = null;
-            段乙.Data = 空心圆环();
-            段乙.Fill = 找画刷("DangerBrush");
+            Sectionitem.Data = null;
+            Sectionitem2.Data = HollowRing();
+            Sectionitem2.Fill = FindBrush("DangerBrush");
         }
         else
         {
             // 从 12 点方向顺时针：甲先画，乙接余下弧段
-            var 甲角度 = 360d * 甲 / 总量;
-            段甲.Data = 环形段(0, 甲角度);
-            段甲.Fill = 找画刷("SuccessBrush");
-            段乙.Data = 环形段(甲角度, 360 - 甲角度);
-            段乙.Fill = 找画刷("DangerBrush");
+            var angleA = 360d * item / totalAmount;
+            Sectionitem.Data = DonutSection(0, angleA);
+            Sectionitem.Fill = FindBrush("SuccessBrush");
+            Sectionitem2.Data = DonutSection(angleA, 360 - angleA);
+            Sectionitem2.Fill = FindBrush("DangerBrush");
         }
 
-        总量文本.Text = 总量.ToString("N0");
-        甲值文本.Text = $"{甲:N0} ({甲百分比:0.0}%)";
-        乙值文本.Text = $"{乙:N0} ({乙百分比:0.0}%)";
+        TotalAmountText.Text = totalAmount.ToString("N0");
+        ItemValueText.Text = $"{item:N0} ({percentA:0.0}%)";
+        Item2ValueText.Text = $"{item2:N0} ({percentB:0.0}%)";
     }
 
-    /// <summary>从 12 点方向起、顺时针扫过 <paramref name="扫过角度"/> 度的圆环段。</summary>
-    private Geometry 环形段(double 起始角度, double 扫过角度)
+    /// <summary>从 12 点方向起、顺时针扫过 <paramref name="scanBeyondAngle"/> 度的圆环段。</summary>
+    private Geometry DonutSection(double startAngle, double scanBeyondAngle)
     {
-        if (扫过角度 >= 359.99)
+        if (scanBeyondAngle >= 359.99)
         {
-            return 空心圆环();
+            return HollowRing();
         }
 
-        Point 点(double 角度, double 半径)
+        Point dot(double angle, double radius)
         {
-            var 弧度 = (角度 - 90) * Math.PI / 180;
-            return new Point(_中心x + 半径 * Math.Cos(弧度), _中心y + 半径 * Math.Sin(弧度));
+            var radian = (angle - 90) * Math.PI / 180;
+            return new Point(_centerx + radius * Math.Cos(radian), _centery + radius * Math.Sin(radian));
         }
 
-        var 结束角度 = 起始角度 + 扫过角度;
-        var 是否大弧 = 扫过角度 > 180;
+        var endAngle = startAngle + scanBeyondAngle;
+        var isLargeArc = scanBeyondAngle > 180;
 
-        var 几何 = new StreamGeometry();
+        var geometry = new StreamGeometry();
 
-        using (var 上下文 = 几何.Open())
+        using (var context = geometry.Open())
         {
-            上下文.BeginFigure(点(起始角度, _外半径), true, true);
-            上下文.ArcTo(点(结束角度, _外半径), new Size(_外半径, _外半径),
-                0, 是否大弧, SweepDirection.Clockwise, true, false);
-            上下文.LineTo(点(结束角度, _内半径), true, false);
-            上下文.ArcTo(点(起始角度, _内半径), new Size(_内半径, _内半径),
-                0, 是否大弧, SweepDirection.Counterclockwise, true, false);
+            context.BeginFigure(dot(startAngle, _outerRadius), true, true);
+            context.ArcTo(dot(endAngle, _outerRadius), new Size(_outerRadius, _outerRadius),
+                0, isLargeArc, SweepDirection.Clockwise, true, false);
+            context.LineTo(dot(endAngle, _innerRadius), true, false);
+            context.ArcTo(dot(startAngle, _innerRadius), new Size(_innerRadius, _innerRadius),
+                0, isLargeArc, SweepDirection.Counterclockwise, true, false);
         }
 
-        几何.Freeze();
-        return 几何;
+        geometry.Freeze();
+        return geometry;
     }
 
     /// <summary>整圈空心圆环（外圆 + 内圆偶或填充）。</summary>
-    private Geometry 空心圆环()
+    private Geometry HollowRing()
     {
-        var 组合 = new GeometryGroup { FillRule = FillRule.EvenOdd };
-        组合.Children.Add(new EllipseGeometry(new Point(_中心x, _中心y), _外半径, _外半径));
-        组合.Children.Add(new EllipseGeometry(new Point(_中心x, _中心y), _内半径, _内半径));
-        组合.Freeze();
-        return 组合;
+        var groupValid = new GeometryGroup { FillRule = FillRule.EvenOdd };
+        groupValid.Children.Add(new EllipseGeometry(new Point(_centerx, _centery), _outerRadius, _outerRadius));
+        groupValid.Children.Add(new EllipseGeometry(new Point(_centerx, _centery), _innerRadius, _innerRadius));
+        groupValid.Freeze();
+        return groupValid;
     }
 
-    private static Brush 找画刷(string 键) =>
-        Application.Current?.TryFindResource(键) as Brush ?? Brushes.Gray;
+    private static Brush FindBrush(string Key) =>
+        Application.Current?.TryFindResource(Key) as Brush ?? Brushes.Gray;
 }

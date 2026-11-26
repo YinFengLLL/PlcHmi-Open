@@ -1,11 +1,11 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using 上位机.应用.服务;
-using 上位机.核心.模型;
+using PlcHmi.App.Services;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>
-/// <see cref="点表示教视图模型"/> 的「轴位置 / 当前浮高显示」部分（partial）。
+/// <see cref="PointTableTeachViewModel"/> 的「轴位置 / 当前浮高显示」部分（partial）。
 ///
 /// <para>从主文件拆出：主文件已接近规模门禁，而这段与点表读写、点动命令都无关，
 /// 只管"把轴位置标签的当前值显示到轴按钮上"。</para>
@@ -14,13 +14,13 @@ namespace 上位机.应用.视图模型;
 /// 读一个独立 D 地址（REAL 占 2 字，缺省 D240，管理员可在「编辑地址」改），
 /// 显示风格与轴当前位置一致。</para>
 /// </summary>
-public abstract partial class 点表示教视图模型
+public abstract partial class PointTableTeachViewModel
 {
     /// <summary>当前浮高文本（读不到时显示 <c>--.--</c>，与轴位置的"读不到"同一口径）。</summary>
-    [ObservableProperty] private string _当前浮高文本 = "--.--";
+    [ObservableProperty] private string _currentFloatHeightText = "--.--";
 
     /// <summary>本页是否显示当前浮高（只有配了地址的表才显示，目前是锁附页）。</summary>
-    public bool 显示当前浮高 => 表定义.当前浮高地址 > 0;
+    public bool ShowCurrentFloatHeight => TableDefinition.CurrentFloatHeightAddress > 0;
 
     /// <summary>
     /// 进入页面时拉一次轴位置快照。
@@ -30,36 +30,36 @@ public abstract partial class 点表示教视图模型
     /// （审查标准 R2：订阅事件流的页面必须在初始拉一次快照）。
     /// 首次采集发生在页面 ViewModel 构造之前，所以这里必须主动取一次当前值。</para>
     /// </summary>
-    protected void 刷新轴位置快照()
+    protected void RefreshAxisPositionSnapshot()
     {
-        foreach (var 轴项 in 轴列表)
+        foreach (var axisItem in AxisList)
         {
-            if (轴项.位置标签.Length > 0 && _值列表.尝试获取双精度(轴项.位置标签, out var 位置值))
+            if (axisItem.PositionTag.Length > 0 && _valueList.TryGetDouble(axisItem.PositionTag, out var positionValue))
             {
-                轴项.位置文本 = 坐标辅助.格式化(位置值);
+                axisItem.PositionText = CoordinateAux.Format(positionValue);
             }
         }
 
         // 浮高不在标签表里（独立地址、不参与轮询）：进页面主动读一次
-        异步安全调用.即发即忘(异步刷新当前浮高, _日志, "读取当前浮高");
+        SafeInvokeAsync.FireAndForget(RefreshCurrentFloatHeightAsync, _log, "读取当前浮高");
     }
 
     /// <summary>
     /// 从 PLC 读一次当前浮高并刷新显示（由主界面的 1s 节拍调用）。
     /// <para><b>读不到时显示 <c>--.--</c>：</b>服务层对"未配置地址 / 未连接 / 只读到一半"
-    /// 返回 <c>null</c>。偶发的通讯异常由调用方（<see cref="异步安全调用"/>）统一记录，
+    /// 返回 <c>null</c>。偶发的通讯异常由调用方（<see cref="SafeInvokeAsync"/>）统一记录，
     /// 下一拍（1s）自动重试——这条是辅助显示，不能因为它中断整页的周期回读。</para>
     /// </summary>
-    public async Task 异步刷新当前浮高()
+    public async Task RefreshCurrentFloatHeightAsync()
     {
-        if (!显示当前浮高)
+        if (!ShowCurrentFloatHeight)
         {
             return;
         }
 
-        var 值 = await 点表服务.异步读取当前浮高(表键).ConfigureAwait(false);
-        var 文本 = 值 is { } 浮高 ? 坐标辅助.格式化(浮高) : "--.--";
+        var Value = await PointTableService.ReadCurrentFloatHeightAsync(TableKey).ConfigureAwait(false);
+        var Text = Value is { } floatHeight ? CoordinateAux.Format(floatHeight) : "--.--";
 
-        在界面线程执行(() => 当前浮高文本 = 文本);
+        AtUiThreadExecute(() => CurrentFloatHeightText = Text);
     }
 }

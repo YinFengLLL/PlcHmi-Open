@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    点胶锁付机上位机正式发布：生成免安装的 publish/ 目录。
+    PlcHmi.App上位机正式发布：生成免安装的 publish/ 目录。
 
 .DESCRIPTION
     发布形态按现场需要定为「文件夹 + 免安装」：
@@ -8,7 +8,7 @@
 
     包结构（根目录只留必要的东西）：
 
-        点胶锁付机.exe          程序入口
+        PlcHmi.App.exe          程序入口
         *.dll / zh-Hans\        运行时（卫星语言只保留中文，其余语言目录不出包）
         出厂配置\               出厂配置模板 —— <b>不是</b> config/
         说明.txt                首次部署 / 覆盖升级须知
@@ -29,7 +29,7 @@
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish.ps1 -Output D:\release\点胶锁付机
+    powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish.ps1 -Output D:\release\PlcHmi.App
 #>
 
 param(
@@ -40,7 +40,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # exe 与主 DLL 的名字（AssemblyName 改了这里要跟着改）
-$程序名 = '点胶锁付机'
+$程序名 = 'PlcHmi.App'
 
 Set-Location (Join-Path $PSScriptRoot '..')
 
@@ -159,12 +159,12 @@ if ($出厂文件.Count -lt 10) {
 
 # ------------------------------------------------------------------ 4 部署说明
 $说明 = @"
-点胶锁付机上位机 · 部署与升级说明
+PlcHmi.App上位机 · 部署与升级说明
 ======================================
 
 【首次部署（新机台）】
-1. 把本目录整个拷贝到目标机的任意目录（例如 D:\点胶锁付机），目录必须可写；
-2. 双击 点胶锁付机.exe 即可运行 —— 免安装 .NET（自包含）；
+1. 把本目录整个拷贝到目标机的任意目录（例如 D:\PlcHmi.App），目录必须可写；
+2. 双击 PlcHmi.App.exe 即可运行 —— 免安装 .NET（自包含）；
 3. 首次启动会自动把「出厂配置\」里的模板补齐到 config\（只补缺失，不覆盖已有）；
 4. 管理员登录 → 系统设置 → PLC 连接，改成现场 PLC 的 IP 后重启生效。
 

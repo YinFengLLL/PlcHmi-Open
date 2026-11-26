@@ -1,28 +1,28 @@
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 参数表格的首次运行默认值。
 ///
 /// <para>值与范围都以秒为单位；写入 PLC 时换算成 <b>32 位整数（DINT）毫秒</b>（×1000，占 2 字）。
-/// 延时默认地址由 <paramref name="延迟地址最小"/> 推导，<b>间隔为 <see cref="参数条目定义.延时占字数"/></b>
+/// 延时默认地址由 <paramref name="delayAddressMin"/> 推导，<b>间隔为 <see cref="ParameterEntryDefinition.delayOccupyWordCount"/></b>
 /// （每条占 2 字，相邻地址会互相吃高位字），改专属区时不会再漏改这里
 /// （曾硬编码 D700–D702 踩过坑）。</para>
 /// </summary>
-public static class 参数表格默认值
+public static class ParameterTableDefaultValue
 {
     /// <summary>创建默认延时条目（取料 / 压装 / 放料）。</summary>
-    public static IEnumerable<参数条目定义> 创建延迟(int 延迟地址最小) =>
+    public static IEnumerable<ParameterEntryDefinition> CreateDelay(int delayAddressMin) =>
     [
-        new() { 标识 = "delay-1", 名称 = "取料延时", 地址 = $"D{延迟地址最小}", 值 = 0.5, 单元 = "s", 最小 = 0, 最大 = 2147483.647, 顺序 = 1 },
-        new() { 标识 = "delay-2", 名称 = "压装延时", 地址 = $"D{延迟地址最小 + 参数条目定义.延时占字数}", 值 = 0.8, 单元 = "s", 最小 = 0, 最大 = 2147483.647, 顺序 = 2 },
-        new() { 标识 = "delay-3", 名称 = "放料延时", 地址 = $"D{延迟地址最小 + 参数条目定义.延时占字数 * 2}", 值 = 0.3, 单元 = "s", 最小 = 0, 最大 = 2147483.647, 顺序 = 3 },
+        new() { Id = "delay-1", Name = "取料延时", Address = $"D{delayAddressMin}", Value = 0.5, Unit = "s", Min = 0, Max = 2147483.647, Order = 1 },
+        new() { Id = "delay-2", Name = "压装延时", Address = $"D{delayAddressMin + ParameterEntryDefinition.delayOccupyWordCount}", Value = 0.8, Unit = "s", Min = 0, Max = 2147483.647, Order = 2 },
+        new() { Id = "delay-3", Name = "放料延时", Address = $"D{delayAddressMin + ParameterEntryDefinition.delayOccupyWordCount * 2}", Value = 0.3, Unit = "s", Min = 0, Max = 2147483.647, Order = 3 },
     ];
 
     /// <summary>创建默认按钮条目。按钮地址统一放 M5000–M5099：与系统保留段彻底隔开。</summary>
-    public static IEnumerable<参数条目定义> 创建按钮() =>
+    public static IEnumerable<ParameterEntryDefinition> CreateButton() =>
     [
-        new() { 标识 = "btn-1", 名称 = "MES 开关", 地址 = "M5000", 顺序 = 1 },
+        new() { Id = "btn-1", Name = "MES 开关", Address = "M5000", Order = 1 },
     ];
 }

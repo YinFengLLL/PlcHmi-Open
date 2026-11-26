@@ -1,13 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using 上位机.业务;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.Modbus;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
+using PlcHmi.Business;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 机种区段（D2500–D3999）不参与周期采集（2026-10-21 现场要求）。
@@ -17,60 +17,60 @@ namespace 上位机.上位机测试;
 /// 与操作员正在编辑的值互相踩——现场看到的正是"我填的值自己变了"。</para>
 /// </summary>
 [Collection("config-files")]
-public class 机种区段轮询测试
+public class MachineModelSectionPollingTest
 {
-    private static ServiceProvider 构建运行期()
+    private static ServiceProvider BuildRuntime()
     {
-        var 设置 = 应用设置加载器.加载(out var 设置错误);
-        var 配方配置 = 配方配置加载器.加载(out var 配方错误);
+        var Settings = AppSettingsLoader.Load(out var SettingsError);
+        var RecipeConfig = RecipeConfigLoader.Load(out var recipeError);
 
-        Assert.Null(设置错误);
-        Assert.Null(配方错误);
+        Assert.Null(SettingsError);
+        Assert.Null(recipeError);
 
-        设置.PLC连接.使用模拟器 = true;
-        设置.轮询.快间隔毫秒 = 50;
-        设置.轮询.慢间隔毫秒 = 100;
-        设置.轮询.事件间隔毫秒 = 100;
+        Settings.PlcConnection.UseSimulator = true;
+        Settings.Polling.FastIntervalMilliseconds = 50;
+        Settings.Polling.SlowIntervalMilliseconds = 100;
+        Settings.Polling.EventIntervalMilliseconds = 100;
 
-        var 服务集合 = new ServiceCollection();
-        服务集合.AddLogging();
-        服务集合.添加上位机服务(设置.PLC连接, 设置.轮询, 配方配置);
-        服务集合.AddSingleton<权限守卫接口, 允许全部权限守卫>();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddLogging();
+        serviceCollection.AddPlcHmiService(Settings.PlcConnection, Settings.Polling, RecipeConfig);
+        serviceCollection.AddSingleton<IPermissionGuard, AllowAllPermissionGuard>();
 
-        return 服务集合.BuildServiceProvider(validateScopes: true);
+        return serviceCollection.BuildServiceProvider(validateScopes: true);
     }
 
     [Fact]
-    public async Task 机种区段的点位不应被周期采集()
+    public async Task MachineModelSectionPointShouldNotBeWeekPeriodSampling()
     {
-        await using var 提供者 = 构建运行期();
-        var 托管 = 提供者.GetRequiredService<IHostedService>();
-        await 托管.StartAsync(CancellationToken.None);
+        await using var provider = BuildRuntime();
+        var hosting = provider.GetRequiredService<IHostedService>();
+        await hosting.StartAsync(CancellationToken.None);
 
         try
         {
-            var 客户端 = 提供者.GetRequiredService<Modbus客户端接口>();
-            var 值列表 = 提供者.GetRequiredService<标签值服务接口>();
+            var Client = provider.GetRequiredService<IModbusClient>();
+            var ValueList = provider.GetRequiredService<ITagValueService>();
 
             // 区段外：D1104 目标产量（慢分组；模拟器只在初始化时写一次，循环里不改它）
             // 区段内：D3331 机种总数（慢分组）
-            await 客户端.异步写入多个寄存器(1104, [(ushort)4321, (ushort)0]);
-            await 客户端.异步写入单个寄存器(3331, 7);
+            await Client.WriteMultiRegisterAsync(1104, [(ushort)4321, (ushort)0]);
+            await Client.WriteSingleRegisterAsync(3331, 7);
 
             await Task.Delay(600);
 
             // 区段外照常采集
-            Assert.True(值列表.尝试获取双精度("TargetCount", out var 目标产量));
-            Assert.Equal(4321, 目标产量);
+            Assert.True(ValueList.TryGetDouble("TargetCount", out var targetOutput));
+            Assert.Equal(4321, targetOutput);
 
             // 区段内一个都不读：标签值服务里根本没有这个点（不是"读到 0"）
-            Assert.False(值列表.尝试获取双精度("RecipeCount", out _));
-            Assert.False(值列表.尝试获取双精度("TeachIndex", out _));
-            Assert.False(值列表.尝试获取双精度("RecipeNo", out _));
+            Assert.False(ValueList.TryGetDouble("RecipeCount", out _));
+            Assert.False(ValueList.TryGetDouble("TeachIndex", out _));
+            Assert.False(ValueList.TryGetDouble("RecipeNo", out _));
         }
         finally
         {
-            await 托管.StopAsync(CancellationToken.None);
+            await hosting.StopAsync(CancellationToken.None);
         }
     }
 }

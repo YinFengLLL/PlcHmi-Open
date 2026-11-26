@@ -1,13 +1,13 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 服务层权限边界测试（审查标准 R5）。
@@ -22,254 +22,254 @@ namespace 上位机.上位机测试;
 /// <para><b>拒绝语义：</b>抛 <see cref="UnauthorizedAccessException"/>，且<b>不留任何状态</b>——
 /// 校验发生在参数校验之前、任何变更之前。</para>
 /// </summary>
-public class 权限守卫测试
+public class PermissionGuardTest
 {
     /// <summary>未登录 → 操作员（最低权限）→ 一切写操作都应被拒。</summary>
-    private static 用户权限守卫 操作员()
+    private static UserPermissionGuard Operator()
     {
         // 不做 InitializeAsync：构造出来的 UserService 未登录，CurrentRole 即操作员
-        var 用户 = new 用户服务(NullLogger<用户服务>.Instance);
-        return new 用户权限守卫(用户, NullLogger<用户权限守卫>.Instance);
+        var User = new UserService(NullLogger<UserService>.Instance);
+        return new UserPermissionGuard(User, NullLogger<UserPermissionGuard>.Instance);
     }
 
-    private static 报警定义服务 新报警服务(权限守卫接口 守卫) =>
-        new(new 汇川地址解析器(PLC系列.小型PLC),
-            NullLogger<报警定义服务>.Instance, 守卫);
+    private static AlarmDefinitionService NewAlarmService(IPermissionGuard guard) =>
+        new(new InovanceAddressParser(PlcSeries.SmallPlc),
+            NullLogger<AlarmDefinitionService>.Instance, guard);
 
-    private static 参数表格服务 新参数服务(权限守卫接口 守卫) =>
-        new(new 汇川地址解析器(PLC系列.小型PLC),
-            null!, NullLogger<参数表格服务>.Instance, 守卫);
+    private static ParameterTableService NewParameterService(IPermissionGuard guard) =>
+        new(new InovanceAddressParser(PlcSeries.SmallPlc),
+            null!, NullLogger<ParameterTableService>.Instance, guard);
 
-    private static 手动元件服务 新元件服务(权限守卫接口 守卫) =>
-        new(new 汇川地址解析器(PLC系列.小型PLC),
-            NullLogger<手动元件服务>.Instance, 守卫);
+    private static ManualComponentService NewComponentService(IPermissionGuard guard) =>
+        new(new InovanceAddressParser(PlcSeries.SmallPlc),
+            NullLogger<ManualComponentService>.Instance, guard);
 
-    private static 报警定义 报警() =>
-        new() { 标识 = "A901", 消息 = "测试报警", 地址 = "M500", 位 = -1, 启用 = true };
+    private static AlarmDefinition Alarm() =>
+        new() { Id = "A901", Message = "测试报警", Address = "M500", Bit = -1, Enabled = true };
 
-    private static 参数条目定义 延迟() =>
-        new() { 标识 = "d-test", 名称 = "测试延时", 地址 = "D1000", 值 = 1, 最小 = 0, 最大 = 10 };
+    private static ParameterEntryDefinition Delay() =>
+        new() { Id = "d-test", Name = "测试延时", Address = "D1000", Value = 1, Min = 0, Max = 10 };
 
-    private static 手动元件定义 元件() =>
-        new() { 标识 = "w-test", 名称 = "测试气缸", 类型 = 手动元件类型.气缸, 地址 = "M220" };
+    private static ManualComponentDefinition Component() =>
+        new() { Id = "w-test", Name = "测试气缸", Kind = ManualComponentType.Cylinder, Address = "M220" };
 
     // ── 报警编辑（管理员专有）────────────────────────────────────────────
 
     [Fact]
-    public void 操作员新增报警定义应被拒绝且不留下任何条目()
+    public void OperatorAddAlarmDefinitionShouldBeRejectedAndNotLeaveAnyEntry()
     {
-        var 服务实例 = 新报警服务(操作员());
+        var serviceInstance = NewAlarmService(Operator());
 
-        Assert.Throws<UnauthorizedAccessException>(() => 服务实例.添加(报警()));
+        Assert.Throws<UnauthorizedAccessException>(() => serviceInstance.Add(Alarm()));
 
         // 关键：拒绝必须发生在任何状态变更之前
-        Assert.Empty(服务实例.定义集合);
+        Assert.Empty(serviceInstance.DefinitionCollection);
     }
 
     [Fact]
-    public void 操作员删除报警定义应被拒绝()
+    public void OperatorDeleteAlarmDefinitionShouldBeRejected()
     {
-        var 服务实例 = 新报警服务(操作员());
+        var serviceInstance = NewAlarmService(Operator());
 
-        Assert.Throws<UnauthorizedAccessException>(() => 服务实例.移除("A001"));
+        Assert.Throws<UnauthorizedAccessException>(() => serviceInstance.Remove("A001"));
     }
 
     [Fact]
-    public void 操作员更新报警定义应被拒绝()
+    public void OperatorUpdateAlarmDefinitionShouldBeRejected()
     {
-        var 服务实例 = 新报警服务(操作员());
+        var serviceInstance = NewAlarmService(Operator());
 
-        Assert.Throws<UnauthorizedAccessException>(() => 服务实例.更新(报警()));
+        Assert.Throws<UnauthorizedAccessException>(() => serviceInstance.Update(Alarm()));
     }
 
     [Fact]
-    public void 有权限时报警定义可以正常新增()
+    public void HasPermissionWhenAlarmDefinitionCanNormalAdd()
     {
-        var 服务实例 = 新报警服务(new 允许全部权限守卫());
+        var serviceInstance = NewAlarmService(new AllowAllPermissionGuard());
 
-        服务实例.添加(报警());
+        serviceInstance.Add(Alarm());
 
-        Assert.Single(服务实例.定义集合);
+        Assert.Single(serviceInstance.DefinitionCollection);
     }
 
     // ── 参数表定义（管理员专有）──────────────────────────────────────────
 
     [Fact]
-    public void 操作员新增延时条目应被拒绝()
+    public void OperatorAddDelayEntryShouldBeRejected()
     {
-        var 服务实例 = 新参数服务(操作员());
+        var serviceInstance = NewParameterService(Operator());
 
         Assert.Throws<UnauthorizedAccessException>(
-            () => 服务实例.添加(参数表格类别.延迟, 延迟()));
+            () => serviceInstance.Add(ParameterTableCategory.Delay, Delay()));
 
-        Assert.Empty(服务实例.延迟集合);
+        Assert.Empty(serviceInstance.DelayCollection);
     }
 
     [Fact]
-    public void 操作员删除参数表条目应被拒绝()
+    public void OperatorDeleteParameterTableEntryShouldBeRejected()
     {
-        var 服务实例 = 新参数服务(操作员());
+        var serviceInstance = NewParameterService(Operator());
 
         Assert.Throws<UnauthorizedAccessException>(
-            () => 服务实例.移除(参数表格类别.按钮, "btn-1"));
+            () => serviceInstance.Remove(ParameterTableCategory.Button, "btn-1"));
     }
 
     // ── 手动页元件（管理员专有）──────────────────────────────────────────
 
     [Fact]
-    public void 操作员新增手动页元件应被拒绝()
+    public void OperatorAddManualPageComponentShouldBeRejected()
     {
-        var 服务实例 = 新元件服务(操作员());
+        var serviceInstance = NewComponentService(Operator());
 
-        Assert.Throws<UnauthorizedAccessException>(() => 服务实例.添加(元件()));
+        Assert.Throws<UnauthorizedAccessException>(() => serviceInstance.Add(Component()));
 
-        Assert.Empty(服务实例.元件集合);
+        Assert.Empty(serviceInstance.ComponentCollection);
     }
 
     [Fact]
-    public void 操作员删除手动页元件应被拒绝()
+    public void OperatorDeleteManualPageComponentShouldBeRejected()
     {
-        var 服务实例 = 新元件服务(操作员());
+        var serviceInstance = NewComponentService(Operator());
 
-        Assert.Throws<UnauthorizedAccessException>(() => 服务实例.移除("cyl-1"));
+        Assert.Throws<UnauthorizedAccessException>(() => serviceInstance.Remove("cyl-1"));
     }
 
     // ── 手动控制 / 设备命令（2026-09-29 审查整改补齐的服务层边界）────────
 
-    private static 手动控件服务 新手动服务(权限守卫接口 守卫, 替身Modbus客户端 客户端)
+    private static ManualWidgetService NewManualService(IPermissionGuard guard, FakeModbusClient Client)
     {
-        var 解析器 = new 汇川地址解析器(PLC系列.小型PLC);
+        var Parser = new InovanceAddressParser(PlcSeries.SmallPlc);
 
-        return new 手动控件服务(
-            new 标签写入器(
-                客户端,
-                new 标签仓储(NullLogger<标签仓储>.Instance),
-                解析器,
-                NullLogger<标签写入器>.Instance),
-            客户端,
-            解析器,
-            配方配置加载器.加载(out _),
-            守卫,
-            NullLogger<手动控件服务>.Instance);
+        return new ManualWidgetService(
+            new TagWriter(
+                Client,
+                new TagRepository(NullLogger<TagRepository>.Instance),
+                Parser,
+                NullLogger<TagWriter>.Instance),
+            Client,
+            Parser,
+            RecipeConfigLoader.Load(out _),
+            guard,
+            NullLogger<ManualWidgetService>.Instance);
     }
 
-    private static 设备服务 新设备服务(权限守卫接口 守卫, 替身Modbus客户端 客户端)
+    private static DeviceService NewDeviceService(IPermissionGuard guard, FakeModbusClient Client)
     {
-        var 解析器 = new 汇川地址解析器(PLC系列.小型PLC);
+        var Parser = new InovanceAddressParser(PlcSeries.SmallPlc);
 
-        return new 设备服务(
-            new 标签值服务(NullLogger<标签值服务>.Instance),
-            new 标签写入器(
-                客户端,
-                new 标签仓储(NullLogger<标签仓储>.Instance),
-                解析器,
-                NullLogger<标签写入器>.Instance),
-            守卫,
-            NullLogger<设备服务>.Instance);
+        return new DeviceService(
+            new TagValueService(NullLogger<TagValueService>.Instance),
+            new TagWriter(
+                Client,
+                new TagRepository(NullLogger<TagRepository>.Instance),
+                Parser,
+                NullLogger<TagWriter>.Instance),
+            guard,
+            NullLogger<DeviceService>.Instance);
     }
 
     [Fact]
-    public async Task 操作员开启手动使能应被拒绝()
+    public async Task OperatorOpenStartManualEnableShouldBeRejected()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        await 客户端.异步连接();
+        await using var Client = new FakeModbusClient();
+        await Client.ConnectAsync();
 
-        var 服务实例 = 新手动服务(操作员(), 客户端);
+        var serviceInstance = NewManualService(Operator(), Client);
 
-        Assert.Throws<UnauthorizedAccessException>(() => 服务实例.设置启用(true));
+        Assert.Throws<UnauthorizedAccessException>(() => serviceInstance.SetEnabled(true));
 
         // 拒绝不留状态：使能保持关闭
-        Assert.False(服务实例.是否启用);
+        Assert.False(serviceInstance.IsEnabled);
     }
 
     [Fact]
-    public async Task 操作员点动应被拒绝且不下发任何命令()
+    public async Task OperatorJogShouldBeRejectedAndNotSendAnyCommand()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        await 客户端.异步连接();
+        await using var Client = new FakeModbusClient();
+        await Client.ConnectAsync();
 
-        var 服务实例 = 新手动服务(操作员(), 客户端);
+        var serviceInstance = NewManualService(Operator(), Client);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => 服务实例.异步点动("X", 1));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => serviceInstance.JogAsync("X", 1));
 
-        Assert.Empty(客户端.寄存器写入);
-        Assert.Empty(客户端.线圈写入);
+        Assert.Empty(Client.RegisterWrite);
+        Assert.Empty(Client.CoilWrite);
     }
 
     [Fact]
-    public async Task 关闭手动使能不受权限限制()
+    public async Task CloseManualEnableNotAffectedByPermissionLimit()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        await 客户端.异步连接();
+        await using var Client = new FakeModbusClient();
+        await Client.ConnectAsync();
 
         // 关闭是安全方向：最低权限（未登录=操作员）也必须能执行，不能被权限拦下
-        var 服务实例 = 新手动服务(操作员(), 客户端);
+        var serviceInstance = NewManualService(Operator(), Client);
 
-        var 异常 = Record.Exception(() => 服务实例.设置启用(false));
+        var exception = Record.Exception(() => serviceInstance.SetEnabled(false));
 
-        Assert.Null(异常);
-        Assert.False(服务实例.是否启用);
+        Assert.Null(exception);
+        Assert.False(serviceInstance.IsEnabled);
     }
 
     [Fact]
-    public async Task 操作员清除产量数据应被拒绝()
+    public async Task OperatorClearRemoveOutputDataShouldBeRejected()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        await 客户端.异步连接();
+        await using var Client = new FakeModbusClient();
+        await Client.ConnectAsync();
 
-        var 服务实例 = 新设备服务(操作员(), 客户端);
+        var serviceInstance = NewDeviceService(Operator(), Client);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => 服务实例.异步清除数据());
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => serviceInstance.ClearRemoveDataAsync());
 
-        Assert.Empty(客户端.线圈写入);
+        Assert.Empty(Client.CoilWrite);
     }
 
     [Fact]
-    public async Task 操作员启动设备应放行()
+    public async Task OperatorStartDeviceShouldAllow()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        await 客户端.异步连接();
+        await using var Client = new FakeModbusClient();
+        await Client.ConnectAsync();
 
-        var 服务实例 = 新设备服务(操作员(), 客户端);
+        var serviceInstance = NewDeviceService(Operator(), Client);
 
-        await 服务实例.异步启动();
+        await serviceInstance.StartAsync();
 
         // 操作员是运行页的主要使用者：启停必须放行（脉冲 = 置位 + 复位两次写入）
-        Assert.NotEmpty(客户端.线圈写入);
+        Assert.NotEmpty(Client.CoilWrite);
     }
 
     // ── 守卫本身 ────────────────────────────────────────────────────────
 
     [Fact]
-    public void 未登录身份应被识别为操作员()
+    public void NotLoginBodyPartShouldBeIdentifiedAsOperator()
     {
-        var 用户 = new 用户服务(NullLogger<用户服务>.Instance);
+        var User = new UserService(NullLogger<UserService>.Instance);
 
-        Assert.False(用户.是否已登录);
-        Assert.Equal(用户角色.操作员, 用户.当前角色);
-        Assert.False(用户.有(权限.编辑绑定地址));
-        Assert.False(用户.有(权限.编辑手动元件));
-        Assert.False(用户.有(权限.编辑PLC连接));
+        Assert.False(User.IsAlreadyLogin);
+        Assert.Equal(UserRole.Operator, User.CurrentRole);
+        Assert.False(User.Has(Permission.EditBindAddress));
+        Assert.False(User.Has(Permission.EditManualComponent));
+        Assert.False(User.Has(Permission.EditPlcConnect));
     }
 
     [Fact]
-    public void 放行守卫不应拦截任何权限()
+    public void AllowGuardShouldNotBlockAnyPermission()
     {
-        var 守卫 = new 允许全部权限守卫();
+        var guard = new AllowAllPermissionGuard();
 
         // 仅用于测试/批处理的放行守卫：不应抛异常
-        守卫.要求(权限.管理用户);
-        守卫.要求(权限.编辑PLC连接);
+        guard.WantRequire(Permission.ManageUser);
+        guard.WantRequire(Permission.EditPlcConnect);
     }
 
     [Fact]
-    public void 拒绝信息应说明缺少哪项权限且不含密码等信息()
+    public void RejectInfoShouldDescriptionMissingWhichItemPermissionAndNotHasPasswordWaitInfo()
     {
-        var 守卫 = 操作员();
+        var guard = Operator();
 
-        var 异常 = Assert.Throws<UnauthorizedAccessException>(
-            () => 守卫.要求(权限.编辑PLC连接));
+        var exception = Assert.Throws<UnauthorizedAccessException>(
+            () => guard.WantRequire(Permission.EditPlcConnect));
 
-        Assert.Contains("编辑PLC连接", 异常.Message, StringComparison.Ordinal);
+        Assert.Contains("EditPlcConnect", exception.Message, StringComparison.Ordinal);
     }
 }

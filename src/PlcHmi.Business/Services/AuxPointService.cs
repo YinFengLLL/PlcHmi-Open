@@ -1,12 +1,12 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.通信.Modbus;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 辅助点（其它点）服务：管理非锁附/点胶类的辅助点位（滑螺丝点、相机中心、锁杆中心…）。
@@ -14,232 +14,232 @@ namespace 上位机.业务.服务;
 /// <para>点位定义（名称 + X/Y/Z 基址）落盘 <c>config/aux-points.json</c>，
 /// 坐标值存放在 PLC 的对应寄存器中；支持增删改查与 CSV 导入导出。</para>
 /// </summary>
-public sealed partial class 辅助点服务 : 辅助点服务接口
+public sealed partial class AuxPointService : IAuxPointService
 {
-    private readonly Modbus客户端接口 _客户端;
-    private readonly 配方配置 _配置;
-    private readonly 权限守卫接口 _权限;
-    private readonly ILogger<辅助点服务> _日志;
+    private readonly IModbusClient _client;
+    private readonly RecipeConfig _config;
+    private readonly IPermissionGuard _permission;
+    private readonly ILogger<AuxPointService> _log;
 
-    private readonly List<辅助点定义> _点位 = new();
+    private readonly List<AuxPointDefinition> _point = new();
 
     /// <summary>
     /// 点位列表的同步锁。此前本服务完全无同步：CSV 导入的 Clear()+AddRange 与
-    /// UI 枚举 <see cref="点位集合"/> 并发会抛 Collection was modified。
+    /// UI 枚举 <see cref="PointCollection"/> 并发会抛 Collection was modified。
     /// </summary>
-    private readonly object _同步 = new();
+    private readonly object _sync = new();
 
-    public 辅助点服务(
-        Modbus客户端接口 客户端,
-        配方配置 配置对象,
-        权限守卫接口 权限,
-        ILogger<辅助点服务> 日志)
+    public AuxPointService(
+        IModbusClient Client,
+        RecipeConfig configPairObject,
+        IPermissionGuard Permission,
+        ILogger<AuxPointService> Log)
     {
-        _客户端 = 客户端;
-        _配置 = 配置对象;
-        _权限 = 权限;
-        _日志 = 日志;
+        _client = Client;
+        _config = configPairObject;
+        _permission = Permission;
+        _log = Log;
 
         // 先以配置中的默认点位打底；落盘文件存在时会在初始化阶段整体覆盖
-        foreach (var 点项 in _配置.其它点.点位)
+        foreach (var PointEntry in _config.OtherPoint.Point)
         {
-            _点位.Add(点项.克隆());
+            _point.Add(PointEntry.Clone());
         }
     }
 
     /// <inheritdoc />
-    public event EventHandler? 已变更;
+    public event EventHandler? changed;
 
     /// <inheritdoc />
     // 快照交出：与 报警定义服务/参数表格服务/手动元件服务 统一口径。
     // 曾经直接交出内部 List，调用方既可绕过权限 Add，枚举期间遭遇 Clear() 还会抛异常。
-    public IReadOnlyList<辅助点定义> 点位集合
+    public IReadOnlyList<AuxPointDefinition> PointCollection
     {
-        get { lock (_同步) { return _点位.ToArray(); } }
+        get { lock (_sync) { return _point.ToArray(); } }
     }
 
     /// <inheritdoc />
-    public 其它点配置 配置 => _配置.其它点;
+    public OtherPointConfig Config => _config.OtherPoint;
 
     // ── 初始化 ──────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task 异步初始化(CancellationToken 取消令牌 = default)
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var 结果 = await 配置文件加载器
-            .异步加载JSON<辅助点文件>(配置路径.其它点, JSON配置.读取, _日志, 取消令牌)
+        var result = await ConfigFileLoader
+            .LoadJsonAsync<AuxPointFile>(ConfigPath.OtherPoint, JsonConfig.Read, _log, cancellationToken)
             .ConfigureAwait(false);
 
-        if (结果.值 is null)
+        if (result.Value is null)
         {
-            _日志.LogInformation("未找到其它点定义文件，按配置默认点位启动：{Path}", 配置路径.其它点);
+            _log.LogInformation("未找到其它点定义文件，按配置默认点位启动：{Path}", ConfigPath.OtherPoint);
             return;
         }
 
-        lock (_同步)
+        lock (_sync)
         {
-            _点位.Clear();
+            _point.Clear();
 
-            foreach (var 点项 in 结果.值.点位)
+            foreach (var PointEntry in result.Value.Point)
             {
-                _点位.Add(点项);
+                _point.Add(PointEntry);
             }
 
-            _日志.LogInformation("已加载其它点定义：{Count} 个", _点位.Count);
+            _log.LogInformation("已加载其它点定义：{Count} 个", _point.Count);
         }
 
-        已变更?.Invoke(this, EventArgs.Empty);
+        changed?.Invoke(this, EventArgs.Empty);
     }
 
     // ── 坐标读写 ────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<(double X, double Y, double Z)> 异步读取坐标(
-        辅助点定义 点位项, CancellationToken 取消令牌 = default)
+    public async Task<(double X, double Y, double Z)> ReadCoordinateAsync(
+        AuxPointDefinition PointItem, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(点位项);
+        ArgumentNullException.ThrowIfNull(PointItem);
 
-        return (await 异步读取字段(点位项.X基址, 取消令牌).ConfigureAwait(false),
-                await 异步读取字段(点位项.Y基址, 取消令牌).ConfigureAwait(false),
-                await 异步读取字段(点位项.Z基址, 取消令牌).ConfigureAwait(false));
+        return (await ReadFieldAsync(PointItem.XBaseAddress, cancellationToken).ConfigureAwait(false),
+                await ReadFieldAsync(PointItem.YBaseAddress, cancellationToken).ConfigureAwait(false),
+                await ReadFieldAsync(PointItem.ZBaseAddress, cancellationToken).ConfigureAwait(false));
     }
 
     /// <inheritdoc />
-    public async Task 异步写入坐标(
-        辅助点定义 点位项, double X, double Y, double Z, CancellationToken 取消令牌 = default)
+    public async Task WriteCoordinateAsync(
+        AuxPointDefinition PointItem, double X, double Y, double Z, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(点位项);
+        ArgumentNullException.ThrowIfNull(PointItem);
 
-        _权限.要求(权限.编辑示教);
+        _permission.WantRequire(Permission.EditTeach);
 
-        var 范围 = _配置.其它点;
+        var range = _config.OtherPoint;
 
-        foreach (var (名称值, 值) in new[] { ("X", X), ("Y", Y), ("Z", Z) })
+        foreach (var (nameValue, Value) in new[] { ("X", X), ("Y", Y), ("Z", Z) })
         {
-            if (值 < 范围.最小值 || 值 > 范围.最大值)
+            if (Value < range.MinValue || Value > range.MaxValue)
             {
                 throw new InvalidOperationException(
-                    $"{点位项.名称} 的 {名称值} = {值:0.00} 超出允许范围"
-                    + $"（{范围.最小值:0.00} ~ {范围.最大值:0.00}）。");
+                    $"{PointItem.Name} 的 {nameValue} = {Value:0.00} 超出允许范围"
+                    + $"（{range.MinValue:0.00} ~ {range.MaxValue:0.00}）。");
             }
         }
 
-        if (!_客户端.是否已连接)
+        if (!_client.IsConnected)
         {
             throw new InvalidOperationException("PLC 未连接，无法写入坐标。");
         }
 
-        await 异步写入字段(点位项.X基址, X, 取消令牌).ConfigureAwait(false);
-        await 异步写入字段(点位项.Y基址, Y, 取消令牌).ConfigureAwait(false);
-        await 异步写入字段(点位项.Z基址, Z, 取消令牌).ConfigureAwait(false);
+        await WriteFieldAsync(PointItem.XBaseAddress, X, cancellationToken).ConfigureAwait(false);
+        await WriteFieldAsync(PointItem.YBaseAddress, Y, cancellationToken).ConfigureAwait(false);
+        await WriteFieldAsync(PointItem.ZBaseAddress, Z, cancellationToken).ConfigureAwait(false);
 
-        _日志.LogInformation("已写入其它点 {Name}：X={X} Y={Y} Z={Z}", 点位项.名称, X, Y, Z);
+        _log.LogInformation("已写入其它点 {Name}：X={X} Y={Y} Z={Z}", PointItem.Name, X, Y, Z);
     }
 
     // ── 增删改查 ────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task 异步新增(辅助点定义 点位项, CancellationToken 取消令牌 = default)
+    public async Task AddAsync(AuxPointDefinition PointItem, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(点位项);
-        _权限.要求(权限.编辑绑定地址);
+        ArgumentNullException.ThrowIfNull(PointItem);
+        _permission.WantRequire(Permission.EditBindAddress);
 
-        if (string.IsNullOrWhiteSpace(点位项.名称))
+        if (string.IsNullOrWhiteSpace(PointItem.Name))
         {
             throw new InvalidOperationException("点位名称不能为空。");
         }
 
-        lock (_同步)
+        lock (_sync)
         {
-            if (_配置.其它点.查找(点位项.名称) is not null
-                || _点位.Any(点项 => string.Equals(点项.名称, 点位项.名称, StringComparison.OrdinalIgnoreCase)))
+            if (_config.OtherPoint.Find(PointItem.Name) is not null
+                || _point.Any(PointEntry => string.Equals(PointEntry.Name, PointItem.Name, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new InvalidOperationException($"其它点「{点位项.名称}」已存在。");
+                throw new InvalidOperationException($"其它点「{PointItem.Name}」已存在。");
             }
 
-            校验地址(点位项);
+            ValidateAddress(PointItem);
 
-            _点位.Add(点位项.克隆());
+            _point.Add(PointItem.Clone());
         }
 
-        await 异步落盘(取消令牌).ConfigureAwait(false);
+        await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public async Task 异步编辑(string 原名, 辅助点定义 点位项, CancellationToken 取消令牌 = default)
+    public async Task EditAsync(string originalName, AuxPointDefinition PointItem, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(点位项);
-        _权限.要求(权限.编辑绑定地址);
+        ArgumentNullException.ThrowIfNull(PointItem);
+        _permission.WantRequire(Permission.EditBindAddress);
 
-        if (string.IsNullOrWhiteSpace(点位项.名称))
+        if (string.IsNullOrWhiteSpace(PointItem.Name))
         {
             throw new InvalidOperationException("点位名称不能为空。");
         }
 
-        lock (_同步)
+        lock (_sync)
         {
-            var 索引 = _点位.FindIndex(点项 => string.Equals(点项.名称, 原名, StringComparison.OrdinalIgnoreCase));
+            var index = _point.FindIndex(PointEntry => string.Equals(PointEntry.Name, originalName, StringComparison.OrdinalIgnoreCase));
 
-            if (索引 < 0)
+            if (index < 0)
             {
-                throw new InvalidOperationException($"其它点「{原名}」不存在。");
+                throw new InvalidOperationException($"其它点「{originalName}」不存在。");
             }
 
             // 允许改名（2026-10-15 现场反馈），但改名后不能与别的点撞名——
             // 名称是"按名查找 / 删除 / CSV 导入"的依据，重名会让后续操作指向错误的点。
             // 只排除自己，这样"只改坐标、名称原样提交"不会被误判。
-            if (_点位.Where((点项, 序号) => 序号 != 索引)
-                    .Any(点项 => string.Equals(点项.名称, 点位项.名称, StringComparison.OrdinalIgnoreCase)))
+            if (_point.Where((PointEntry, Sequence) => Sequence != index)
+                    .Any(PointEntry => string.Equals(PointEntry.Name, PointItem.Name, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new InvalidOperationException($"其它点「{点位项.名称}」已存在，请换一个名称。");
+                throw new InvalidOperationException($"其它点「{PointItem.Name}」已存在，请换一个名称。");
             }
 
-            校验地址(点位项);
+            ValidateAddress(PointItem);
 
-            _点位[索引] = 点位项.克隆();
+            _point[index] = PointItem.Clone();
         }
 
-        await 异步落盘(取消令牌).ConfigureAwait(false);
+        await PersistAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!string.Equals(原名, 点位项.名称, StringComparison.Ordinal))
+        if (!string.Equals(originalName, PointItem.Name, StringComparison.Ordinal))
         {
-            _日志.LogInformation("其它点已改名：{From} → {To}", 原名, 点位项.名称);
+            _log.LogInformation("其它点已改名：{From} → {To}", originalName, PointItem.Name);
         }
     }
 
     /// <inheritdoc />
-    public async Task 异步删除(string 名称值, CancellationToken 取消令牌 = default)
+    public async Task DeleteAsync(string nameValue, CancellationToken cancellationToken = default)
     {
-        _权限.要求(权限.编辑绑定地址);
+        _permission.WantRequire(Permission.EditBindAddress);
 
-        lock (_同步)
+        lock (_sync)
         {
-            var 索引 = _点位.FindIndex(点项 => string.Equals(点项.名称, 名称值, StringComparison.OrdinalIgnoreCase));
+            var index = _point.FindIndex(PointEntry => string.Equals(PointEntry.Name, nameValue, StringComparison.OrdinalIgnoreCase));
 
-            if (索引 < 0)
+            if (index < 0)
             {
-                throw new InvalidOperationException($"其它点「{名称值}」不存在。");
+                throw new InvalidOperationException($"其它点「{nameValue}」不存在。");
             }
 
-            _点位.RemoveAt(索引);
+            _point.RemoveAt(index);
         }
 
-        await 异步落盘(取消令牌).ConfigureAwait(false);
+        await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<辅助点定义> 查询(string 关键字)
+    public IReadOnlyList<AuxPointDefinition> Query(string keyword)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            if (string.IsNullOrWhiteSpace(关键字))
+            if (string.IsNullOrWhiteSpace(keyword))
             {
-                return _点位.ToList();
+                return _point.ToList();
             }
 
-            var 键 = 关键字.Trim();
-            return _点位
-                .Where(点项 => 点项.名称.Contains(键, StringComparison.OrdinalIgnoreCase))
+            var Key = keyword.Trim();
+            return _point
+                .Where(PointEntry => PointEntry.Name.Contains(Key, StringComparison.OrdinalIgnoreCase))
                 .ToList();
         }
     }
@@ -253,49 +253,49 @@ public sealed partial class 辅助点服务 : 辅助点服务接口
     /// <para><b>2026-10-12：</b>按现场要求取消地址区间限制——不再要求落在
     /// <c>其它点.允许范围</c> 内；只保留"必须是正整数"这一条录入错误判定。</para>
     /// </summary>
-    private static void 校验地址(辅助点定义 点位项)
+    private static void ValidateAddress(AuxPointDefinition PointItem)
     {
-        foreach (var (名称值, 地址值) in new[]
+        foreach (var (nameValue, addressValue) in new[]
                  {
-                     ("X", 点位项.X基址), ("Y", 点位项.Y基址), ("Z", 点位项.Z基址),
+                     ("X", PointItem.XBaseAddress), ("Y", PointItem.YBaseAddress), ("Z", PointItem.ZBaseAddress),
                  })
         {
-            if (地址值 <= 0)
+            if (addressValue <= 0)
             {
-                throw new InvalidOperationException($"{点位项.名称} 的 {名称值} 地址必须是正整数。");
+                throw new InvalidOperationException($"{PointItem.Name} 的 {nameValue} 地址必须是正整数。");
             }
         }
     }
 
-    private async Task<double> 异步读取字段(int 地址值, CancellationToken 取消令牌)
+    private async Task<double> ReadFieldAsync(int addressValue, CancellationToken cancellationToken)
     {
-        if (!_客户端.是否已连接)
+        if (!_client.IsConnected)
         {
             return 0;
         }
 
-        var 寄存器列表 = await _客户端.异步读取保持寄存器(地址值, 2, 取消令牌).ConfigureAwait(false);
+        var registerList = await _client.ReadHoldingRegisterAsync(addressValue, 2, cancellationToken).ConfigureAwait(false);
 
-        if (寄存器列表.Length < 2)
+        if (registerList.Length < 2)
         {
             return 0;
         }
 
-        var 值 = 寄存器编解码器.解码(标签数据类型.Float32, 寄存器列表, 字顺序.小字节序);
-        return Convert.ToDouble(值, CultureInfo.InvariantCulture);
+        var Value = RegisterCodec.Decode(TagDataType.Float32, registerList, WordOrder.LittleEndian);
+        return Convert.ToDouble(Value, CultureInfo.InvariantCulture);
     }
 
-    private async Task 异步写入字段(int 地址值, double 值, CancellationToken 取消令牌)
+    private async Task WriteFieldAsync(int addressValue, double Value, CancellationToken cancellationToken)
     {
-        var 寄存器列表 = 寄存器编解码器.编码(标签数据类型.Float32, 值, 字顺序.小字节序);
-        await _客户端.异步写入多个寄存器(地址值, 寄存器列表, 取消令牌).ConfigureAwait(false);
+        var registerList = RegisterCodec.Encode(TagDataType.Float32, Value, WordOrder.LittleEndian);
+        await _client.WriteMultiRegisterAsync(addressValue, registerList, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task 异步落盘(CancellationToken 取消令牌)
+    private async Task PersistAsync(CancellationToken cancellationToken)
     {
-        var 文件项 = new 辅助点文件 { 点位 = _点位.Select(点项 => 点项.克隆()).ToList() };
-        var JSON文本 = System.Text.Json.JsonSerializer.Serialize(文件项, JSON配置.写入);
-        await 原子文件.异步写入全部文本(配置路径.其它点, JSON文本, 取消令牌).ConfigureAwait(false);
-        已变更?.Invoke(this, EventArgs.Empty);
+        var fileItem = new AuxPointFile { Point = _point.Select(PointEntry => PointEntry.Clone()).ToList() };
+        var jsonText = System.Text.Json.JsonSerializer.Serialize(fileItem, JsonConfig.Write);
+        await AtomicFile.WriteAllTextAsync(ConfigPath.OtherPoint, jsonText, cancellationToken).ConfigureAwait(false);
+        changed?.Invoke(this, EventArgs.Empty);
     }
 }

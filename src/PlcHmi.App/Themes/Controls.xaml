@@ -359,7 +359,7 @@
          （手动调试页与示教页同构，故样式可共用）。 -->
     <Style x:Key="JogLevelLowButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
         <Style.Triggers>
-            <DataTrigger Binding="{Binding 是否点动低}" Value="True">
+            <DataTrigger Binding="{Binding IsJogLow}" Value="True">
                 <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextOnPrimaryBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
@@ -369,7 +369,7 @@
 
     <Style x:Key="JogLevelMediumButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
         <Style.Triggers>
-            <DataTrigger Binding="{Binding 是否点动中等}" Value="True">
+            <DataTrigger Binding="{Binding IsJogMedium}" Value="True">
                 <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextOnPrimaryBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
@@ -379,7 +379,7 @@
 
     <Style x:Key="JogLevelHighButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
         <Style.Triggers>
-            <DataTrigger Binding="{Binding 是否点动高}" Value="True">
+            <DataTrigger Binding="{Binding IsJogHeight}" Value="True">
                 <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextOnPrimaryBrush}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
@@ -548,9 +548,9 @@
         <Setter Property="Margin" Value="{StaticResource GapBottom4}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
-        <Setter Property="ToolTip" Value="{Binding 标题}" />
+        <Setter Property="ToolTip" Value="{Binding Title}" />
         <Setter Property="ToolTipService.IsEnabled"
-                Value="{Binding DataContext.侧栏已收起, RelativeSource={RelativeSource AncestorType=Window}}" />
+                Value="{Binding DataContext.SidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
@@ -581,7 +581,7 @@
         <Style.Triggers>
             <!-- 侧栏收起（64px）：内容区仅约 19px，24px 图标必被 ScrollViewer 裁剪 ——
                  缩小左右内边距给图标让位（配合模板内容居中），名称由 ToolTip 承担 -->
-            <DataTrigger Binding="{Binding DataContext.侧栏已收起, RelativeSource={RelativeSource AncestorType=Window}}"
+            <DataTrigger Binding="{Binding DataContext.SidebarCollapsed, RelativeSource={RelativeSource AncestorType=Window}}"
                          Value="True">
                 <Setter Property="Padding" Value="4,12" />
             </DataTrigger>

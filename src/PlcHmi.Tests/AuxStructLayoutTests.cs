@@ -1,8 +1,8 @@
-using 上位机.业务.配置;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 点胶单点参数结构体的成员排布（2026-10-21 现场口径）。
@@ -11,134 +11,134 @@ namespace 上位机.上位机测试;
 /// 现场把抬针高度从 REAL 改成 INT 后，点胶速度应落在 D3505——若偏移不重排，
 /// 上位机会看着 D3506（PLC 实际那里已是别的字），示教写下去的数值全部错位。</para>
 /// </summary>
-public class 辅助地址结构布局测试
+public class AuxAddressStructureLayoutTest
 {
-    private static 辅助地址项 成员(string 键, 标签数据类型 类型, int 偏移) => new()
+    private static AuxAddressItem Member(string Key, TagDataType Kind, int Offset) => new()
     {
-        键 = 键,
-        名称 = 键,
-        分组 = "点胶",
-        数据类型 = 类型,
-        结构体成员 = true,
-        结构体基址 = 3500,
-        结构体内偏移 = 偏移,
-        结构体长度 = 8,
+        Key = Key,
+        Name = Key,
+        Group = "点胶",
+        DataType = Kind,
+        StructMember = true,
+        StructBaseAddress = 3500,
+        StructInnerOffset = Offset,
+        StructLength = 8,
     };
 
-    private static List<辅助地址项> 出厂五成员() =>
+    private static List<AuxAddressItem> FactoryFiveMember() =>
     [
-        成员("点胶-提前关胶", 标签数据类型.Float32, 0),
-        成员("点胶-运动速度延时", 标签数据类型.Int16, 2),
-        成员("点胶-关胶后延时", 标签数据类型.Int16, 3),
-        成员("点胶-抬针高度", 标签数据类型.Float32, 4),
-        成员("点胶-点胶速度", 标签数据类型.Float32, 6),
+        Member("点胶-提前关胶", TagDataType.Float32, 0),
+        Member("点胶-运动速度延时", TagDataType.Int16, 2),
+        Member("点胶-关胶后延时", TagDataType.Int16, 3),
+        Member("点胶-抬针高度", TagDataType.Float32, 4),
+        Member("点胶-点胶速度", TagDataType.Float32, 6),
     ];
 
     [Fact]
-    public void 出厂五成员应排成紧排偏移且长度为八()
+    public void FactoryFiveMemberShouldArrangeAsPackedOffsetAndLengthIsEight()
     {
-        var 列表 = 出厂五成员();
+        var list = FactoryFiveMember();
 
-        var 长度 = 辅助地址结构布局.重新排布(列表, "点胶");
+        var length = AuxAddressStructureLayout.ReLayout(list, "点胶");
 
-        Assert.Equal(8, 长度);
-        Assert.Equal([0, 2, 3, 4, 6], 列表.Select(项 => 项.结构体内偏移).ToArray());
-        Assert.All(列表, 项 => Assert.Equal(8, 项.结构体长度));
-        Assert.All(列表, 项 => Assert.Equal(3500, 项.结构体基址));
-        Assert.Equal("D3506", 列表[4].地址);
+        Assert.Equal(8, length);
+        Assert.Equal([0, 2, 3, 4, 6], list.Select(Item => Item.StructInnerOffset).ToArray());
+        Assert.All(list, Item => Assert.Equal(8, Item.StructLength));
+        Assert.All(list, Item => Assert.Equal(3500, Item.StructBaseAddress));
+        Assert.Equal("D3506", list[4].Address);
     }
 
     /// <summary>现场报障的原样复现：抬针高度 REAL → INT16，点胶速度必须从 D3506 前移到 D3505。</summary>
     [Fact]
-    public void 抬针高度改INT16后点胶速度应前移到D3505()
+    public void NeedleLiftHeightChangeINT16AfterDispenseSpeedShouldBeforeMoveToD3505()
     {
-        var 列表 = 出厂五成员();
-        列表[3].数据类型 = 标签数据类型.Int16;
+        var list = FactoryFiveMember();
+        list[3].DataType = TagDataType.Int16;
 
-        var 长度 = 辅助地址结构布局.重新排布(列表, "点胶");
+        var length = AuxAddressStructureLayout.ReLayout(list, "点胶");
 
-        Assert.Equal(7, 长度);
-        Assert.Equal(4, 列表[3].结构体内偏移);            // 抬针高度：INT 占 1 字
-        Assert.Equal("D3504", 列表[3].地址);
-        Assert.Equal(5, 列表[4].结构体内偏移);            // 点胶速度：前移到 5
-        Assert.Equal("D3505", 列表[4].地址);              // ← 现场必须看到的地址
-        Assert.All(列表, 项 => Assert.Equal(7, 项.结构体长度));
+        Assert.Equal(7, length);
+        Assert.Equal(4, list[3].StructInnerOffset);            // 抬针高度：INT 占 1 字
+        Assert.Equal("D3504", list[3].Address);
+        Assert.Equal(5, list[4].StructInnerOffset);            // 点胶速度：前移到 5
+        Assert.Equal("D3505", list[4].Address);              // ← 现场必须看到的地址
+        Assert.All(list, Item => Assert.Equal(7, Item.StructLength));
     }
 
     [Fact]
-    public void 取消勾选的成员不应参与排布()
+    public void CancelCheckedMemberShouldNotAndLayout()
     {
-        var 列表 = 出厂五成员();
-        列表[3].结构体成员 = false;   // 抬针高度退出结构体
+        var list = FactoryFiveMember();
+        list[3].StructMember = false;   // 抬针高度退出结构体
 
-        var 长度 = 辅助地址结构布局.重新排布(列表, "点胶");
+        var length = AuxAddressStructureLayout.ReLayout(list, "点胶");
 
         // 提前关胶 2 + 延时 1 + 关胶后延时 1 + 点胶速度 2 = 6
-        Assert.Equal(6, 长度);
-        Assert.Equal(4, 列表[4].结构体内偏移);
-        Assert.Equal("D3504", 列表[4].地址);
-        Assert.Equal(4, 列表[3].结构体内偏移);   // 非成员不被改动（原值保留）
+        Assert.Equal(6, length);
+        Assert.Equal(4, list[4].StructInnerOffset);
+        Assert.Equal("D3504", list[4].Address);
+        Assert.Equal(4, list[3].StructInnerOffset);   // 非成员不被改动（原值保留）
     }
 
     [Fact]
-    public void 没有基址的新成员应按缺省基址落位()
+    public void NoHasBaseAddressNewMemberShouldByDefaultBaseAddressAtBit()
     {
-        var 列表 = 出厂五成员();
+        var list = FactoryFiveMember();
 
-        foreach (var 项 in 列表)
+        foreach (var Item in list)
         {
-            项.结构体基址 = 0;
+            Item.StructBaseAddress = 0;
         }
 
-        var 长度 = 辅助地址结构布局.重新排布(列表, "点胶");
+        var length = AuxAddressStructureLayout.ReLayout(list, "点胶");
 
-        Assert.Equal(8, 长度);
-        Assert.All(列表, 项 => Assert.Equal(辅助地址结构布局.缺省基址, 项.结构体基址));
-        Assert.Equal("D3500", 列表[0].地址);
+        Assert.Equal(8, length);
+        Assert.All(list, Item => Assert.Equal(AuxAddressStructureLayout.defaultBaseAddress, Item.StructBaseAddress));
+        Assert.Equal("D3500", list[0].Address);
     }
 
     [Fact]
-    public void 其它分组的成员不受影响()
+    public void OtherGroupMemberNotAffectedByAffectImpact()
     {
-        var 锁附项 = new 辅助地址项
+        var screwItem = new AuxAddressItem
         {
-            键 = "锁附-某个结构体成员",
-            分组 = "锁附",
-            数据类型 = 标签数据类型.Int16,
-            结构体成员 = true,
-            结构体基址 = 2000,
-            结构体内偏移 = 9,
-            结构体长度 = 40,
+            Key = "锁附-某个结构体成员",
+            Group = "锁附",
+            DataType = TagDataType.Int16,
+            StructMember = true,
+            StructBaseAddress = 2000,
+            StructInnerOffset = 9,
+            StructLength = 40,
         };
 
-        var 列表 = 出厂五成员();
-        列表.Add(锁附项);
+        var list = FactoryFiveMember();
+        list.Add(screwItem);
 
-        辅助地址结构布局.重新排布(列表, "点胶");
+        AuxAddressStructureLayout.ReLayout(list, "点胶");
 
-        Assert.Equal(2000, 锁附项.结构体基址);
-        Assert.Equal(9, 锁附项.结构体内偏移);
-        Assert.Equal(40, 锁附项.结构体长度);
+        Assert.Equal(2000, screwItem.StructBaseAddress);
+        Assert.Equal(9, screwItem.StructInnerOffset);
+        Assert.Equal(40, screwItem.StructLength);
     }
 
     // ── 点胶「参数模式」固定按钮（M5006）────────────────────────────────
 
     [Fact]
-    public void 缺省配置应补出参数模式固定按钮且可重复调用()
+    public void DefaultConfigShouldFillOutParameterModeFixedButtonAndCanDuplicateInvoke()
     {
-        var 配置 = new 配方配置();
+        var Config = new RecipeConfig();
 
-        Assert.Equal(1, 参数模式按钮缺省.应用(配置));
+        Assert.Equal(1, ParameterModeButtonDefault.App(Config));
 
-        var 项 = 配置.动作按钮[0];
-        Assert.True(项.固定);
-        Assert.Equal("点胶", 项.分组);
-        Assert.Equal("M5006", 项.地址);
-        Assert.Equal("默认参数", 项.状态文本(false));
-        Assert.Equal("独立参数", 项.状态文本(true));
+        var Item = Config.ActionButton[0];
+        Assert.True(Item.Fixed);
+        Assert.Equal("点胶", Item.Group);
+        Assert.Equal("M5006", Item.Address);
+        Assert.Equal("默认参数", Item.StateText(false));
+        Assert.Equal("独立参数", Item.StateText(true));
 
         // 幂等：已有固定按钮时不重复添加
-        Assert.Equal(0, 参数模式按钮缺省.应用(配置));
-        Assert.Single(配置.动作按钮);
+        Assert.Equal(0, ParameterModeButtonDefault.App(Config));
+        Assert.Single(Config.ActionButton);
     }
 }

@@ -1,6 +1,6 @@
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.通信.配方;
+namespace PlcHmi.Communication.Recipe;
 
 /// <summary>
 /// 通用点表的地址计算。
@@ -11,67 +11,67 @@ namespace 上位机.通信.配方;
 /// <para><b>为什么必须被测试：</b>偏移算错一个数，现场表现是"轴跑到错误位置"或
 /// "指令码错位"，排查成本极高。它是整个方案里最该被钉死的部分。</para>
 /// </summary>
-public sealed class 点表地址映射
+public sealed class PointTableAddressMap
 {
-    private readonly 点表定义 _表;
+    private readonly PointTableDefinition _table;
 
     /// <summary>用点表定义构造。</summary>
-    public 点表地址映射(点表定义 表定义)
+    public PointTableAddressMap(PointTableDefinition TableDefinition)
     {
-        _表 = 表定义 ?? throw new ArgumentNullException(nameof(表定义));
+        _table = TableDefinition ?? throw new ArgumentNullException(nameof(TableDefinition));
 
-        if (_表.点数 <= 0)
+        if (_table.PointCount <= 0)
         {
-            throw new ArgumentException("点数必须大于 0。", nameof(表定义));
+            throw new ArgumentException("点数必须大于 0。", nameof(TableDefinition));
         }
 
-        if (_表.列.Count == 0)
+        if (_table.Column.Count == 0)
         {
-            throw new ArgumentException("点表至少需要一列。", nameof(表定义));
+            throw new ArgumentException("点表至少需要一列。", nameof(TableDefinition));
         }
     }
 
     /// <summary>点表定义。</summary>
-    public 点表定义 定义 => _表;
+    public PointTableDefinition Definition => _table;
 
     /// <summary>点总数。</summary>
-    public int 点数 => _表.点数;
+    public int PointCount => _table.PointCount;
 
     /// <summary>列基数。</summary>
-    public int 列数量 => _表.列.Count;
+    public int ColumnCount => _table.Column.Count;
 
     /// <summary>列基址。</summary>
-    public int 列基址(string 列键) => 要求列(列键).基址;
+    public int ColumnBaseAddress(string ColumnKey) => WantRequireColumn(ColumnKey).BaseAddress;
 
     /// <summary>列每个点占用的字数。</summary>
-    public int 字每点位(string 列键) => 要求列(列键).字每点位;
+    public int WordPerPointBit(string ColumnKey) => WantRequireColumn(ColumnKey).WordPerPointBit;
 
     /// <summary>某列整块连续字数（一次请求的长度）。</summary>
-    public int 列块字(string 列键) => 点数 * 字每点位(列键);
+    public int ColumnBlockWord(string ColumnKey) => PointCount * WordPerPointBit(ColumnKey);
 
     /// <summary>序号 + 列键 → 该点该列的起始寄存器地址（D 区序号）。</summary>
-    public int 地址(int 序号, string 列键)
+    public int Address(int Sequence, string ColumnKey)
     {
-        校验序号(序号);
-        return 要求列(列键).基址 + 序号 * 要求列(列键).字每点位;
+        ValidateSequence(Sequence);
+        return WantRequireColumn(ColumnKey).BaseAddress + Sequence * WantRequireColumn(ColumnKey).WordPerPointBit;
     }
 
     /// <summary>某列最后一个点的起始地址。</summary>
-    public int 末点地址(string 列键) => 地址(点数 - 1, 列键);
+    public int LastPointAddress(string ColumnKey) => Address(PointCount - 1, ColumnKey);
 
     /// <summary>序号是否合法。</summary>
-    public bool 序号合法(int 序号) => 序号 >= 0 && 序号 < 点数;
+    public bool IndexValid(int Sequence) => Sequence >= 0 && Sequence < PointCount;
 
-    private 点表列定义 要求列(string 列键) =>
-        _表.查找列(列键)
-        ?? throw new ArgumentOutOfRangeException(nameof(列键), 列键, $"点表「{_表.显示名称}」中没有列「{列键}」。");
+    private PointTableColumnDefinition WantRequireColumn(string ColumnKey) =>
+        _table.FindColumn(ColumnKey)
+        ?? throw new ArgumentOutOfRangeException(nameof(ColumnKey), ColumnKey, $"点表「{_table.DisplayName}」中没有列「{ColumnKey}」。");
 
-    private void 校验序号(int 序号)
+    private void ValidateSequence(int Sequence)
     {
-        if (!序号合法(序号))
+        if (!IndexValid(Sequence))
         {
             throw new ArgumentOutOfRangeException(
-                nameof(序号), 序号, $"点索引必须在 0 – {点数 - 1} 之间。");
+                nameof(Sequence), Sequence, $"点索引必须在 0 – {PointCount - 1} 之间。");
         }
     }
 }

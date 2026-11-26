@@ -1,76 +1,76 @@
 using System.Globalization;
 using System.Windows;
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图;
+namespace PlcHmi.App.Views;
 
 /// <summary>
 /// 其它点（辅助点）编辑器。
 ///
-/// <para>只负责收集界面输入并就地写回传入的 <see cref="辅助点定义"/>；
+/// <para>只负责收集界面输入并就地写回传入的 <see cref="AuxPointDefinition"/>；
 /// 地址合法性与权限守卫在服务层——界面提示只是辅助。</para>
 ///
 /// <para><b>名称可改（2026-10-15 现场反馈）</b>：原先编辑时锁死名称（当时把名称当主键），
 /// 现场改不了点位的叫法。现在名称只是标识，重命名由服务层按原名定位后整体替换；
 /// 是否与其它点重名由服务层判定。</para>
 /// </summary>
-public partial class 辅助点编辑对话框 : Window
+public partial class AuxPointEditDialog : Window
 {
-    private readonly 辅助点定义 _点项;
+    private readonly AuxPointDefinition _pointEntry;
 
-    private 辅助点编辑对话框(辅助点定义 点项, bool 是否新建)
+    private AuxPointEditDialog(AuxPointDefinition PointEntry, bool isNewBuild)
     {
         InitializeComponent();
 
-        _点项 = 点项;
-        标题控件.Text = 是否新建 ? "新增其它点" : "编辑其它点";
-        名称框.Text = 点项.名称;
-        X框.Text = 点项.X基址.ToString(CultureInfo.InvariantCulture);
-        Y框.Text = 点项.Y基址.ToString(CultureInfo.InvariantCulture);
-        Z框.Text = 点项.Z基址.ToString(CultureInfo.InvariantCulture);
+        _pointEntry = PointEntry;
+        TitleWidget.Text = isNewBuild ? "新增其它点" : "编辑其它点";
+        NameFrame.Text = PointEntry.Name;
+        XFrame.Text = PointEntry.XBaseAddress.ToString(CultureInfo.InvariantCulture);
+        YFrame.Text = PointEntry.YBaseAddress.ToString(CultureInfo.InvariantCulture);
+        ZFrame.Text = PointEntry.ZBaseAddress.ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>弹出编辑器。返回是否确定（确定时已就地修改传入对象）。</summary>
-    public static bool 显示(辅助点定义 点项, bool 是否新建)
+    public static bool Show(AuxPointDefinition PointEntry, bool isNewBuild)
     {
-        var 对话框 = new 辅助点编辑对话框(点项, 是否新建)
+        var Dialog = new AuxPointEditDialog(PointEntry, isNewBuild)
         {
             Owner = Application.Current.MainWindow,
         };
 
-        return 对话框.ShowDialog() == true;
+        return Dialog.ShowDialog() == true;
     }
 
     /// <summary>仅供自检使用：实例化但不显示。</summary>
-    internal static Window 创建验证() => new 辅助点编辑对话框(new 辅助点定义 { 名称 = "自检点" }, true);
+    internal static Window CreateVerify() => new AuxPointEditDialog(new AuxPointDefinition { Name = "自检点" }, true);
 
-    private void 确认(object 发送者, RoutedEventArgs 事件参数)
+    private void Confirm(object sender, RoutedEventArgs eventArgs)
     {
-        var 名称值 = 名称框.Text?.Trim() ?? string.Empty;
+        var nameValue = NameFrame.Text?.Trim() ?? string.Empty;
 
-        if (名称值.Length == 0)
+        if (nameValue.Length == 0)
         {
-            消息文本.Text = "名称不能为空。";
+            MessageText.Text = "名称不能为空。";
             return;
         }
 
-        if (!尝试取址(X框.Text, out var X) || !尝试取址(Y框.Text, out var Y) || !尝试取址(Z框.Text, out var Z))
+        if (!TryGetAddress(XFrame.Text, out var X) || !TryGetAddress(YFrame.Text, out var Y) || !TryGetAddress(ZFrame.Text, out var Z))
         {
-            消息文本.Text = "X / Y / Z 基址必须是正整数（D 区序号）。";
+            MessageText.Text = "X / Y / Z 基址必须是正整数（D 区序号）。";
             return;
         }
 
-        _点项.名称 = 名称值;
-        _点项.X基址 = X;
-        _点项.Y基址 = Y;
-        _点项.Z基址 = Z;
+        _pointEntry.Name = nameValue;
+        _pointEntry.XBaseAddress = X;
+        _pointEntry.YBaseAddress = Y;
+        _pointEntry.ZBaseAddress = Z;
 
         DialogResult = true;
     }
 
-    private static bool 尝试取址(string? 文本, out int 值) =>
-        int.TryParse((文本 ?? string.Empty).Trim().TrimStart('D', 'd', 'M', 'm'),
-            NumberStyles.Integer, CultureInfo.InvariantCulture, out 值) && 值 > 0;
+    private static bool TryGetAddress(string? Text, out int Value) =>
+        int.TryParse((Text ?? string.Empty).Trim().TrimStart('D', 'd', 'M', 'm'),
+            NumberStyles.Integer, CultureInfo.InvariantCulture, out Value) && Value > 0;
 
-    private void 取消(object 发送者, RoutedEventArgs 事件参数) => DialogResult = false;
+    private void Cancel(object sender, RoutedEventArgs eventArgs) => DialogResult = false;
 }

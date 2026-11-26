@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 长时运行的内存有界性断言。
@@ -14,82 +14,82 @@ namespace 上位机.上位机测试;
 /// 最终都会把内存吃干。报警历史与活动列表是最容易失控的两处，
 /// 用断言把它们的有界性固定下来，防止后续改动无意中拆掉裁剪逻辑。</para>
 /// </summary>
-public class 内存边界测试
+public class MemoryBoundaryTest
 {
-    private static 报警服务 新报警服务(替身Modbus客户端 客户端) =>
+    private static AlarmService NewAlarmService(FakeModbusClient Client) =>
         new(
-            new 标签写入器(
-                客户端,
-                new 标签仓储(NullLogger<标签仓储>.Instance),
-                new 汇川地址解析器(PLC系列.小型PLC),
-                NullLogger<标签写入器>.Instance),
-            NullLogger<报警服务>.Instance);
+            new TagWriter(
+                Client,
+                new TagRepository(NullLogger<TagRepository>.Instance),
+                new InovanceAddressParser(PlcSeries.SmallPlc),
+                NullLogger<TagWriter>.Instance),
+            NullLogger<AlarmService>.Instance);
 
     [Fact]
-    public async Task 报警历史_超过上限应裁剪到一千条()
+    public async Task AlarmHistory_ExceedBeyondUpperLimitShouldTrimToOneThousandItem()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 报警列表 = 新报警服务(客户端);
+        await using var Client = new FakeModbusClient();
+        var alarmList = NewAlarmService(Client);
 
-        for (var 条目 = 0; 条目 < 1200; 条目++)
+        for (var Entry = 0; Entry < 1200; Entry++)
         {
-            var 代码值 = $"T{条目:0000}";
-            报警列表.触发(代码值, "测试报警", 报警等级.警告);
-            报警列表.清空(代码值);   // 立即消除，避免活动列表无界增长掩盖"历史裁剪"这一被测点
+            var CodeRawValue = $"T{Entry:0000}";
+            alarmList.Trigger(CodeRawValue, "测试报警", AlarmLevel.Warning);
+            alarmList.ClearEmpty(CodeRawValue);   // 立即消除，避免活动列表无界增长掩盖"历史裁剪"这一被测点
         }
 
-        Assert.Empty(报警列表.活动报警);
-        Assert.Equal(1000, 报警列表.历史.Count);
+        Assert.Empty(alarmList.ActiveAlarm);
+        Assert.Equal(1000, alarmList.History.Count);
     }
 
     [Fact]
-    public async Task 活动报警_同编号不应重复入列()
+    public async Task ActiveAlarm_SameNumberShouldNotDuplicateInColumn()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 报警列表 = 新报警服务(客户端);
+        await using var Client = new FakeModbusClient();
+        var alarmList = NewAlarmService(Client);
 
-        报警列表.触发("A001", "第一次", 报警等级.警告);
-        报警列表.触发("A001", "第二次", 报警等级.紧急);
+        alarmList.Trigger("A001", "第一次", AlarmLevel.Warning);
+        alarmList.Trigger("A001", "第二次", AlarmLevel.Critical);
 
         // 重复触发不等于新增：活动列表与历史各只应有一条
-        Assert.Single(报警列表.活动报警);
-        Assert.Single(报警列表.历史);
+        Assert.Single(alarmList.ActiveAlarm);
+        Assert.Single(alarmList.History);
     }
 
     [Fact]
-    public void 点位值未变化时不应推送事件()
+    public void PointValueNotChangeWhenShouldNotPushEvent()
     {
-        var 值列表 = new 标签值服务(NullLogger<标签值服务>.Instance);
-        var 已触发 = 0;
-        值列表.新值已变更 += (_, _) => 已触发++;
+        var ValueList = new TagValueService(NullLogger<TagValueService>.Instance);
+        var Triggered = 0;
+        ValueList.NewValueChanged += (_, _) => Triggered++;
 
-        var 当前时刻 = DateTime.Now;
+        var currentTimestamp = DateTime.Now;
 
-        值列表.发布(new 标签新值("Speed", 1.0, 1.0, 当前时刻, true));
-        Assert.Equal(1, 已触发);
+        ValueList.RaiseLayout(new TagNewValue("Speed", 1.0, 1.0, currentTimestamp, true));
+        Assert.Equal(1, Triggered);
 
         // 同为 1.0：不应再推送（否则 UI 会被无变化的刷新淹没）
-        值列表.发布(new 标签新值("Speed", 1.0, 1.0, 当前时刻.AddSeconds(1), true));
-        Assert.Equal(1, 已触发);
+        ValueList.RaiseLayout(new TagNewValue("Speed", 1.0, 1.0, currentTimestamp.AddSeconds(1), true));
+        Assert.Equal(1, Triggered);
 
-        值列表.发布(new 标签新值("Speed", 2.0, 2.0, 当前时刻.AddSeconds(2), true));
-        Assert.Equal(2, 已触发);
+        ValueList.RaiseLayout(new TagNewValue("Speed", 2.0, 2.0, currentTimestamp.AddSeconds(2), true));
+        Assert.Equal(2, Triggered);
     }
 
     [Fact]
-    public void 点位值_标记失效后应取不到值()
+    public void PointValue_MarkFailEffectAfterShouldGetNotToValue()
     {
-        var 值列表 = new 标签值服务(NullLogger<标签值服务>.Instance);
-        值列表.发布(new 标签新值("Speed", 1.0, 1.0, DateTime.Now, true));
+        var ValueList = new TagValueService(NullLogger<TagValueService>.Instance);
+        ValueList.RaiseLayout(new TagNewValue("Speed", 1.0, 1.0, DateTime.Now, true));
 
-        Assert.True(值列表.尝试获取双精度("Speed", out var 之前));
-        Assert.Equal(1.0, 之前);
-        Assert.True(值列表.获取新值("Speed").是否有效);
+        Assert.True(ValueList.TryGetDouble("Speed", out var Prior));
+        Assert.Equal(1.0, Prior);
+        Assert.True(ValueList.GetNewValue("Speed").IsValid);
 
-        值列表.失效全部();
+        ValueList.FailEffectAll();
 
-        Assert.False(值列表.获取新值("Speed").是否有效);
-        Assert.False(值列表.尝试获取双精度("Speed", out _));
-        Assert.False(值列表.尝试获取布尔("Speed", out _));
+        Assert.False(ValueList.GetNewValue("Speed").IsValid);
+        Assert.False(ValueList.TryGetDouble("Speed", out _));
+        Assert.False(ValueList.TryGetBoolean("Speed", out _));
     }
 }

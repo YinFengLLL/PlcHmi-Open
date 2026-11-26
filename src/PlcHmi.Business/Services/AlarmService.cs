@@ -1,28 +1,28 @@
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 报警服务。管理活动报警与历史报警。
 /// <para>报警来源：PLC 的报警字位（本阶段先提供 Raise/Clear 接口，
 /// 待点位表确定后接入报警字解析）。</para>
 /// </summary>
-public sealed class 报警服务 : 报警服务接口
+public sealed class AlarmService : IAlarmService
 {
     /// <summary>历史报警保留上限。</summary>
-    private const int 最大历史数量 = 1000;
+    private const int maxHistoryCount = 1000;
 
-    private readonly 标签写入器 _写入器;
-    private readonly ILogger<报警服务> _日志;
-    private readonly 报警历史存储? _历史存储;
-    private readonly object _同步 = new();
+    private readonly TagWriter _writer;
+    private readonly ILogger<AlarmService> _log;
+    private readonly AlarmHistoryStore? _historyStore;
+    private readonly object _sync = new();
 
-    private readonly List<报警条目> _活动 = new();
-    private readonly List<报警条目> _历史 = new();
+    private readonly List<AlarmEntry> _active = new();
+    private readonly List<AlarmEntry> _history = new();
 
     /// <param name="writer">PLC 写入器（用于复位命令）。</param>
     /// <param name="logger">日志。</param>
@@ -30,194 +30,194 @@ public sealed class 报警服务 : 报警服务接口
     /// 历史落盘存储。<c>null</c> 表示只保留在内存（单元测试用）——
     /// 生产环境由 DI 注入，报警历史跨重启保留。
     /// </param>
-    public 报警服务(
-        标签写入器 写入器, ILogger<报警服务> 日志, 报警历史存储? 历史存储 = null)
+    public AlarmService(
+        TagWriter Writer, ILogger<AlarmService> Log, AlarmHistoryStore? HistoryStore = null)
     {
-        _写入器 = 写入器;
-        _日志 = 日志;
-        _历史存储 = 历史存储;
+        _writer = Writer;
+        _log = Log;
+        _historyStore = HistoryStore;
 
         // 先把上一班的历史读回来：报警历史必须跨重启存活（硬件 HMI 面板本来就会存）
-        if (_历史存储 is not null)
+        if (_historyStore is not null)
         {
-            _历史.AddRange(_历史存储.加载().Take(最大历史数量));
+            _history.AddRange(_historyStore.Load().Take(maxHistoryCount));
         }
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<报警条目> 活动报警
+    public IReadOnlyList<AlarmEntry> ActiveAlarm
     {
         get
         {
-            lock (_同步)
+            lock (_sync)
             {
-                return _活动.ToList();
+                return _active.ToList();
             }
         }
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<报警条目> 历史
+    public IReadOnlyList<AlarmEntry> History
     {
         get
         {
-            lock (_同步)
+            lock (_sync)
             {
-                return _历史.ToList();
+                return _history.ToList();
             }
         }
     }
 
     /// <inheritdoc />
-    public event EventHandler<报警条目>? 报警已触发;
+    public event EventHandler<AlarmEntry>? alarmTriggered;
 
     /// <inheritdoc />
-    public event EventHandler<报警条目>? 报警已清除;
+    public event EventHandler<AlarmEntry>? alarmCleared;
 
     /// <summary>触发一条报警。相同代码的活动报警不会重复触发。</summary>
-    public void 触发(string 代码值, string 消息, 报警等级 等级)
+    public void Trigger(string CodeRawValue, string Message, AlarmLevel Level)
     {
-        报警条目 条目;
+        AlarmEntry Entry;
 
-        lock (_同步)
+        lock (_sync)
         {
-            var 现有 = _活动.FirstOrDefault(甲 => 甲.代码 == 代码值);
-            if (现有 is not null)
+            var currentHas = _active.FirstOrDefault(item => item.Code == CodeRawValue);
+            if (currentHas is not null)
             {
                 return;
             }
 
-            条目 = new 报警条目
+            Entry = new AlarmEntry
             {
-                代码 = 代码值,
-                消息 = 消息,
-                等级 = 等级,
-                已触发 = DateTime.Now,
+                Code = CodeRawValue,
+                Message = Message,
+                Level = Level,
+                Triggered = DateTime.Now,
             };
 
-            _活动.Add(条目);
-            _历史.Insert(0, 条目.克隆());
+            _active.Add(Entry);
+            _history.Insert(0, Entry.Clone());
 
-            if (_历史.Count > 最大历史数量)
+            if (_history.Count > maxHistoryCount)
             {
-                _历史.RemoveRange(最大历史数量, _历史.Count - 最大历史数量);
+                _history.RemoveRange(maxHistoryCount, _history.Count - maxHistoryCount);
             }
         }
 
-        _日志.LogInformation("报警触发 [{Level}] {Code} {Message}", 等级, 代码值, 消息);
-        落盘历史();
-        报警已触发?.Invoke(this, 条目);
+        _log.LogInformation("报警触发 [{Level}] {Code} {Message}", Level, CodeRawValue, Message);
+        PersistHistory();
+        alarmTriggered?.Invoke(this, Entry);
     }
 
     /// <summary>消除一条报警。</summary>
-    public void 清空(string 代码值)
+    public void ClearEmpty(string CodeRawValue)
     {
-        报警条目? 条目;
+        AlarmEntry? Entry;
 
-        lock (_同步)
+        lock (_sync)
         {
-            条目 = _活动.FirstOrDefault(甲 => 甲.代码 == 代码值);
-            if (条目 is null)
+            Entry = _active.FirstOrDefault(item => item.Code == CodeRawValue);
+            if (Entry is null)
             {
                 return;
             }
 
-            条目.已清除 = DateTime.Now;
-            _活动.Remove(条目);
+            Entry.Cleared = DateTime.Now;
+            _active.Remove(Entry);
 
-            var 历史数据项 = _历史.FirstOrDefault(历史条目 => 历史条目.代码 == 代码值 && 历史条目.已清除 is null);
-            if (历史数据项 is not null)
+            var HistoryDataItem = _history.FirstOrDefault(historyEntry => historyEntry.Code == CodeRawValue && historyEntry.Cleared is null);
+            if (HistoryDataItem is not null)
             {
-                历史数据项.已清除 = 条目.已清除;
+                HistoryDataItem.Cleared = Entry.Cleared;
             }
         }
 
-        _日志.LogInformation("报警消除 {Code}", 代码值);
-        落盘历史();
-        报警已清除?.Invoke(this, 条目);
+        _log.LogInformation("报警消除 {Code}", CodeRawValue);
+        PersistHistory();
+        alarmCleared?.Invoke(this, Entry);
     }
 
     /// <inheritdoc />
-    public void 确认(string 代码值)
+    public void Confirm(string CodeRawValue)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            var 条目 = _活动.FirstOrDefault(甲 => 甲.代码 == 代码值);
-            if (条目 is null)
+            var Entry = _active.FirstOrDefault(item => item.Code == CodeRawValue);
+            if (Entry is null)
             {
                 return;
             }
 
-            条目.是否已确认 = true;
+            Entry.IsAlreadyConfirm = true;
 
-            var 历史数据项 = _历史.FirstOrDefault(历史条目 => 历史条目.代码 == 代码值 && 历史条目.已清除 is null);
-            if (历史数据项 is not null)
+            var HistoryDataItem = _history.FirstOrDefault(historyEntry => historyEntry.Code == CodeRawValue && historyEntry.Cleared is null);
+            if (HistoryDataItem is not null)
             {
-                历史数据项.是否已确认 = true;
+                HistoryDataItem.IsAlreadyConfirm = true;
             }
         }
 
-        落盘历史();
+        PersistHistory();
     }
 
     /// <inheritdoc />
-    public void 确认全部()
+    public void ConfirmAll()
     {
-        lock (_同步)
+        lock (_sync)
         {
-            foreach (var 条目 in _活动)
+            foreach (var Entry in _active)
             {
-                条目.是否已确认 = true;
+                Entry.IsAlreadyConfirm = true;
 
                 // 历史里的同一条也必须同步。
                 // 此前只改 _active，导致"全部确认"之后历史列表仍显示未确认 ——
                 // 同一件事在同一个界面上有两种说法，操作员只会信错的那个。
-                var 历史数据项 = _历史.FirstOrDefault(
-                    历史条目 => 历史条目.代码 == 条目.代码 && 历史条目.已清除 is null);
+                var HistoryDataItem = _history.FirstOrDefault(
+                    historyEntry => historyEntry.Code == Entry.Code && historyEntry.Cleared is null);
 
-                if (历史数据项 is not null)
+                if (HistoryDataItem is not null)
                 {
-                    历史数据项.是否已确认 = true;
+                    HistoryDataItem.IsAlreadyConfirm = true;
                 }
             }
         }
 
-        落盘历史();
+        PersistHistory();
     }
 
     /// <inheritdoc />
-    public Task 异步重置(CancellationToken 取消令牌 = default) =>
-        _写入器.异步脉冲("CmdReset", TimeSpan.FromMilliseconds(200), 取消令牌);
+    public Task ResetAsync(CancellationToken cancellationToken = default) =>
+        _writer.PulseAsync("CmdReset", TimeSpan.FromMilliseconds(200), cancellationToken);
 
     /// <inheritdoc />
-    public void 清空历史()
+    public void ClearEmptyHistory()
     {
-        lock (_同步)
+        lock (_sync)
         {
-            _历史.Clear();
+            _history.Clear();
         }
 
-        落盘历史();
+        PersistHistory();
     }
 
     /// <summary>
     /// 把当前历史交给落盘存储（非阻塞，内部合并连续请求）。
     /// 取快照时已出锁，避免磁盘 I/O 与报警处理互相等待。
     /// </summary>
-    private void 落盘历史()
+    private void PersistHistory()
     {
-        if (_历史存储 is null)
+        if (_historyStore is null)
         {
             return;
         }
 
-        List<报警条目> 快照;
+        List<AlarmEntry> Snapshot;
 
-        lock (_同步)
+        lock (_sync)
         {
-            快照 = _历史.ToList();
+            Snapshot = _history.ToList();
         }
 
-        _历史存储.请求保存(快照);
+        _historyStore.RequestSave(Snapshot);
     }
 }

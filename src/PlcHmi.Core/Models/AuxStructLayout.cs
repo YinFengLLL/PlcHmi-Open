@@ -1,4 +1,4 @@
-namespace 上位机.核心.模型;
+namespace PlcHmi.Core.Models;
 
 /// <summary>
 /// 点胶「单点工艺参数」结构体的<b>成员排布规则</b>（2026-10-21 现场口径）。
@@ -15,65 +15,65 @@ namespace 上位机.核心.模型;
 /// <para><b>为什么不插入对齐填充：</b>现场口径就是"改一个成员的类型，后面的成员依次前移"
 /// （点胶速度必须落在 D3505）。填充会让地址与 PLC 程序对不上，而且现场难以核对。</para>
 /// </summary>
-public static class 辅助地址结构布局
+public static class AuxAddressStructureLayout
 {
     /// <summary>结构体基址的出厂缺省（点胶单点参数数组起点）。</summary>
-    public const int 缺省基址 = 3500;
+    public const int defaultBaseAddress = 3500;
 
     /// <summary>取某页分组下的结构体成员（按配置顺序，即结构体内顺序）。</summary>
-    public static IReadOnlyList<辅助地址项> 成员(IReadOnlyList<辅助地址项> 全部项, string 分组) =>
-        全部项
-            .Where(项 => 项.结构体成员 && 分组匹配(项.分组, 分组))
+    public static IReadOnlyList<AuxAddressItem> Member(IReadOnlyList<AuxAddressItem> allItem, string Group) =>
+        allItem
+            .Where(Item => Item.StructMember && GroupMatch(Item.Group, Group))
             .ToList();
 
     /// <summary>
-    /// 重排某页分组下全部结构体成员的偏移与长度，并回写每人的"第 1 点地址"（<see cref="辅助地址项.地址"/>）。
-    /// <para>基址取成员里第一个大于 0 的 <see cref="辅助地址项.结构体基址"/>；都没有则用
-    /// <paramref name="缺省基址值"/>。基址统一到所有成员（否则同组成员会算出不同数组）。</para>
+    /// 重排某页分组下全部结构体成员的偏移与长度，并回写每人的"第 1 点地址"（<see cref="AuxAddressItem.Address"/>）。
+    /// <para>基址取成员里第一个大于 0 的 <see cref="AuxAddressItem.StructBaseAddress"/>；都没有则用
+    /// <paramref name="defaultBaseAddressValue"/>。基址统一到所有成员（否则同组成员会算出不同数组）。</para>
     /// </summary>
     /// <returns>重排后的结构体长度（字）；没有成员时返回 0。</returns>
-    public static int 重新排布(
-        IReadOnlyList<辅助地址项> 全部项, string 分组, int 缺省基址值 = 缺省基址)
+    public static int ReLayout(
+        IReadOnlyList<AuxAddressItem> allItem, string Group, int defaultBaseAddressValue = defaultBaseAddress)
     {
-        ArgumentNullException.ThrowIfNull(全部项);
+        ArgumentNullException.ThrowIfNull(allItem);
 
-        var 成员列表 = 成员(全部项, 分组);
+        var memberList = Member(allItem, Group);
 
-        if (成员列表.Count == 0)
+        if (memberList.Count == 0)
         {
             return 0;
         }
 
-        var 基址 = 成员列表.Select(项 => 项.结构体基址).FirstOrDefault(值 => 值 > 0);
+        var BaseAddress = memberList.Select(Item => Item.StructBaseAddress).FirstOrDefault(Value => Value > 0);
 
-        if (基址 <= 0)
+        if (BaseAddress <= 0)
         {
-            基址 = 缺省基址值 > 0 ? 缺省基址值 : 缺省基址;
+            BaseAddress = defaultBaseAddressValue > 0 ? defaultBaseAddressValue : defaultBaseAddress;
         }
 
-        var 偏移 = 0;
+        var Offset = 0;
 
-        foreach (var 项 in 成员列表)
+        foreach (var Item in memberList)
         {
-            项.结构体基址 = 基址;
-            项.结构体内偏移 = 偏移;
-            偏移 += 项.寄存器数量;
+            Item.StructBaseAddress = BaseAddress;
+            Item.StructInnerOffset = Offset;
+            Offset += Item.RegisterCount;
         }
 
-        foreach (var 项 in 成员列表)
+        foreach (var Item in memberList)
         {
-            项.结构体长度 = 偏移;
+            Item.StructLength = Offset;
 
             // 地址字段对成员只是"第 1 点的实际地址"（界面与核对用），寻址始终按 基址+偏移 实时算
-            项.地址 = $"D{基址 + 项.结构体内偏移}";
+            Item.Address = $"D{BaseAddress + Item.StructInnerOffset}";
         }
 
-        return 偏移;
+        return Offset;
     }
 
     /// <summary>分组匹配（空分组视为全局元件，与页面地址服务同口径）。</summary>
-    private static bool 分组匹配(string 元件分组, string 页面分组) =>
-        string.IsNullOrWhiteSpace(元件分组)
-        || string.IsNullOrWhiteSpace(页面分组)
-        || string.Equals(元件分组, 页面分组, StringComparison.OrdinalIgnoreCase);
+    private static bool GroupMatch(string componentGroup, string PageGroup) =>
+        string.IsNullOrWhiteSpace(componentGroup)
+        || string.IsNullOrWhiteSpace(PageGroup)
+        || string.Equals(componentGroup, PageGroup, StringComparison.OrdinalIgnoreCase);
 }

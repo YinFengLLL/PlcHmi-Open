@@ -1,41 +1,41 @@
 using System.Windows;
 using System.Windows.Controls;
-using 上位机.应用.服务;
-using 上位机.应用.视图模型;
-using 上位机.业务.配置;
+using PlcHmi.App.Services;
+using PlcHmi.App.ViewModels;
+using PlcHmi.Business.Configuration;
 
-namespace 上位机.应用;
+namespace PlcHmi.App;
 
 /// <summary>
-/// 主窗口。顶栏、侧栏导航、内容区与底部报警条均绑定 <see cref="主视图模型"/>。
+/// 主窗口。顶栏、侧栏导航、内容区与底部报警条均绑定 <see cref="MasterViewModel"/>。
 /// <para>窗口实例由依赖注入容器创建，因此构造函数直接接收 ViewModel 并设为 DataContext。</para>
 /// </summary>
-public partial class 主窗口 : Window
+public partial class MasterWindow : Window
 {
     /// <summary>构造函数注入。</summary>
-    public 主窗口(主视图模型 视图模型, 界面选项 界面选项)
+    public MasterWindow(MasterViewModel viewModel, UiOptions UiOptions)
     {
         InitializeComponent();
-        DataContext = 视图模型;
+        DataContext = viewModel;
 
         // 应用配置的主题（深/浅）：整体替换调色板字典，DynamicResource 即时刷新。
         // 放主窗口构造而非 App.xaml.cs —— 后者已在规模门禁基线上，不允许再增行；
         // 此处在窗口 Show 之前执行，首帧即为目标主题，无闪变。
-        主题管理器.应用(界面选项.主题);
+        ThemeManager.App(UiOptions.Theme);
 
         // ── 最大化内容补偿 ─────────────────────────────────────────────
         // WindowStyle=None + WindowChrome 最大化时，窗口矩形会向四周外扩一个
         // 系统非客户区边框量（含贴边缩放余量），内容随之越出屏幕 ——
         // 表现为右上角 X 键、底栏被裁掉一截。把根容器整体内收同量补偿。
-        StateChanged += (_, _) => 应用最大化边距补偿();
-        应用最大化边距补偿();
+        StateChanged += (_, _) => ApplyMaximizeMarginCompensation();
+        ApplyMaximizeMarginCompensation();
 
-        界面自检时关闭入场动效();
+        UiSelfCheckWhenCloseInFieldMoveEffect();
     }
 
     /// <summary>最大化时把根容器内收系统非客户区边框量；还原/最小化时归零。</summary>
-    private void 应用最大化边距补偿() =>
-        根容器.Margin = WindowState == WindowState.Maximized
+    private void ApplyMaximizeMarginCompensation() =>
+        RootContainer.Margin = WindowState == WindowState.Maximized
             ? SystemParameters.WindowNonClientFrameThickness
             : default(Thickness);
 
@@ -43,13 +43,13 @@ public partial class 主窗口 : Window
     // WindowStyle="None" 之后系统标题栏整条消失，最小化/最大化/关闭三个键
     // 必须自己接上，否则窗口关不掉 —— 这不是"样式问题"，是可用性问题。
 
-    private void 最小化_Click(object 发送者, RoutedEventArgs 事件参数) =>
+    private void Minimize_Click(object sender, RoutedEventArgs eventArgs) =>
         WindowState = WindowState.Minimized;
 
-    private void 最大化或还原_Click(object 发送者, RoutedEventArgs 事件参数) =>
+    private void MaximizeOrRestore_Click(object sender, RoutedEventArgs eventArgs) =>
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
-    private void 关闭_Click(object 发送者, RoutedEventArgs 事件参数) => Close();
+    private void Close_Click(object sender, RoutedEventArgs eventArgs) => Close();
 
     // ── 界面自检模式关闭入场动效 ───────────────────────────────────────
     //
@@ -64,27 +64,27 @@ public partial class 主窗口 : Window
     // 为什么写在这里而不是 App.xaml.cs —— 后者已在代码规模门禁的基线上
     // （tools/check_thresholds.py，727 行），不允许再增行。
 
-    private static readonly string[] 自检参数 = ["--smoke", "--shots", "--export-csv"];
+    private static readonly string[] selfCheckParameter = ["--smoke", "--shots", "--export-csv"];
 
-    private static void 界面自检时关闭入场动效()
+    private static void UiSelfCheckWhenCloseInFieldMoveEffect()
     {
-        var 命令行 = Environment.GetCommandLineArgs();
+        var commandRow = Environment.GetCommandLineArgs();
 
-        if (!自检参数.Any(名 => 命令行.Contains(名)))
+        if (!selfCheckParameter.Any(name => commandRow.Contains(name)))
         {
             return;
         }
 
-        if (Application.Current is { } 应用)
+        if (Application.Current is { } App)
         {
-            应用.Resources["PageTransitionStyle"] = new Style(typeof(FrameworkElement));
+            App.Resources["PageTransitionStyle"] = new Style(typeof(FrameworkElement));
 
             // 卡片 stagger 入场同理：换成"只有 MetricCard 外观、没有触发器"的样式，
             // 否则截图会落在逐卡淡入的中途（末卡 0.37s 才播完）
-            var 卡片基样 = (Style)应用.Resources["MetricCard"];
-            应用.Resources["CardEnterStyle1"] = new Style(typeof(Border), 卡片基样);
-            应用.Resources["CardEnterStyle2"] = new Style(typeof(Border), 卡片基样);
-            应用.Resources["CardEnterStyle3"] = new Style(typeof(Border), 卡片基样);
+            var cardBaseSample = (Style)App.Resources["MetricCard"];
+            App.Resources["CardEnterStyle1"] = new Style(typeof(Border), cardBaseSample);
+            App.Resources["CardEnterStyle2"] = new Style(typeof(Border), cardBaseSample);
+            App.Resources["CardEnterStyle3"] = new Style(typeof(Border), cardBaseSample);
         }
     }
 }

@@ -1,6 +1,6 @@
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.核心.抽象;
+namespace PlcHmi.Core.Abstractions;
 
 /// <summary>
 /// 服务层权限守卫。
@@ -13,12 +13,12 @@ namespace 上位机.核心.抽象;
 /// <para>因此每个<b>写操作</b>在服务层入口再校验一次身份。校验发生在参数校验之前、
 /// 任何状态变更之前 —— 被拒绝的调用不留半点痕迹。</para>
 /// </summary>
-public interface 权限守卫接口
+public interface IPermissionGuard
 {
     /// <summary>
     /// 要求当前身份具备指定权限。
     /// </summary>
     /// <param name="permission">该操作所需权限。</param>
     /// <exception cref="UnauthorizedAccessException">当前身份不具备该权限。</exception>
-    void 要求(权限 权限项);
+    void WantRequire(Permission permissionItem);
 }

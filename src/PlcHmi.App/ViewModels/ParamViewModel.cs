@@ -2,77 +2,77 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using 上位机.应用.服务;
-using 上位机.业务.服务;
-using 上位机.核心.抽象;
-using 上位机.核心.模型;
+using PlcHmi.App.Services;
+using PlcHmi.Business.Services;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>参数值读取的轻量访问器（避免页面直接依赖业务内部类型）。</summary>
-public sealed class 标签值服务访问器
+public sealed class TagValueServiceAccessor
 {
-    private readonly 标签值服务接口 _值列表;
+    private readonly ITagValueService _valueList;
 
-    public 标签值服务访问器(标签值服务接口 值列表) => _值列表 = 值列表;
+    public TagValueServiceAccessor(ITagValueService ValueList) => _valueList = ValueList;
 
-    public bool 尝试获取(string 名称值, out double 值) => _值列表.尝试获取双精度(名称值, out 值);
+    public bool TryGet(string nameValue, out double Value) => _valueList.TryGetDouble(nameValue, out Value);
 }
 
 /// <summary>延时表 / 按钮表的一行。</summary>
-public sealed partial class 参数条目行视图模型 : ObservableObject
+public sealed partial class ParameterEntryRowViewModel : ObservableObject
 {
-    private readonly 参数表格服务接口 _表格;
-    private readonly 参数表格类别 _类别;
-    private readonly bool _变量寻址;
-    private bool _加载中的值;
+    private readonly IParameterTableService _dataGrid;
+    private readonly ParameterTableCategory _category;
+    private readonly bool _variableAddressing;
+    private bool _loadValue;
 
-    [ObservableProperty] private bool _是否启用 = true;
-    [ObservableProperty] private string _值文本 = "0.000";
-    [ObservableProperty] private string _按钮状态文本 = "—";
+    [ObservableProperty] private bool _isEnabled = true;
+    [ObservableProperty] private string _valueText = "0.000";
+    [ObservableProperty] private string _buttonStateText = "—";
 
-    public 参数条目行视图模型(
-        参数条目定义 定义项, 参数表格类别 类别, 参数表格服务接口 表格, bool 变量寻址 = false)
+    public ParameterEntryRowViewModel(
+        ParameterEntryDefinition DefinitionItem, ParameterTableCategory Category, IParameterTableService DataGrid, bool VariableAddressing = false)
     {
-        定义 = 定义项;
-        _类别 = 类别;
-        _表格 = 表格;
-        _变量寻址 = 变量寻址;
+        Definition = DefinitionItem;
+        _category = Category;
+        _dataGrid = DataGrid;
+        _variableAddressing = VariableAddressing;
 
-        _是否启用 = 定义项.启用;
-        _值文本 = 定义项.值.ToString("0.000");
+        _isEnabled = DefinitionItem.Enabled;
+        _valueText = DefinitionItem.Value.ToString("0.000");
     }
 
     /// <summary>底层定义（编辑用）。</summary>
-    public 参数条目定义 定义 { get; }
+    public ParameterEntryDefinition Definition { get; }
 
-    public string 标识 => 定义.标识;
-    public string 名称 => 定义.名称;
+    public string Id => Definition.Id;
+    public string Name => Definition.Name;
 
     /// <summary>地址列显示：OPC UA 模式且已绑定变量时显示变量名（物理地址无关）。</summary>
-    public string 地址 => 绑定显示.地址文本(_变量寻址, 定义.变量, 定义.地址);
+    public string Address => BindingDisplay.AddressText(_variableAddressing, Definition.Variable, Definition.Address);
 
     /// <summary>取值显示（延时按秒，格式 XX.XXX S；PLC 的 D 区存毫秒整数，见模型注释）。</summary>
-    public string 新值显示 => _类别 == 参数表格类别.延迟
-        ? $"{定义.值:0.000} S"
+    public string NewValueShow => _category == ParameterTableCategory.Delay
+        ? $"{Definition.Value:0.000} S"
         : "—";
 
     /// <summary>是否显示“当前值”列（按钮表不显示）。</summary>
-    public bool 显示新值 => _类别 == 参数表格类别.延迟;
+    public bool ShowNewValue => _category == ParameterTableCategory.Delay;
 
     /// <summary>是否为按钮行（显示置位 / 复位操作与状态）。</summary>
-    public bool 是否按钮行 => _类别 == 参数表格类别.按钮;
+    public bool IsButtonRow => _category == ParameterTableCategory.Button;
 
     /// <summary>停用的行置灰。</summary>
-    public double 行不透明度 => 定义.启用 ? 1.0 : 0.45;
+    public double RowOpacity => Definition.Enabled ? 1.0 : 0.45;
 
-    partial void On是否启用Changed(bool value)
+    partial void OnIsEnabledChanged(bool value)
     {
-        定义.启用 = value;
-        OnPropertyChanged(nameof(行不透明度));
+        Definition.Enabled = value;
+        OnPropertyChanged(nameof(RowOpacity));
 
         // 就地更新内存副本（不落盘，由「保存到本地」统一写）
-        _表格.更新(_类别, 定义);
+        _dataGrid.Update(_category, Definition);
     }
 
     /// <summary>
@@ -80,56 +80,56 @@ public sealed partial class 参数条目行视图模型 : ObservableObject
     /// <para>需求方确认：参数页元件直接绑定 D/M 区、<b>实时生效</b>，不再走「下发到 PLC」。
     /// 用 LostFocus 而不是 PropertyChanged，是为了避免每敲一个字符就写一次 PLC（红线 R3）。</para>
     /// </summary>
-    public event EventHandler<参数条目行视图模型>? 新值已提交;
+    public event EventHandler<ParameterEntryRowViewModel>? newValueCommitted;
 
-    partial void On值文本Changed(string value)
+    partial void OnValueTextChanged(string value)
     {
-        if (_加载中的值)
+        if (_loadValue)
         {
             return;
         }
 
-        if (坐标辅助.尝试解析(value, out var 已解析))
+        if (CoordinateAux.TryParse(value, out var resolved))
         {
-            定义.值 = 已解析;
-            OnPropertyChanged(nameof(新值显示));
-            新值已提交?.Invoke(this, this);
+            Definition.Value = resolved;
+            OnPropertyChanged(nameof(NewValueShow));
+            newValueCommitted?.Invoke(this, this);
         }
     }
 
     /// <summary>重载行显示（不触发写回），供表格重建后刷新用。</summary>
-    public void 重载新值()
+    public void ReloadNewValue()
     {
-        _加载中的值 = true;
-        值文本 = 定义.值.ToString("0.000");
-        _加载中的值 = false;
+        _loadValue = true;
+        ValueText = Definition.Value.ToString("0.000");
+        _loadValue = false;
     }
 
     /// <summary>
     /// 记录按钮的本地操作结果。
-    /// <para>2026-10-17 起按钮状态会由 <see cref="参数表格服务.异步回读"/> 周期回读，
+    /// <para>2026-10-17 起按钮状态会由 <see cref="ParameterTableService.ReadBackAsync"/> 周期回读，
     /// 这里的"开启 / 关闭"是<b>PLC 侧实时状态</b>（本地操作只是立刻刷新一次，不必等下一轮回读）。</para>
     /// </summary>
-    public void 标记按钮状态(bool on) => 按钮状态文本 = on ? "开启" : "关闭";
+    public void MarkButtonState(bool on) => ButtonStateText = on ? "开启" : "关闭";
 
     /// <summary>
     /// 应用回读到的延时值（秒）。
-    /// <para><b>用 <see cref="_加载中的值"/> 挡住写回</b>：回读绝不能反过来写 PLC
+    /// <para><b>用 <see cref="_loadValue"/> 挡住写回</b>：回读绝不能反过来写 PLC
     /// （那会形成"读→写→读"的无谓循环，还可能把别人刚改的值覆盖回去）。</para>
     /// </summary>
-    public void 应用回读延时(double 秒)
+    public void ApplyReadBackDelay(double seconds)
     {
-        if (Math.Abs(定义.值 - 秒) < 1e-9)
+        if (Math.Abs(Definition.Value - seconds) < 1e-9)
         {
             return;   // 与本地一致：不必每 2s 发一次无谓的属性通知
         }
 
-        _加载中的值 = true;
-        定义.值 = 秒;
-        值文本 = 秒.ToString("0.000");
-        _加载中的值 = false;
+        _loadValue = true;
+        Definition.Value = seconds;
+        ValueText = seconds.ToString("0.000");
+        _loadValue = false;
 
-        OnPropertyChanged(nameof(新值显示));
+        OnPropertyChanged(nameof(NewValueShow));
     }
 }
 
@@ -159,95 +159,95 @@ public sealed partial class 参数条目行视图模型 : ObservableObject
 ///
 /// <para>轴地址部分见 <c>ParamViewModel.AxisAddress.cs</c>（同一 partial 类型）。</para>
 /// </summary>
-public sealed partial class 参数视图模型 : 视图模型基类, 参数回读页接口
+public sealed partial class ParameterViewModel : ViewModelBase, IParameterReadBackPage
 {
-    private readonly 配方服务接口 _配方;
-    private readonly 参数表格服务接口 _表格;
-    private readonly 轴地址服务接口 _轴地址;
-    private readonly 用户服务接口 _用户项;
-    private readonly 对话框服务接口 _对话框;
-    private readonly PLC连接选项? _PLC选项;
-    private readonly ILogger<参数视图模型> _日志;
+    private readonly IRecipeService _recipe;
+    private readonly IParameterTableService _dataGrid;
+    private readonly IAxisAddressService _axisAddress;
+    private readonly IUserService _userItem;
+    private readonly IDialogService _dialog;
+    private readonly PlcConnectionOptions? _plcOptions;
+    private readonly ILogger<ParameterViewModel> _log;
 
-    [ObservableProperty] private string _配方徽标 = "机种 --";
-    [ObservableProperty] private string _状态文本 = "改数值不会立即写 PLC，需按「下发到 PLC」";
-    [ObservableProperty] private bool _可编辑表格;
-    [ObservableProperty] private bool _可操作值列表;
+    [ObservableProperty] private string _recipeBadgeMark = "机种 --";
+    [ObservableProperty] private string _stateText = "改数值不会立即写 PLC，需按「下发到 PLC」";
+    [ObservableProperty] private bool _editableTable;
+    [ObservableProperty] private bool _operableValueList;
 
     /// <summary>OPC UA 模式：地址列显示变量名（物理地址无关），轴速度行隐藏物理地址输入框。</summary>
-    public bool 变量寻址模式 => 绑定显示.是否变量寻址(_PLC选项);
+    public bool VariableAddressingMode => BindingDisplay.IsVariableAddressing(_plcOptions);
 
-    public 参数视图模型(
-        配方服务接口 配方项,
-        参数表格服务接口 表格,
-        轴地址服务接口 轴地址列表,
-        用户服务接口 用户,
-        对话框服务接口 对话框集合,
-        IReadOnlyList<轴定义> 轴集合,
-        ILogger<参数视图模型> 日志,
-        PLC连接选项? PLC选项 = null)
+    public ParameterViewModel(
+        IRecipeService recipeItem,
+        IParameterTableService DataGrid,
+        IAxisAddressService axisAddressList,
+        IUserService User,
+        IDialogService dialogCollection,
+        IReadOnlyList<AxisDefinition> axisCollection,
+        ILogger<ParameterViewModel> Log,
+        PlcConnectionOptions? PlcOptions = null)
     {
-        _配方 = 配方项;
-        _表格 = 表格;
-        _轴地址 = 轴地址列表;
-        _用户项 = 用户;
-        _对话框 = 对话框集合;
-        _PLC选项 = PLC选项;
-        _日志 = 日志;
+        _recipe = recipeItem;
+        _dataGrid = DataGrid;
+        _axisAddress = axisAddressList;
+        _userItem = User;
+        _dialog = dialogCollection;
+        _plcOptions = PlcOptions;
+        _log = Log;
 
-        标题 = "参数设置";
-        副标题 = "轴速度 / 延时 / 按钮 · 按钮可置位复位（即写 M5000–M5099），增删改地址仅管理员";
+        Title = "参数设置";
+        Subtitle = "轴速度 / 延时 / 按钮 · 按钮可置位复位（即写 M5000–M5099），增删改地址仅管理员";
 
-        var 变量寻址 = 绑定显示.是否变量寻址(PLC选项);
+        var VariableAddressing = BindingDisplay.IsVariableAddressing(PlcOptions);
 
-        foreach (var 轴号 in 轴集合)
+        foreach (var axisNumber in axisCollection)
         {
-            轴速度.Add(new 轴速度行视图模型(轴号, 配方项, 变量寻址));
+            AxisSpeed.Add(new AxisSpeedRowViewModel(axisNumber, recipeItem, VariableAddressing));
         }
 
-        _配方.配方已变更 += (_, _) => 在界面线程执行(刷新全部);
-        _表格.条目已变更 += (_, _) => 在界面线程执行(重建表格);
-        _轴地址.地址已变更 += (_, _) => 在界面线程执行(刷新全部);
-        _用户项.用户已变更 += (_, _) => 在界面线程执行(刷新权限);
+        _recipe.recipeChanged += (_, _) => AtUiThreadExecute(RefreshAll);
+        _dataGrid.entryChanged += (_, _) => AtUiThreadExecute(RebuildTable);
+        _axisAddress.AddressChanged += (_, _) => AtUiThreadExecute(RefreshAll);
+        _userItem.userChanged += (_, _) => AtUiThreadExecute(RefreshPermission);
 
-        刷新全部();
-        重建表格();
-        刷新权限();
+        RefreshAll();
+        RebuildTable();
+        RefreshPermission();
     }
 
     /// <summary>轴速度表。</summary>
-    public ObservableCollection<轴速度行视图模型> 轴速度 { get; } = new();
+    public ObservableCollection<AxisSpeedRowViewModel> AxisSpeed { get; } = new();
 
     /// <summary>「轴地址」表（位置 / 正反转点动 / 点动速度档位）。仅管理员可见可改。</summary>
-    public ObservableCollection<轴地址行视图模型> 轴地址集合 { get; } = new();
+    public ObservableCollection<AxisAddressRowViewModel> AxisAddressCollection { get; } = new();
 
     /// <summary>延时表。</summary>
-    public ObservableCollection<参数条目行视图模型> 延迟集合 { get; } = new();
+    public ObservableCollection<ParameterEntryRowViewModel> DelayCollection { get; } = new();
 
     /// <summary>按钮表。</summary>
-    public ObservableCollection<参数条目行视图模型> 按钮集合 { get; } = new();
+    public ObservableCollection<ParameterEntryRowViewModel> ButtonCollection { get; } = new();
 
     /// <inheritdoc />
-    public override Task 异步初始化()
+    public override Task InitializeAsync()
     {
-        if (地址有改动())
+        if (AddressHasChangeMove())
         {
             // 地址栏是独立提交的草稿：换页返回时同样不能把没提交的改动刷掉
             // （现场把"读取/重进页面后地址回默认值"当成"改了保存不了"）。
-            状态文本 = "地址栏有未保存的修改：按「保存」提交，或按「读取」放弃";
+            StateText = "地址栏有未保存的修改：按「保存」提交，或按「读取」放弃";
 
-            foreach (var 行项 in 轴速度)
+            foreach (var rowItem in AxisSpeed)
             {
-                行项.刷新();
+                rowItem.Refresh();
             }
         }
         else
         {
-            刷新全部();
+            RefreshAll();
         }
 
-        重建表格();
-        刷新权限();
+        RebuildTable();
+        RefreshPermission();
         return Task.CompletedTask;
     }
 
@@ -261,24 +261,24 @@ public sealed partial class 参数视图模型 : 视图模型基类, 参数回�
     /// 因此丢弃前先问一句，绝不静默回退。</para>
     /// </summary>
     [RelayCommand]
-    private void 读取()
+    private void Read()
     {
-        if (地址有改动() && !_对话框.确认("读取",
+        if (AddressHasChangeMove() && !_dialog.Confirm("读取",
                 "地址栏还有未保存的修改。\n\n读取会把这些修改恢复为配置文件里的值"
                 + "（要保存修改请按「保存」或「保存轴地址」）。是否继续读取？"))
         {
             return;
         }
 
-        刷新全部();
+        RefreshAll();
     }
 
     [RelayCommand]
-    private async Task 异步写入()
+    private async Task WriteAsync()
     {
-        if (!_对话框.确认("下发到 PLC",
-                $"确认把当前界面的全部参数写入 PLC（机种 {_配方.当前配方号:00}）？",
-                视图.确认等级.警告, "下发",
+        if (!_dialog.Confirm("下发到 PLC",
+                $"确认把当前界面的全部参数写入 PLC（机种 {_recipe.CurrentRecipeNumber:00}）？",
+                Views.ConfirmLevel.Warning, "下发",
                 "PLC 参数区将被界面当前值整体覆盖，设备行为立即改变。"))
         {
             return;
@@ -286,269 +286,269 @@ public sealed partial class 参数视图模型 : 视图模型基类, 参数回�
 
         try
         {
-            是否忙碌 = true;
-            await _配方.异步写入参数().ConfigureAwait(false);
+            IsBusy = true;
+            await _recipe.WriteParameterAsync().ConfigureAwait(false);
 
-            var 数量值 = _配方.参数规格.Count;
-            var 号 = _配方.当前配方号;
+            var countValue = _recipe.ParameterSpec.Count;
+            var Number = _recipe.CurrentRecipeNumber;
 
-            状态文本 = $"已下发 {数量值} 项参数，并已保存到本机种 {号:00}";
-            _对话框.提示("下发完成", $"参数已下发到 PLC，并已保存到本机种（机种 {号:00}）。");
+            StateText = $"已下发 {countValue} 项参数，并已保存到本机种 {Number:00}";
+            _dialog.Hint("下发完成", $"参数已下发到 PLC，并已保存到本机种（机种 {Number:00}）。");
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "参数下发失败");
-            _对话框.错误信息("下发失败", 异常.Message);
+            _log.LogError(exception, "参数下发失败");
+            _dialog.ErrorInfo("下发失败", exception.Message);
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
     [RelayCommand]
-    private async Task 异步保存()
+    private async Task SaveAsync()
     {
         try
         {
-            是否忙碌 = true;
+            IsBusy = true;
 
             // 地址栏也是本页的编辑：只保存数值与表格，会让"改了地址再按保存"看起来没生效
             // （现场正是这么用的）。管理员且地址确有改动时，一并走轴地址保存流程。
-            if (可编辑表格 && 地址有改动())
+            if (EditableTable && AddressHasChangeMove())
             {
-                await 异步保存轴地址().ConfigureAwait(false);
+                await SaveAxisAddressAsync().ConfigureAwait(false);
             }
 
-            await _配方.异步保存本地().ConfigureAwait(false);
-            await _表格.异步保存().ConfigureAwait(false);
-            _对话框.提示("保存成功", "机种参数与延时/按钮表已保存到本地配置文件。");
+            await _recipe.SaveThisGroundAsync().ConfigureAwait(false);
+            await _dataGrid.SaveAsync().ConfigureAwait(false);
+            _dialog.Hint("保存成功", "机种参数与延时/按钮表已保存到本地配置文件。");
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "保存失败");
-            _对话框.错误信息("保存失败", 异常.Message);
+            _log.LogError(exception, "保存失败");
+            _dialog.ErrorInfo("保存失败", exception.Message);
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
     [RelayCommand]
-    private void 恢复默认值()
+    private void RestoreDefaultValue()
     {
-        if (!_对话框.确认("恢复默认",
+        if (!_dialog.Confirm("恢复默认",
                 "确认将本机种的参数恢复为出厂默认值？",
-                视图.确认等级.危险, "恢复默认",
+                Views.ConfirmLevel.Danger, "恢复默认",
                 "界面上已调整的参数值会被覆盖；这里只恢复到界面，需再按「下发到 PLC」才会写入设备。"))
         {
             return;
         }
 
-        _配方.恢复默认值();
-        刷新全部();
+        _recipe.RestoreDefaultValue();
+        RefreshAll();
 
-        状态文本 = "已恢复为默认值（尚未写入 PLC）";
+        StateText = "已恢复为默认值（尚未写入 PLC）";
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────
 
-    private async Task 异步添加条目(参数表格类别 类别, string 标签名)
+    private async Task AddEntryAsync(ParameterTableCategory Category, string TagName)
     {
-        if (!确保可编辑())
+        if (!EnsureEditable())
         {
             return;
         }
 
-        var 条目 = new 参数条目定义
+        var Entry = new ParameterEntryDefinition
         {
-            标识 = _表格.新标识(类别),
-            名称 = $"新{标签名}",
-            地址 = 类别 == 参数表格类别.延迟
-                ? $"D{参数表格服务.延迟地址最小}"
-                : $"M{参数表格服务.按钮地址最小}",
-            单元 = "s",
-            最小 = 0,
-            最大 = 2147483.647,   // DINT 毫秒上限（2026-10-16 起延时按 32 位存）
-            启用 = true,
-            顺序 = _表格.获取(类别).Count + 1,
+            Id = _dataGrid.NewId(Category),
+            Name = $"新{TagName}",
+            Address = Category == ParameterTableCategory.Delay
+                ? $"D{ParameterTableService.delayAddressMin}"
+                : $"M{ParameterTableService.buttonAddressMin}",
+            Unit = "s",
+            Min = 0,
+            Max = 2147483.647,   // DINT 毫秒上限（2026-10-16 起延时按 32 位存）
+            Enabled = true,
+            Order = _dataGrid.Get(Category).Count + 1,
         };
 
-        if (!_对话框.编辑参数条目(类别, 条目))
+        if (!_dialog.EditParameterEntry(Category, Entry))
         {
             return;
         }
 
-        var 校验项 = _表格.校验(类别, 条目);
+        var validateItem = _dataGrid.Validate(Category, Entry);
 
-        if (!校验项.是否有效)
+        if (!validateItem.IsValid)
         {
-            _对话框.错误信息("校验失败", 校验项.摘要);
+            _dialog.ErrorInfo("校验失败", validateItem.Summary);
             return;
         }
 
-        _表格.添加(类别, 条目);
-        await 异步保存表格($"{标签名}「{条目.名称}」已添加。").ConfigureAwait(false);
+        _dataGrid.Add(Category, Entry);
+        await SaveTableAsync($"{TagName}「{Entry.Name}」已添加。").ConfigureAwait(false);
     }
 
-    private async Task 异步编辑条目(参数表格类别 类别, 参数条目行视图模型? 行项, string 标签名)
+    private async Task EditEntryAsync(ParameterTableCategory Category, ParameterEntryRowViewModel? rowItem, string TagName)
     {
-        if (行项 is null || !确保可编辑())
+        if (rowItem is null || !EnsureEditable())
         {
             return;
         }
 
-        var 已编辑 = 行项.定义.克隆();
+        var alreadyEdit = rowItem.Definition.Clone();
 
-        if (!_对话框.编辑参数条目(类别, 已编辑))
+        if (!_dialog.EditParameterEntry(Category, alreadyEdit))
         {
             return;
         }
 
         // isUpdate: true —— 编辑的是克隆副本，同 Id 的条目就是自身，不能报「已被占用」。
-        var 校验项 = _表格.校验(类别, 已编辑, 是否更新: true);
+        var validateItem = _dataGrid.Validate(Category, alreadyEdit, isUpdate: true);
 
-        if (!校验项.是否有效)
+        if (!validateItem.IsValid)
         {
-            _对话框.错误信息("校验失败", 校验项.摘要);
+            _dialog.ErrorInfo("校验失败", validateItem.Summary);
             return;
         }
 
-        _表格.更新(类别, 已编辑);
-        await 异步保存表格($"{标签名}「{已编辑.名称}」已更新。").ConfigureAwait(false);
+        _dataGrid.Update(Category, alreadyEdit);
+        await SaveTableAsync($"{TagName}「{alreadyEdit.Name}」已更新。").ConfigureAwait(false);
     }
 
-    private async Task 异步移除条目(参数表格类别 类别, 参数条目行视图模型? 行项, string 标签名)
+    private async Task RemoveEntryAsync(ParameterTableCategory Category, ParameterEntryRowViewModel? rowItem, string TagName)
     {
-        if (行项 is null || !确保可编辑())
+        if (rowItem is null || !EnsureEditable())
         {
             return;
         }
 
-        if (!_对话框.确认($"删除{标签名}",
-                $"确认删除{标签名}「{行项.名称}」？",
-                视图.确认等级.危险, "删除",
+        if (!_dialog.Confirm($"删除{TagName}",
+                $"确认删除{TagName}「{rowItem.Name}」？",
+                Views.ConfirmLevel.Danger, "删除",
                 "该条目将从配置文件中移除，删除后需重新录入。"))
         {
             return;
         }
 
-        _表格.移除(类别, 行项.标识);
-        await 异步保存表格(null).ConfigureAwait(false);
+        _dataGrid.Remove(Category, rowItem.Id);
+        await SaveTableAsync(null).ConfigureAwait(false);
     }
 
-    private bool 确保可编辑()
+    private bool EnsureEditable()
     {
-        if (可编辑表格)
+        if (EditableTable)
         {
             return true;
         }
 
-        _对话框.提示("权限不足", "只有管理员可以修改延时表与按钮表。");
+        _dialog.Hint("权限不足", "只有管理员可以修改延时表与按钮表。");
         return false;
     }
 
-    private async Task 异步保存表格(string? 消息)
+    private async Task SaveTableAsync(string? Message)
     {
         try
         {
-            await _表格.异步保存().ConfigureAwait(false);
+            await _dataGrid.SaveAsync().ConfigureAwait(false);
 
-            if (消息 is not null)
+            if (Message is not null)
             {
-                _对话框.提示("已保存", 消息);
+                _dialog.Hint("已保存", Message);
             }
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "保存参数表失败");
-            _对话框.错误信息("保存失败", 异常.Message);
+            _log.LogError(exception, "保存参数表失败");
+            _dialog.ErrorInfo("保存失败", exception.Message);
         }
     }
 
-    private void 刷新全部()
+    private void RefreshAll()
     {
-        配方徽标 = string.IsNullOrWhiteSpace(_配方.当前配方名称)
-            ? $"机种 {_配方.当前配方号:00}"
-            : $"机种 {_配方.当前配方号:00} · {_配方.当前配方名称}";
+        RecipeBadgeMark = string.IsNullOrWhiteSpace(_recipe.CurrentRecipeName)
+            ? $"机种 {_recipe.CurrentRecipeNumber:00}"
+            : $"机种 {_recipe.CurrentRecipeNumber:00} · {_recipe.CurrentRecipeName}";
 
-        foreach (var 行项 in 轴速度)
+        foreach (var rowItem in AxisSpeed)
         {
-            行项.刷新();
-            行项.刷新地址();
+            rowItem.Refresh();
+            rowItem.RefreshAddress();
         }
 
-        重建轴地址();
+        RebuildAxisAddress();
     }
 
     /// <summary>按服务的当前快照重建「轴地址」表。</summary>
-    private void 重建轴地址()
+    private void RebuildAxisAddress()
     {
-        轴地址集合.Clear();
+        AxisAddressCollection.Clear();
 
-        foreach (var 条目项 in _轴地址.表格.轴列表)
+        foreach (var EntryItem in _axisAddress.DataGrid.AxisList)
         {
-            var 行项 = new 轴地址行视图模型(条目项);
-            行项.刷新();
-            轴地址集合.Add(行项);
+            var rowItem = new AxisAddressRowViewModel(EntryItem);
+            rowItem.Refresh();
+            AxisAddressCollection.Add(rowItem);
         }
     }
 
-    private void 重建表格()
+    private void RebuildTable()
     {
-        延迟集合.Clear();
+        DelayCollection.Clear();
 
-        var 变量寻址 = 变量寻址模式;
+        var VariableAddressing = VariableAddressingMode;
 
-        foreach (var 条目 in _表格.延迟集合)
+        foreach (var Entry in _dataGrid.DelayCollection)
         {
-            var 行项 = new 参数条目行视图模型(条目, 参数表格类别.延迟, _表格, 变量寻址);
-            行项.新值已提交 += 行新值已提交;
-            延迟集合.Add(行项);
+            var rowItem = new ParameterEntryRowViewModel(Entry, ParameterTableCategory.Delay, _dataGrid, VariableAddressing);
+            rowItem.newValueCommitted += RowNewValueCommitted;
+            DelayCollection.Add(rowItem);
         }
 
-        按钮集合.Clear();
+        ButtonCollection.Clear();
 
-        foreach (var 条目 in _表格.按钮集合)
+        foreach (var Entry in _dataGrid.ButtonCollection)
         {
-            按钮集合.Add(new 参数条目行视图模型(条目, 参数表格类别.按钮, _表格, 变量寻址));
+            ButtonCollection.Add(new ParameterEntryRowViewModel(Entry, ParameterTableCategory.Button, _dataGrid, VariableAddressing));
         }
     }
 
-    private void 行新值已提交(object? 发送者, 参数条目行视图模型 行项) =>
-        异步安全调用.即发即忘(
-            () => 异步提交延迟新值(行项),
-            _日志,
-            $"延时「{行项.名称}」实时下发");
+    private void RowNewValueCommitted(object? sender, ParameterEntryRowViewModel rowItem) =>
+        SafeInvokeAsync.FireAndForget(
+            () => SubmitDelayNewValueAsync(rowItem),
+            _log,
+            $"延时「{rowItem.Name}」实时下发");
 
     /// <summary>延时值失焦提交：立即写 D 区并静默落盘（实时生效，需求方 2026-09-11 确认）。</summary>
-    private async Task 异步提交延迟新值(参数条目行视图模型 行项)
+    private async Task SubmitDelayNewValueAsync(ParameterEntryRowViewModel rowItem)
     {
-        if (!可操作值列表)
+        if (!OperableValueList)
         {
             return;   // 输入框对无权限者已禁用，这里是服务层之外的双保险
         }
 
         try
         {
-            await _表格.异步写入延迟(行项.定义).ConfigureAwait(false);
+            await _dataGrid.WriteDelayAsync(rowItem.Definition).ConfigureAwait(false);
 
-            var 毫秒 = (int)Math.Round(行项.定义.值 * 1000, MidpointRounding.AwayFromZero);
-            状态文本 = $"「{行项.名称}」已实时生效：{行项.定义.值:0.###} S（PLC 写入 {毫秒} ms）";
+            var milliseconds = (int)Math.Round(rowItem.Definition.Value * 1000, MidpointRounding.AwayFromZero);
+            StateText = $"「{rowItem.Name}」已实时生效：{rowItem.Definition.Value:0.###} S（PLC 写入 {milliseconds} ms）";
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "延时「{Name}」实时下发失败", 行项.名称);
-            在界面线程执行(() => _对话框.错误信息("下发失败", 异常.Message));
+            _log.LogError(exception, "延时「{Name}」实时下发失败", rowItem.Name);
+            AtUiThreadExecute(() => _dialog.ErrorInfo("下发失败", exception.Message));
         }
     }
 
-    private void 刷新权限()
+    private void RefreshPermission()
     {
         // 增删条目与改绑定地址 → 管理员；改数值与操作按钮（置位/复位）→ 工程师
-        可编辑表格 = _用户项.有(权限.编辑绑定地址);
-        可操作值列表 = _用户项.有(权限.编辑参数值列表);
+        EditableTable = _userItem.Has(Permission.EditBindAddress);
+        OperableValueList = _userItem.Has(Permission.EditParameterValueList);
     }
 
     // ── 轴地址（仅管理员）：见 ParamViewModel.AxisAddress.cs（partial）────────
@@ -562,25 +562,25 @@ public sealed partial class 参数视图模型 : 视图模型基类, 参数回�
     /// 不走轮询引擎；但 PLC 侧同样可能改写它们（切换机种、HMI 旁的操作面板、断电前的保持状态）。
     /// 界面只显示本地配置值会与设备实际不符——现场反馈"改了的延时没生效"正是这种现象。</para>
     /// </summary>
-    public async Task 异步刷新参数回读()
+    public async Task RefreshParameterReadBackAsync()
     {
-        await _表格.异步回读().ConfigureAwait(true);
+        await _dataGrid.ReadBackAsync().ConfigureAwait(true);
 
-        在界面线程执行(() =>
+        AtUiThreadExecute(() =>
         {
-            foreach (var 行项 in 延迟集合)
+            foreach (var rowItem in DelayCollection)
             {
-                if (_表格.回读延时值(行项.标识) is { } 秒)
+                if (_dataGrid.ReadBackDelayValue(rowItem.Id) is { } seconds)
                 {
-                    行项.应用回读延时(秒);
+                    rowItem.ApplyReadBackDelay(seconds);
                 }
             }
 
-            foreach (var 行项 in 按钮集合)
+            foreach (var rowItem in ButtonCollection)
             {
-                if (_表格.回读按钮状态(行项.标识) is { } 状态)
+                if (_dataGrid.ReadBackButtonState(rowItem.Id) is { } State)
                 {
-                    行项.标记按钮状态(状态);
+                    rowItem.MarkButtonState(State);
                 }
             }
         });

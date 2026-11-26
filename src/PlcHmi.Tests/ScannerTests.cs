@@ -3,15 +3,15 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.Modbus;
-using 上位机.核心.抽象;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 扫码枪功能的回归（2026-11-12）。
@@ -21,87 +21,87 @@ namespace 上位机.上位机测试;
 /// ③ 工单号只存内存（不写进历史文件）；④ 两个寄存器地址由服务层校验，配错当场报错。</para>
 /// </summary>
 [Collection("config-files")]
-public class 扫码枪测试
+public class ScannerTest
 {
-    private static ServiceProvider 构建运行期()
+    private static ServiceProvider BuildRuntime()
     {
-        var 设置 = 应用设置加载器.加载(out var 设置错误);
-        var 配方配置 = 配方配置加载器.加载(out var 配方错误);
+        var Settings = AppSettingsLoader.Load(out var SettingsError);
+        var RecipeConfig = RecipeConfigLoader.Load(out var recipeError);
 
-        Assert.Null(设置错误);
-        Assert.Null(配方错误);
+        Assert.Null(SettingsError);
+        Assert.Null(recipeError);
 
-        设置.PLC连接.使用模拟器 = true;
-        设置.轮询.快间隔毫秒 = 50;
-        设置.轮询.慢间隔毫秒 = 100;
-        设置.轮询.事件间隔毫秒 = 100;
+        Settings.PlcConnection.UseSimulator = true;
+        Settings.Polling.FastIntervalMilliseconds = 50;
+        Settings.Polling.SlowIntervalMilliseconds = 100;
+        Settings.Polling.EventIntervalMilliseconds = 100;
 
-        var 服务集合 = new ServiceCollection();
-        服务集合.AddLogging();
-        服务集合.添加上位机服务(设置.PLC连接, 设置.轮询, 配方配置);
-        服务集合.AddSingleton<权限守卫接口, 允许全部权限守卫>();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddLogging();
+        serviceCollection.AddPlcHmiService(Settings.PlcConnection, Settings.Polling, RecipeConfig);
+        serviceCollection.AddSingleton<IPermissionGuard, AllowAllPermissionGuard>();
 
-        return 服务集合.BuildServiceProvider(validateScopes: true);
+        return serviceCollection.BuildServiceProvider(validateScopes: true);
     }
 
     [Fact]
-    public void 三种行结束符都应切出条码帧()
+    public void ThreeKindLineTerminatorBothShouldSwitchOutBarcodeFrame()
     {
-        var 缓冲 = new StringBuilder();
+        var buffer = new StringBuilder();
 
-        Assert.Equal(["AB12"], 扫码帧解析器.切分("AB12\r\n", 缓冲));
-        Assert.Equal(["K7-9"], 扫码帧解析器.切分("K7-9\n", 缓冲));
-        Assert.Equal(["X001"], 扫码帧解析器.切分("X001\r", 缓冲));
+        Assert.Equal(["AB12"], ScanFrameParser.Slice("AB12\r\n", buffer));
+        Assert.Equal(["K7-9"], ScanFrameParser.Slice("K7-9\n", buffer));
+        Assert.Equal(["X001"], ScanFrameParser.Slice("X001\r", buffer));
 
         // 半帧：先到的部分不吐出，等结尾符
-        Assert.Empty(扫码帧解析器.切分("PART", 缓冲));
-        Assert.Equal(["PART-2"], 扫码帧解析器.切分("-2\r\n", 缓冲));
+        Assert.Empty(ScanFrameParser.Slice("PART", buffer));
+        Assert.Equal(["PART-2"], ScanFrameParser.Slice("-2\r\n", buffer));
 
         // 一块里两条
-        Assert.Equal(["A1", "B2"], 扫码帧解析器.切分("A1\r\nB2\r\n", 缓冲));
+        Assert.Equal(["A1", "B2"], ScanFrameParser.Slice("A1\r\nB2\r\n", buffer));
     }
 
     [Fact]
-    public async Task 手动型收到条码应写成功信号并记住工单号()
+    public async Task ManualKindCollectToBarcodeShouldWriteSuccessSignalAndRecordHoldWorkOrder()
     {
-        await using var 提供者 = 构建运行期();
-        var 托管 = 提供者.GetRequiredService<IHostedService>();
-        await 托管.StartAsync(CancellationToken.None);
+        await using var provider = BuildRuntime();
+        var hosting = provider.GetRequiredService<IHostedService>();
+        await hosting.StartAsync(CancellationToken.None);
 
         try
         {
-            var 客户端 = 提供者.GetRequiredService<Modbus客户端接口>();
-            var 解析器 = 提供者.GetRequiredService<地址解析器接口>();
+            var Client = provider.GetRequiredService<IModbusClient>();
+            var Parser = provider.GetRequiredService<IAddressParser>();
 
             // 未启用：只测处理链，不去打开串口
-            var 配置 = new 扫码枪配置
+            var Config = new ScannerConfig
             {
-                启用 = false,
-                工作模式 = 扫码工作模式.手动型,
-                扫码成功寄存器 = "D4050",
-                扫码触发寄存器 = "D4010",
+                Enabled = false,
+                WorkMode = ScanWorkMode.ManualKind,
+                ScanSuccessRegister = "D4050",
+                ScanTriggerRegister = "D4010",
             };
 
-            using var 服务实例 = new 扫码枪服务(
-                配置, 解析器, 客户端, new 允许全部权限守卫(),
-                NullLogger<扫码枪服务>.Instance);
+            using var serviceInstance = new ScannerService(
+                Config, Parser, Client, new AllowAllPermissionGuard(),
+                NullLogger<ScannerService>.Instance);
 
-            var 事件触发 = false;
-            服务实例.工单号已变更 += (_, _) => 事件触发 = true;
+            var eventTrigger = false;
+            serviceInstance.workOrderChanged += (_, _) => eventTrigger = true;
 
-            服务实例.注入扫码结果("  WO-2026-11-12-001  ");
+            serviceInstance.InjectScanResult("  WO-2026-11-12-001  ");
 
-            Assert.Equal("WO-2026-11-12-001", 服务实例.工单号);
-            Assert.True(事件触发);
+            Assert.Equal("WO-2026-11-12-001", serviceInstance.WorkOrder);
+            Assert.True(eventTrigger);
 
             // 写成功信号是后台任务：等它落进 PLC
-            var 截止 = Environment.TickCount64 + 3000;
+            var truncateStop = Environment.TickCount64 + 3000;
 
-            while (Environment.TickCount64 < 截止)
+            while (Environment.TickCount64 < truncateStop)
             {
-                var 值 = await 客户端.异步读取保持寄存器(4050, 1);
+                var Value = await Client.ReadHoldingRegisterAsync(4050, 1);
 
-                if (值.Length > 0 && 值[0] == 1)
+                if (Value.Length > 0 && Value[0] == 1)
                 {
                     return;
                 }
@@ -113,80 +113,80 @@ public class 扫码枪测试
         }
         finally
         {
-            await 托管.StopAsync(CancellationToken.None);
+            await hosting.StopAsync(CancellationToken.None);
         }
     }
 
     [Fact]
-    public async Task 触发型超时未扫到应写失败信号且晚到的条码被忽略()
+    public async Task TriggerKindTimeoutNotScanToShouldWriteFailedSignalAndLateToBarcodeBeIgnored()
     {
-        await using var 提供者 = 构建运行期();
-        var 托管 = 提供者.GetRequiredService<IHostedService>();
-        await 托管.StartAsync(CancellationToken.None);
+        await using var provider = BuildRuntime();
+        var hosting = provider.GetRequiredService<IHostedService>();
+        await hosting.StartAsync(CancellationToken.None);
 
         try
         {
-            var 客户端 = 提供者.GetRequiredService<Modbus客户端接口>();
-            var 解析器 = 提供者.GetRequiredService<地址解析器接口>();
+            var Client = provider.GetRequiredService<IModbusClient>();
+            var Parser = provider.GetRequiredService<IAddressParser>();
 
-            using var 服务实例 = 构建触发型服务(解析器, 客户端, 超时毫秒: 300);
-            await 服务实例.异步重启(CancellationToken.None);
+            using var serviceInstance = BuildTriggerKindService(Parser, Client, TimeoutMilliseconds: 300);
+            await serviceInstance.RestartAsync(CancellationToken.None);
 
             // PLC 请求扫一件：过了 300 ms 还没码，就该判失败
-            await 客户端.异步写入单个寄存器(4010, 1);
+            await Client.WriteSingleRegisterAsync(4010, 1);
 
             Assert.True(
-                await 等待异步(async () => (await 读取值(客户端, 4050)) == 2),
+                await WaitAsync(async () => (await ReadValue(Client, 4050)) == 2),
                 "超时未扫到时应把 D4050 写成 2");
 
-            Assert.Equal(0, await 读取值(客户端, 4010));
+            Assert.Equal(0, await ReadValue(Client, 4010));
 
             // 晚到（窗口已关）的条码不能翻案：PLC 那边已经按失败处理了
-            服务实例.注入扫码结果("LATE-CODE");
+            serviceInstance.InjectScanResult("LATE-CODE");
 
-            Assert.Equal(string.Empty, 服务实例.工单号);
-            Assert.Equal(2, await 读取值(客户端, 4050));
+            Assert.Equal(string.Empty, serviceInstance.WorkOrder);
+            Assert.Equal(2, await ReadValue(Client, 4050));
         }
         finally
         {
-            await 托管.StopAsync(CancellationToken.None);
+            await hosting.StopAsync(CancellationToken.None);
         }
     }
 
     [Fact]
-    public async Task 触发型等码窗口内扫到码应写成功信号()
+    public async Task TriggerKindWaitCodeWindowInnerScanToCodeShouldWriteSuccessSignal()
     {
-        await using var 提供者 = 构建运行期();
-        var 托管 = 提供者.GetRequiredService<IHostedService>();
-        await 托管.StartAsync(CancellationToken.None);
+        await using var provider = BuildRuntime();
+        var hosting = provider.GetRequiredService<IHostedService>();
+        await hosting.StartAsync(CancellationToken.None);
 
         try
         {
-            var 客户端 = 提供者.GetRequiredService<Modbus客户端接口>();
-            var 解析器 = 提供者.GetRequiredService<地址解析器接口>();
+            var Client = provider.GetRequiredService<IModbusClient>();
+            var Parser = provider.GetRequiredService<IAddressParser>();
 
-            using var 服务实例 = 构建触发型服务(解析器, 客户端, 超时毫秒: 5000);
-            await 服务实例.异步重启(CancellationToken.None);
+            using var serviceInstance = BuildTriggerKindService(Parser, Client, TimeoutMilliseconds: 5000);
+            await serviceInstance.RestartAsync(CancellationToken.None);
 
-            await 客户端.异步写入单个寄存器(4010, 1);
+            await Client.WriteSingleRegisterAsync(4010, 1);
 
             // 触发被应答（写 0）之后窗口才开：等它开好再"扫到"
             Assert.True(
-                await 等待异步(async () => (await 读取值(客户端, 4010)) == 0),
+                await WaitAsync(async () => (await ReadValue(Client, 4010)) == 0),
                 "触发寄存器应被上位机写 0 应答");
 
             await Task.Delay(100);
 
-            服务实例.注入扫码结果("  WO-TRIGGER-001  ");
+            serviceInstance.InjectScanResult("  WO-TRIGGER-001  ");
 
-            Assert.Equal("WO-TRIGGER-001", 服务实例.工单号);
+            Assert.Equal("WO-TRIGGER-001", serviceInstance.WorkOrder);
             Assert.True(
-                await 等待异步(async () => (await 读取值(客户端, 4050)) == 1),
+                await WaitAsync(async () => (await ReadValue(Client, 4050)) == 1),
                 "窗口内扫到码应把 D4050 写成 1");
         }
         finally
         {
-            await 托管.StopAsync(CancellationToken.None);
+            await hosting.StopAsync(CancellationToken.None);
         }
     }
 
@@ -195,39 +195,39 @@ public class 扫码枪测试
     /// <para>故意用不存在的串口：<c>异步重启</c> 会真的去开一次通道，打不开就只留日志，
     /// 触发监听照常起来（现场也是这个行为：扫码枪掉了不该让 PLC 握手跟着停）。</para>
     /// </summary>
-    private static 扫码枪服务 构建触发型服务(地址解析器接口 解析器, Modbus客户端接口 客户端, int 超时毫秒)
+    private static ScannerService BuildTriggerKindService(IAddressParser Parser, IModbusClient Client, int TimeoutMilliseconds)
     {
-        var 配置 = new 扫码枪配置
+        var Config = new ScannerConfig
         {
-            启用 = true,
-            通讯模式 = 扫码通讯模式.串口,
-            串口号 = "COM98",
-            工作模式 = 扫码工作模式.触发型,
-            扫码成功寄存器 = "D4050",
-            扫码触发寄存器 = "D4010",
-            轮询间隔毫秒 = 100,
-            超时毫秒 = 超时毫秒,
-            触发指令 = string.Empty,
-            释放指令 = string.Empty,
+            Enabled = true,
+            CommunicationMode = ScanCommunicationMode.SerialPort,
+            SerialPortName = "COM98",
+            WorkMode = ScanWorkMode.TriggerKind,
+            ScanSuccessRegister = "D4050",
+            ScanTriggerRegister = "D4010",
+            PollingIntervalMilliseconds = 100,
+            TimeoutMilliseconds = TimeoutMilliseconds,
+            TriggerCommand = string.Empty,
+            ReleaseCommand = string.Empty,
         };
 
-        return new 扫码枪服务(配置, 解析器, 客户端, new 允许全部权限守卫(),
-            NullLogger<扫码枪服务>.Instance);
+        return new ScannerService(Config, Parser, Client, new AllowAllPermissionGuard(),
+            NullLogger<ScannerService>.Instance);
     }
 
-    private static async Task<ushort> 读取值(Modbus客户端接口 客户端, int 地址)
+    private static async Task<ushort> ReadValue(IModbusClient Client, int Address)
     {
-        var 值 = await 客户端.异步读取保持寄存器(地址, 1);
-        return 值.Length > 0 ? 值[0] : (ushort)0;
+        var Value = await Client.ReadHoldingRegisterAsync(Address, 1);
+        return Value.Length > 0 ? Value[0] : (ushort)0;
     }
 
-    private static async Task<bool> 等待异步(Func<Task<bool>> 条件, int 超时毫秒 = 5000)
+    private static async Task<bool> WaitAsync(Func<Task<bool>> condition, int TimeoutMilliseconds = 5000)
     {
-        var 截止 = Environment.TickCount64 + 超时毫秒;
+        var truncateStop = Environment.TickCount64 + TimeoutMilliseconds;
 
-        while (Environment.TickCount64 < 截止)
+        while (Environment.TickCount64 < truncateStop)
         {
-            if (await 条件())
+            if (await condition())
             {
                 return true;
             }
@@ -239,101 +239,101 @@ public class 扫码枪测试
     }
 
     [Fact]
-    public void 工单号不应写进历史记录文件()
+    public void WorkOrderShouldNotWriteEnterHistoryRecordFile()
     {
-        var 条目 = new 历史记录条目
+        var Entry = new HistoryRecordEntry
         {
-            时刻 = new DateTime(2026, 11, 12, 9, 0, 0),
-            数值集合 = [1, 2],
-            工单号 = "WO-SECRET",
+            Timestamp = new DateTime(2026, 11, 12, 9, 0, 0),
+            NumericValueCollection = [1, 2],
+            WorkOrder = "WO-SECRET",
         };
 
-        var JSON = JsonSerializer.Serialize(条目, JSON配置.写入);
+        var JSON = JsonSerializer.Serialize(Entry, JsonConfig.Write);
 
         Assert.DoesNotContain("工单号", JSON, StringComparison.Ordinal);
         Assert.DoesNotContain("WO-SECRET", JSON, StringComparison.Ordinal);
 
         // 内存里仍在（界面用它显示列）
-        Assert.Equal("WO-SECRET", 条目.克隆().工单号);
+        Assert.Equal("WO-SECRET", Entry.Clone().WorkOrder);
     }
 
     [Fact]
-    public async Task 保存设置应拒绝无效寄存器且不落盘()
+    public async Task SaveSetShouldRejectInvalidRegisterAndNotPersist()
     {
-        var 设置路径 = 配置路径.应用设置;
-        var 原始 = await File.ReadAllTextAsync(设置路径);
+        var setPath = ConfigPath.AppSettings;
+        var Original = await File.ReadAllTextAsync(setPath);
 
         try
         {
-            await using var 提供者 = 构建运行期();
-            var 服务实例 = 提供者.GetRequiredService<扫码枪服务>();
+            await using var provider = BuildRuntime();
+            var serviceInstance = provider.GetRequiredService<ScannerService>();
 
-            var 候选 = 服务实例.配置.克隆();
-            候选.扫码成功寄存器 = "M100";   // 位元件，不能当信号寄存器
+            var candidate = serviceInstance.Config.Clone();
+            candidate.ScanSuccessRegister = "M100";   // 位元件，不能当信号寄存器
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => 服务实例.异步保存设置(候选));
+                () => serviceInstance.SaveSetAsync(candidate));
 
             // 文件没被改
-            Assert.Equal(原始, await File.ReadAllTextAsync(设置路径));
+            Assert.Equal(Original, await File.ReadAllTextAsync(setPath));
 
             // 两个寄存器填同一个地址也要拒绝
-            候选.扫码成功寄存器 = "D4050";
-            候选.扫码触发寄存器 = "D4050";
+            candidate.ScanSuccessRegister = "D4050";
+            candidate.ScanTriggerRegister = "D4050";
 
             await Assert.ThrowsAsync<InvalidOperationException>(
-                () => 服务实例.异步保存设置(候选));
+                () => serviceInstance.SaveSetAsync(candidate));
         }
         finally
         {
-            await File.WriteAllTextAsync(设置路径, 原始);
+            await File.WriteAllTextAsync(setPath, Original);
         }
     }
 
     [Fact]
-    public async Task 保存合法设置应落盘并可重新加载()
+    public async Task SaveValidSetShouldPersistAndCanReLoad()
     {
-        var 设置路径 = 配置路径.应用设置;
-        var 原始 = await File.ReadAllTextAsync(设置路径);
+        var setPath = ConfigPath.AppSettings;
+        var Original = await File.ReadAllTextAsync(setPath);
 
         try
         {
-            await using var 提供者 = 构建运行期();
-            var 服务实例 = 提供者.GetRequiredService<扫码枪服务>();
+            await using var provider = BuildRuntime();
+            var serviceInstance = provider.GetRequiredService<ScannerService>();
 
-            var 候选 = 服务实例.配置.克隆();
-            候选.启用 = true;
+            var candidate = serviceInstance.Config.Clone();
+            candidate.Enabled = true;
 
             // 故意用不存在的串口：保存后会真的去开一次通道，串口打不开立刻返回，
             // 不会像 TCP 那样等 3 秒，也不占用任何网络端口（避免和其它用例抢资源）
-            候选.通讯模式 = 扫码通讯模式.串口;
-            候选.串口号 = "COM99";
-            候选.波特率 = 19200;
-            候选.工作模式 = 扫码工作模式.触发型;
-            候选.扫码成功寄存器 = "D4052";
-            候选.扫码触发寄存器 = "D4012";
-            候选.触发指令 = "TRIGGER";
-            候选.释放指令 = "RELEASE";
+            candidate.CommunicationMode = ScanCommunicationMode.SerialPort;
+            candidate.SerialPortName = "COM99";
+            candidate.BaudRate = 19200;
+            candidate.WorkMode = ScanWorkMode.TriggerKind;
+            candidate.ScanSuccessRegister = "D4052";
+            candidate.ScanTriggerRegister = "D4012";
+            candidate.TriggerCommand = "TRIGGER";
+            candidate.ReleaseCommand = "RELEASE";
 
-            await 服务实例.异步保存设置(候选);
+            await serviceInstance.SaveSetAsync(candidate);
 
-            var 已重载 = 应用设置加载器.加载(out var 错误);
-            Assert.Null(错误);
-            Assert.True(已重载.扫码枪.启用);
-            Assert.Equal(扫码通讯模式.串口, 已重载.扫码枪.通讯模式);
-            Assert.Equal("COM99", 已重载.扫码枪.串口号);
-            Assert.Equal(19200, 已重载.扫码枪.波特率);
-            Assert.Equal(扫码工作模式.触发型, 已重载.扫码枪.工作模式);
-            Assert.Equal("D4052", 已重载.扫码枪.扫码成功寄存器);
-            Assert.Equal("D4012", 已重载.扫码枪.扫码触发寄存器);
-            Assert.Equal("TRIGGER", 已重载.扫码枪.触发指令);
+            var reloaded = AppSettingsLoader.Load(out var error);
+            Assert.Null(error);
+            Assert.True(reloaded.Scanner.Enabled);
+            Assert.Equal(ScanCommunicationMode.SerialPort, reloaded.Scanner.CommunicationMode);
+            Assert.Equal("COM99", reloaded.Scanner.SerialPortName);
+            Assert.Equal(19200, reloaded.Scanner.BaudRate);
+            Assert.Equal(ScanWorkMode.TriggerKind, reloaded.Scanner.WorkMode);
+            Assert.Equal("D4052", reloaded.Scanner.ScanSuccessRegister);
+            Assert.Equal("D4012", reloaded.Scanner.ScanTriggerRegister);
+            Assert.Equal("TRIGGER", reloaded.Scanner.TriggerCommand);
 
             // 运行配置同步（后续写 PLC 用的就是这份快照）
-            Assert.Equal("D4052", 服务实例.配置.扫码成功寄存器);
+            Assert.Equal("D4052", serviceInstance.Config.ScanSuccessRegister);
         }
         finally
         {
-            await File.WriteAllTextAsync(设置路径, 原始);
+            await File.WriteAllTextAsync(setPath, Original);
         }
     }
 }

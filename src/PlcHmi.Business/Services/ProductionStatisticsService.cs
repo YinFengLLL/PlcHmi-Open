@@ -1,23 +1,23 @@
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.核心.抽象;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Abstractions;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>小时采样点：某个整点时刻的累计产量计数器读数。</summary>
-public sealed class 产量小时样本
+public sealed class OutputHourSample
 {
     /// <summary>整点时刻（如 2026-09-24 10:00）。</summary>
-    public DateTime 小时起点 { get; set; }
+    public DateTime HourStartPoint { get; set; }
 
     /// <summary>该时刻的累计产量读数（PLC 计数器原值，清零前单调递增）。</summary>
-    public long 累计产量 { get; set; }
+    public long AccumulatedOutput { get; set; }
 }
 
 /// <summary>
-/// 产量统计服务。详见 <see cref="产量统计接口"/>。
+/// 产量统计服务。详见 <see cref="IOutputStatistics"/>。
 ///
 /// <para><b>采样策略</b>：后台循环每 15 秒检查一次，跨过整点即打一个采样点；
 /// 相邻采样点差值 = 该小时产量。程序未运行期间的小时没有真实读数，
@@ -29,199 +29,199 @@ public sealed class 产量小时样本
 /// <c>设备服务接口.输出数量</c> 与 <c>DateTime.Now</c>），
 /// 单元测试用固定时刻与可控计数器直接验证统计口径。</para>
 /// </summary>
-public sealed class 产量统计服务 : IHostedService, IAsyncDisposable, 产量统计接口
+public sealed class OutputStatisticsService : IHostedService, IAsyncDisposable, IOutputStatistics
 {
     /// <summary>历史保留天数：近 7 天图表 + 1 天缓冲。</summary>
-    public const int 保留天数 = 8;
+    public const int RetainDays = 8;
 
-    private static readonly TimeSpan 采样间隔 = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan samplingInterval = TimeSpan.FromSeconds(15);
 
-    private static readonly string[] 星期名称 = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    private static readonly string[] starPeriodName = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
-    private readonly ILogger<产量统计服务> _日志;
-    private readonly 配置健康接口? _健康;
-    private readonly object _同步 = new();
-    private readonly List<产量小时样本> _样本 = [];
+    private readonly ILogger<OutputStatisticsService> _log;
+    private readonly IConfigHealth? _health;
+    private readonly object _sync = new();
+    private readonly List<OutputHourSample> _sample = [];
 
-    private Func<long> _产量提供器;
-    private Func<DateTime> _时钟;
-    private CancellationTokenSource? _取消令牌源;
-    private Task? _工作线程;
-    private double _上次实时小时产量 = -1;
+    private Func<long> _outputProvider;
+    private Func<DateTime> _clock;
+    private CancellationTokenSource? _cancellationTokenSource;
+    private Task? _workerThread;
+    private double _lastRealtimeHourlyOutput = -1;
 
     /// <summary>统计快照更新（整点采样或实时值变化）。</summary>
-    public event EventHandler? 统计已变更;
+    public event EventHandler? statisticsChanged;
 
-    public 产量统计服务(
-        ILogger<产量统计服务> 日志,
-        配置健康接口? 健康 = null,
-        Func<long>? 产量提供器 = null,
-        Func<DateTime>? 时钟提供器 = null)
+    public OutputStatisticsService(
+        ILogger<OutputStatisticsService> Log,
+        IConfigHealth? Health = null,
+        Func<long>? OutputProvider = null,
+        Func<DateTime>? clockProvider = null)
     {
-        _日志 = 日志;
-        _健康 = 健康;
-        _产量提供器 = 产量提供器 ?? (() => 0);
-        _时钟 = 时钟提供器 ?? (() => DateTime.Now);
+        _log = Log;
+        _health = Health;
+        _outputProvider = OutputProvider ?? (() => 0);
+        _clock = clockProvider ?? (() => DateTime.Now);
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<double> 今日小时产量 => 取小时序列(0);
+    public IReadOnlyList<double> TodayHourlyOutput => GetHourIndexColumn(0);
 
     /// <inheritdoc />
-    public IReadOnlyList<double> 昨日小时产量 => 取小时序列(1);
+    public IReadOnlyList<double> YesterdayDayHourlyOutput => GetHourIndexColumn(1);
 
     /// <inheritdoc />
-    public IReadOnlyList<double> 周每日产量
+    public IReadOnlyList<double> WeekPerDayOutput
     {
         get
         {
-            var 今日值 = _时钟().Date;
-            var 结果 = new double[7];
+            var todayValue = _clock().Date;
+            var result = new double[7];
 
-            for (var 天 = 0; 天 < 7; 天++)
+            for (var dayCount = 0; dayCount < 7; dayCount++)
             {
-                var 日期值 = 今日值.AddDays(天 - 6);
-                var 合计 = 0d;
+                var dateValue = todayValue.AddDays(dayCount - 6);
+                var total = 0d;
 
-                for (var 小时 = 0; 小时 < 24; 小时++)
+                for (var hour = 0; hour < 24; hour++)
                 {
-                    合计 += 小时产量(日期值.AddHours(小时));
+                    total += HourlyOutput(dateValue.AddHours(hour));
                 }
 
-                结果[天] = 合计;
+                result[dayCount] = total;
             }
 
-            return 结果;
+            return result;
         }
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<string> 周日期标签
+    public IReadOnlyList<string> WeekDateTag
     {
         get
         {
-            var 今日值 = _时钟().Date;
+            var todayValue = _clock().Date;
 
             // 2026-11-19 性能改造：日期标签是纯日期函数（不含实时产量），
             // 缓存后同一自然日内只算一次；日期变化自动重算。
             // 注意：产量序列【不缓存】——「当前小时」那一格取的是实时产量，
             // 缓存会让图表当前小时冻结到下一次采样，属功能退化。
-            if (_日期标签缓存 is { } 已缓存 && 已缓存.日期 == 今日值)
+            if (_dateTagBufferStore is { } cached && cached.Date == todayValue)
             {
-                return 已缓存.标签;
+                return cached.Tag;
             }
 
-            var 标签 = new string[7];
+            var Tag = new string[7];
 
-            for (var 天 = 0; 天 < 7; 天++)
+            for (var dayCount = 0; dayCount < 7; dayCount++)
             {
-                var 日期值 = 今日值.AddDays(天 - 6);
-                标签[天] = $"{日期值:MM-dd} {星期名称[(int)日期值.DayOfWeek]}";
+                var dateValue = todayValue.AddDays(dayCount - 6);
+                Tag[dayCount] = $"{dateValue:MM-dd} {starPeriodName[(int)dateValue.DayOfWeek]}";
             }
 
-            _日期标签缓存 = (今日值, 标签);
+            _dateTagBufferStore = (todayValue, Tag);
 
-            return 标签;
+            return Tag;
         }
     }
 
     /// <summary>周日期标签的按日缓存（纯日期函数，与产量样本无关）。</summary>
-    private (DateTime 日期, string[] 标签)? _日期标签缓存;
+    private (DateTime Date, string[] Tag)? _dateTagBufferStore;
 
     // ── 采样与持久化 ────────────────────────────────────────────────────
 
     /// <summary>
-    /// 检查是否跨过整点并打采样点。<paramref name="指定时刻"/> 供测试注入固定时间。
+    /// 检查是否跨过整点并打采样点。<paramref name="specifiedTimestamp"/> 供测试注入固定时间。
     /// </summary>
     /// <returns>是否新增了采样点（调用方据此决定是否落盘）。</returns>
-    public bool 检查采样(DateTime? 指定时刻 = null)
+    public bool CheckSampling(DateTime? specifiedTimestamp = null)
     {
-        var 时刻值 = 指定时刻 ?? _时钟();
-        var 当前小时 = new DateTime(时刻值.Year, 时刻值.Month, 时刻值.Day, 时刻值.Hour, 0, 0);
+        var timestampValue = specifiedTimestamp ?? _clock();
+        var currentHour = new DateTime(timestampValue.Year, timestampValue.Month, timestampValue.Day, timestampValue.Hour, 0, 0);
 
-        lock (_同步)
+        lock (_sync)
         {
-            if (_样本.Count > 0)
+            if (_sample.Count > 0)
             {
-                var 最后 = _样本[^1];
+                var Last = _sample[^1];
 
                 // 时钟回拨或仍在同一小时：不打点
-                if (当前小时 <= 最后.小时起点)
+                if (currentHour <= Last.HourStartPoint)
                 {
                     return false;
                 }
 
                 // 补齐缺口小时（程序未运行期间）：沿用最后读数，这些小时产量记 0
-                var 补点 = 最后.小时起点.AddHours(1);
+                var fillPoint = Last.HourStartPoint.AddHours(1);
 
-                while (补点 < 当前小时)
+                while (fillPoint < currentHour)
                 {
-                    _样本.Add(new 产量小时样本 { 小时起点 = 补点, 累计产量 = 最后.累计产量 });
-                    补点 = 补点.AddHours(1);
+                    _sample.Add(new OutputHourSample { HourStartPoint = fillPoint, AccumulatedOutput = Last.AccumulatedOutput });
+                    fillPoint = fillPoint.AddHours(1);
                 }
             }
 
-            _样本.Add(new 产量小时样本 { 小时起点 = 当前小时, 累计产量 = _产量提供器() });
-            修剪();
+            _sample.Add(new OutputHourSample { HourStartPoint = currentHour, AccumulatedOutput = _outputProvider() });
+            Trim();
         }
 
-        _日志.LogInformation("产量小时采样：{Hour:yyyy-MM-dd HH:mm} 累计 {Count} 件", 当前小时, _样本[^1].累计产量);
+        _log.LogInformation("产量小时采样：{Hour:yyyy-MM-dd HH:mm} 累计 {Count} 件", currentHour, _sample[^1].AccumulatedOutput);
         return true;
     }
 
     /// <summary>把采样历史原子落盘 <c>data/production-history.json</c>。</summary>
-    public async Task 异步保存()
+    public async Task SaveAsync()
     {
-        List<产量小时样本> 快照;
+        List<OutputHourSample> Snapshot;
 
-        lock (_同步)
+        lock (_sync)
         {
-            快照 = [.. _样本];
+            Snapshot = [.. _sample];
         }
 
         try
         {
-            Directory.CreateDirectory(配置路径.数据目录);
-            var JSON文本 = JsonSerializer.Serialize(new 产量历史文件 { 样本集合 = 快照 }, JSON配置.写入);
-            await 原子文件.异步写入全部文本(配置路径.产量历史, JSON文本).ConfigureAwait(false);
+            Directory.CreateDirectory(ConfigPath.DataDirectory);
+            var jsonText = JsonSerializer.Serialize(new OutputHistoryFile { SampleCollection = Snapshot }, JsonConfig.Write);
+            await AtomicFile.WriteAllTextAsync(ConfigPath.OutputHistory, jsonText).ConfigureAwait(false);
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "产量统计历史落盘失败：{Path}", 配置路径.产量历史);
+            _log.LogError(exception, "产量统计历史落盘失败：{Path}", ConfigPath.OutputHistory);
         }
     }
 
     /// <inheritdoc />
-    public Task StartAsync(CancellationToken 取消令牌)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        加载();
+        Load();
 
         // 启动即打一个基准样本：当前小时之后的实时产量从这里起算
-        检查采样();
+        CheckSampling();
 
-        _取消令牌源 = new CancellationTokenSource();
-        _工作线程 = Task.Run(() => 异步运行(_取消令牌源.Token));
-        统计已变更?.Invoke(this, EventArgs.Empty);
+        _cancellationTokenSource = new CancellationTokenSource();
+        _workerThread = Task.Run(() => RunAsync(_cancellationTokenSource.Token));
+        statisticsChanged?.Invoke(this, EventArgs.Empty);
 
-        _日志.LogInformation("产量统计服务已启动（15s 检查 / 整点采样）");
+        _log.LogInformation("产量统计服务已启动（15s 检查 / 整点采样）");
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public async Task StopAsync(CancellationToken 取消令牌)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_取消令牌源 is null)
+        if (_cancellationTokenSource is null)
         {
             return;
         }
 
-        await _取消令牌源.CancelAsync().ConfigureAwait(false);
+        await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
 
-        if (_工作线程 is not null)
+        if (_workerThread is not null)
         {
             try
             {
-                await _工作线程.WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(false);
+                await _workerThread.WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -229,99 +229,99 @@ public sealed class 产量统计服务 : IHostedService, IAsyncDisposable, 产�
             }
         }
 
-        await 异步保存().ConfigureAwait(false);
-        _日志.LogInformation("产量统计服务已停止（{Count} 个小时样本）", _样本.Count);
+        await SaveAsync().ConfigureAwait(false);
+        _log.LogInformation("产量统计服务已停止（{Count} 个小时样本）", _sample.Count);
     }
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        if (_取消令牌源 is not null)
+        if (_cancellationTokenSource is not null)
         {
             await StopAsync(CancellationToken.None).ConfigureAwait(false);
-            _取消令牌源.Dispose();
-            _取消令牌源 = null;
+            _cancellationTokenSource.Dispose();
+            _cancellationTokenSource = null;
         }
     }
 
-    private async Task 异步运行(CancellationToken 取消令牌)
+    private async Task RunAsync(CancellationToken cancellationToken)
     {
-        while (!取消令牌.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(采样间隔, 取消令牌).ConfigureAwait(false);
+                await Task.Delay(samplingInterval, cancellationToken).ConfigureAwait(false);
 
-                if (检查采样())
+                if (CheckSampling())
                 {
-                    await 异步保存().ConfigureAwait(false);
-                    通知更新();
+                    await SaveAsync().ConfigureAwait(false);
+                    NotifyUpdate();
                     continue;
                 }
 
                 // 当前小时实时值变化（产量在涨）也要推给图表
-                var 实时值 = 当前小时实时产量();
+                var realtimeValue = CurrentHourRealtimeOutput();
 
-                if (Math.Abs(实时值 - _上次实时小时产量) > 0.001)
+                if (Math.Abs(realtimeValue - _lastRealtimeHourlyOutput) > 0.001)
                 {
-                    _上次实时小时产量 = 实时值;
-                    通知更新();
+                    _lastRealtimeHourlyOutput = realtimeValue;
+                    NotifyUpdate();
                 }
             }
             catch (OperationCanceledException)
             {
                 break;
             }
-            catch (Exception 异常)
+            catch (Exception exception)
             {
-                _日志.LogError(异常, "产量统计循环异常，继续下一轮");
+                _log.LogError(exception, "产量统计循环异常，继续下一轮");
             }
         }
     }
 
-    private void 通知更新() => 统计已变更?.Invoke(this, EventArgs.Empty);
+    private void NotifyUpdate() => statisticsChanged?.Invoke(this, EventArgs.Empty);
 
-    private void 加载()
+    private void Load()
     {
-        lock (_同步)
+        lock (_sync)
         {
-            _样本.Clear();
+            _sample.Clear();
 
-            var 结果值 = 配置文件加载器.加载JSON<产量历史文件>(配置路径.产量历史, JSON配置.读取, _日志);
-            _健康?.上报("产量统计历史", 结果值);
+            var resultValue = ConfigFileLoader.LoadJson<OutputHistoryFile>(ConfigPath.OutputHistory, JsonConfig.Read, _log);
+            _health?.Report("产量统计历史", resultValue);
 
-            if (结果值.值?.样本集合 is not null)
+            if (resultValue.Value?.SampleCollection is not null)
             {
-                _样本.AddRange(结果值.值.样本集合
-                    .Where(条目项 => 条目项.小时起点 != default)
-                    .OrderBy(条目项 => 条目项.小时起点));
+                _sample.AddRange(resultValue.Value.SampleCollection
+                    .Where(EntryItem => EntryItem.HourStartPoint != default)
+                    .OrderBy(EntryItem => EntryItem.HourStartPoint));
             }
 
-            if (结果值.加载结果 == 加载结果分类.已加载)
+            if (resultValue.loadResult == LoadResultSplitCategory.Loaded)
             {
-                _日志.LogInformation("已加载 {Count} 个产量小时样本，来自 {Path}",
-                    _样本.Count, 配置路径.产量历史);
+                _log.LogInformation("已加载 {Count} 个产量小时样本，来自 {Path}",
+                    _sample.Count, ConfigPath.OutputHistory);
             }
         }
     }
 
-    private void 修剪()
+    private void Trim()
     {
-        var 下限 = _时钟().Date.AddDays(-(保留天数 - 1));
-        _样本.RemoveAll(条目项 => 条目项.小时起点 < 下限);
+        var lowerLimit = _clock().Date.AddDays(-(RetainDays - 1));
+        _sample.RemoveAll(EntryItem => EntryItem.HourStartPoint < lowerLimit);
     }
 
-    private IReadOnlyList<double> 取小时序列(int 天偏移)
+    private IReadOnlyList<double> GetHourIndexColumn(int daysOffset)
     {
-        var 起始日期 = _时钟().Date.AddDays(-天偏移);
-        var 结果 = new double[24];
+        var startDate = _clock().Date.AddDays(-daysOffset);
+        var result = new double[24];
 
-        for (var 小时 = 0; 小时 < 24; 小时++)
+        for (var hour = 0; hour < 24; hour++)
         {
-            结果[小时] = 小时产量(起始日期.AddHours(小时));
+            result[hour] = HourlyOutput(startDate.AddHours(hour));
         }
 
-        return 结果;
+        return result;
     }
 
     /// <summary>
@@ -329,62 +329,62 @@ public sealed class 产量统计服务 : IHostedService, IAsyncDisposable, 产�
     /// <para>差值为负说明计数器被清零（数据清除），产量取下一快照值；
     /// 没有下一快照时：今天的当前小时用实时值，历史末端缺口记 0。</para>
     /// </summary>
-    private double 小时产量(DateTime 小时起点值)
+    private double HourlyOutput(DateTime hourStartPointValue)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            var 本点 = 查找样本(小时起点值);
+            var thisPoint = FindSample(hourStartPointValue);
 
-            if (本点 is null)
+            if (thisPoint is null)
             {
                 return 0;
             }
 
-            var 下点 = 查找样本(小时起点值.AddHours(1));
+            var downPoint = FindSample(hourStartPointValue.AddHours(1));
 
-            if (下点 is not null)
+            if (downPoint is not null)
             {
-                var 差值 = 下点.累计产量 - 本点.累计产量;
-                return 差值 >= 0 ? 差值 : 下点.累计产量;
+                var delta = downPoint.AccumulatedOutput - thisPoint.AccumulatedOutput;
+                return delta >= 0 ? delta : downPoint.AccumulatedOutput;
             }
 
-            var 当前小时 = new DateTime(_时钟().Year, _时钟().Month, _时钟().Day, _时钟().Hour, 0, 0);
+            var currentHour = new DateTime(_clock().Year, _clock().Month, _clock().Day, _clock().Hour, 0, 0);
 
-            if (小时起点值 == 当前小时)
+            if (hourStartPointValue == currentHour)
             {
-                var 当前累计 = _产量提供器();
-                var 实时差 = 当前累计 - 本点.累计产量;
-                return 实时差 >= 0 ? 实时差 : 当前累计;
+                var currentAccumulated = _outputProvider();
+                var realtimeDifference = currentAccumulated - thisPoint.AccumulatedOutput;
+                return realtimeDifference >= 0 ? realtimeDifference : currentAccumulated;
             }
 
             return 0;
         }
     }
 
-    private double 当前小时实时产量()
+    private double CurrentHourRealtimeOutput()
     {
-        var 时刻值 = _时钟();
-        return 小时产量(new DateTime(时刻值.Year, 时刻值.Month, 时刻值.Day, 时刻值.Hour, 0, 0));
+        var timestampValue = _clock();
+        return HourlyOutput(new DateTime(timestampValue.Year, timestampValue.Month, timestampValue.Day, timestampValue.Hour, 0, 0));
     }
 
-    private 产量小时样本? 查找样本(DateTime 小时起点值)
+    private OutputHourSample? FindSample(DateTime hourStartPointValue)
     {
         // 列表按时间有序且无重复：二分比 FirstOrDefault 稳。
         // 2026-11-19 性能改造：比较器提为静态字段 —— 原先每次调用都
         // Comparer<T>.Create 分配一个委托对象，而图表刷新一次就要扇出上百次查找。
-        var 序号 = _样本.BinarySearch(
-            new 产量小时样本 { 小时起点 = 小时起点值 }, 样本比较器);
+        var Sequence = _sample.BinarySearch(
+            new OutputHourSample { HourStartPoint = hourStartPointValue }, sampleComparer);
 
-        return 序号 >= 0 ? _样本[序号] : null;
+        return Sequence >= 0 ? _sample[Sequence] : null;
     }
 
     /// <summary>按「小时起点」比较两个产量样本（静态复用，避免每次二分都新建委托）。</summary>
-    private static readonly Comparer<产量小时样本> 样本比较器 =
-        Comparer<产量小时样本>.Create((甲, 乙) => 甲.小时起点.CompareTo(乙.小时起点));
+    private static readonly Comparer<OutputHourSample> sampleComparer =
+        Comparer<OutputHourSample>.Create((item, item2) => item.HourStartPoint.CompareTo(item2.HourStartPoint));
 
     /// <summary>与 <c>data/production-history.json</c> 的顶层结构对应。</summary>
-    private sealed class 产量历史文件
+    private sealed class OutputHistoryFile
     {
-        public List<产量小时样本>? 样本集合 { get; set; }
+        public List<OutputHourSample>? SampleCollection { get; set; }
     }
 }

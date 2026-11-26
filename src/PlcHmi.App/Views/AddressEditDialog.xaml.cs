@@ -1,9 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图;
+namespace PlcHmi.App.Views;
 
 /// <summary>
 /// 页面地址编辑器（仅管理员入口）。
@@ -13,145 +13,145 @@ namespace 上位机.应用.视图;
 ///
 /// <para>只负责收集输入；权限守卫与地址格式校验在服务层。</para>
 /// </summary>
-public partial class 地址编辑对话框 : Window
+public partial class AddressEditDialog : Window
 {
     /// <summary>可选数据类型（辅助地址用）。</summary>
-    private static readonly string[] 全类型选项 =
+    private static readonly string[] allTypeOptions =
         ["Float32", "UInt16", "Int16", "Int32", "UInt32", "布尔"];
 
     /// <summary>一行的可编辑状态。</summary>
-    public sealed partial class 地址行 : ObservableObject
+    public sealed partial class AddressRow : ObservableObject
     {
-        private readonly 地址编辑项 _项;
+        private readonly AddressEditItem _item;
 
-        [ObservableProperty] private string _名称 = string.Empty;
-        [ObservableProperty] private string _地址文本 = string.Empty;
-        [ObservableProperty] private string _数据类型文本 = "Float32";
-        [ObservableProperty] private bool _结构体成员;
+        [ObservableProperty] private string _name = string.Empty;
+        [ObservableProperty] private string _addressText = string.Empty;
+        [ObservableProperty] private string _dataTypeText = "Float32";
+        [ObservableProperty] private bool _structMember;
 
-        public 地址行(地址编辑项 项)
+        public AddressRow(AddressEditItem Item)
         {
-            _项 = 项;
-            名称 = 项.名称;
-            地址文本 = 项.地址文本;
-            数据类型文本 = string.IsNullOrWhiteSpace(项.数据类型文本) ? "Float32" : 项.数据类型文本;
-            结构体成员 = 项.结构体成员;
+            _item = Item;
+            Name = Item.Name;
+            AddressText = Item.AddressText;
+            DataTypeText = string.IsNullOrWhiteSpace(Item.DataTypeText) ? "Float32" : Item.DataTypeText;
+            StructMember = Item.StructMember;
         }
 
         /// <summary>类别（分组表头）。</summary>
-        public string 类别 => _项.类别;
+        public string Category => _item.Category;
 
         /// <summary>底层条目（回写用）。</summary>
-        public 地址编辑项 项 => _项;
+        public AddressEditItem Item => _item;
 
         /// <summary>是否允许删除。</summary>
-        public bool 可删除 => _项.可删除;
+        public bool Deletable => _item.Deletable;
 
         /// <summary>是否允许修改数据类型（只有辅助地址是任意 D 区数值；动作按钮是 M 区线圈）。</summary>
-        public bool 可改类型 => string.Equals(_项.类别, "辅助地址", StringComparison.Ordinal);
+        public bool CanChangeType => string.Equals(_item.Category, "辅助地址", StringComparison.Ordinal);
 
         /// <summary>是否显示"结构体成员"勾选框（仅点胶页的辅助地址）。</summary>
-        public bool 可设结构体成员 => _项.可设结构体成员;
+        public bool SettableStructMember => _item.SettableStructMember;
 
         /// <summary>成员地址由结构体布局算出，编辑器里不能再手改。</summary>
-        public bool 地址可编辑 => !结构体成员;
+        public bool AddressEditable => !StructMember;
 
-        partial void On结构体成员Changed(bool value) => OnPropertyChanged(nameof(地址可编辑));
+        partial void OnStructMemberChanged(bool value) => OnPropertyChanged(nameof(AddressEditable));
 
         /// <summary>数据类型下拉项。</summary>
-        public IReadOnlyList<string> 类型选项 => 全类型选项;
+        public IReadOnlyList<string> TypeOptions => allTypeOptions;
     }
 
-    private readonly 地址编辑请求 _请求;
-    private readonly List<地址行> _已删除 = new();
+    private readonly AddressEditRequest _request;
+    private readonly List<AddressRow> _deleted = new();
 
-    private 地址编辑对话框(地址编辑请求 请求)
+    private AddressEditDialog(AddressEditRequest Request)
     {
         InitializeComponent();
 
-        _请求 = 请求;
-        标题控件.Text = $"地址编辑 · {请求.标题}";
+        _request = Request;
+        TitleWidget.Text = $"地址编辑 · {Request.Title}";
 
-        foreach (var 项 in 请求.项集合)
+        foreach (var Item in Request.ItemCollection)
         {
-            行集合.Add(new 地址行(项));
+            RowCollection.Add(new AddressRow(Item));
         }
 
         DataContext = this;
     }
 
     /// <summary>可编辑行集合（供分组视图绑定）。</summary>
-    public ObservableCollection<地址行> 行集合 { get; } = new();
+    public ObservableCollection<AddressRow> RowCollection { get; } = new();
 
     /// <summary>弹出编辑器。返回是否保存（保存时已就地写回请求对象）。</summary>
-    public static bool 显示(地址编辑请求 请求)
+    public static bool Show(AddressEditRequest Request)
     {
-        var 对话框 = new 地址编辑对话框(请求)
+        var Dialog = new AddressEditDialog(Request)
         {
             Owner = Application.Current.MainWindow,
         };
 
-        return 对话框.ShowDialog() == true;
+        return Dialog.ShowDialog() == true;
     }
 
     /// <summary>仅供自检使用：实例化但不显示。</summary>
-    internal static Window 创建验证() => new 地址编辑对话框(new 地址编辑请求
+    internal static Window CreateVerify() => new AddressEditDialog(new AddressEditRequest
     {
-        标题 = "自检",
-        默认分组 = "自检",
-        项集合 =
+        Title = "自检",
+        DefaultGroup = "自检",
+        ItemCollection =
         [
-            new 地址编辑项 { 类别 = "点表列", 键 = "X", 名称 = "X坐标基址", 地址文本 = "D2500" },
+            new AddressEditItem { Category = "点表列", Key = "X", Name = "X坐标基址", AddressText = "D2500" },
         ],
     });
 
-    private void 新增辅助地址(object 发送者, RoutedEventArgs 事件参数)
+    private void AddAuxAddress(object sender, RoutedEventArgs eventArgs)
     {
         // 上限按「本页分组」统计：分组匹配口径与服务层一致（空分组视为全局元件）。
-        var 本页分组 = _请求.默认分组;
-        var 本页数量 = 行集合.Count(行 =>
-            行.类别 == "辅助地址" && 分组匹配(行.项.分组, 本页分组));
+        var thisPageGroup = _request.DefaultGroup;
+        var thisPageCount = RowCollection.Count(Row =>
+            Row.Category == "辅助地址" && GroupMatch(Row.Item.Group, thisPageGroup));
 
-        if (本页数量 >= 辅助地址项.每组上限)
+        if (thisPageCount >= AuxAddressItem.perGroupUpperLimit)
         {
-            消息文本.Text = $"「{本页分组}」分组的辅助地址已达 {辅助地址项.每组上限} 个上限，不能再新增。";
+            MessageText.Text = $"「{thisPageGroup}」分组的辅助地址已达 {AuxAddressItem.perGroupUpperLimit} 个上限，不能再新增。";
             return;
         }
 
-        var 序号 = 下一个未占用键("辅助地址");
+        var Sequence = NextNotOccupiedKey("辅助地址");
 
-        行集合.Add(new 地址行(new 地址编辑项
+        RowCollection.Add(new AddressRow(new AddressEditItem
         {
-            类别 = "辅助地址",
-            键 = $"辅助地址{序号}",
-            名称 = $"新辅助地址{序号}",
-            地址文本 = "D0",
-            数据类型文本 = "Float32",
-            分组 = _请求.默认分组,
-            可删除 = true,
-            新增 = true,
+            Category = "辅助地址",
+            Key = $"辅助地址{Sequence}",
+            Name = $"新辅助地址{Sequence}",
+            AddressText = "D0",
+            DataTypeText = "Float32",
+            Group = _request.DefaultGroup,
+            Deletable = true,
+            Insert = true,
 
             // 新条目跟随本页口径：点胶页的辅助地址才有"结构体成员"这个概念
-            可设结构体成员 = 行集合.Any(行 => 行.可设结构体成员),
+            SettableStructMember = RowCollection.Any(Row => Row.SettableStructMember),
         }));
     }
 
-    private void 新增动作按钮(object 发送者, RoutedEventArgs 事件参数)
+    private void AddActionButton(object sender, RoutedEventArgs eventArgs)
     {
-        var 序号 = 下一个未占用键("动作");
+        var Sequence = NextNotOccupiedKey("动作");
 
-        行集合.Add(new 地址行(new 地址编辑项
+        RowCollection.Add(new AddressRow(new AddressEditItem
         {
-            类别 = "动作按钮",
-            键 = $"动作{序号}",
-            名称 = $"新动作按钮{序号}",
+            Category = "动作按钮",
+            Key = $"动作{Sequence}",
+            Name = $"新动作按钮{Sequence}",
 
             // 新增按钮默认按"脉冲 M 区线圈"处理
-            地址文本 = "M0",
-            数据类型文本 = "布尔",
-            分组 = _请求.默认分组,
-            可删除 = true,
-            新增 = true,
+            AddressText = "M0",
+            DataTypeText = "布尔",
+            Group = _request.DefaultGroup,
+            Deletable = true,
+            Insert = true,
         }));
     }
 
@@ -161,84 +161,84 @@ public partial class 地址编辑对话框 : Window
     /// （如 辅助地址7/8/9/11）会撞键；服务层一旦全局按键就地更新，撞键即覆盖旧项。
     /// 这里改为扫描全部已知键取第一个空位。</para>
     /// </summary>
-    private int 下一个未占用键(string 前缀)
+    private int NextNotOccupiedKey(string prefix)
     {
         // 已知占用键 = 当前表格里的行 + 请求原始项 + 本次会话已删除的行。
         // 已删除项在保存前仍留在服务层配置里，不能复用它的键，否则又撞上残留项。
-        var 占用键 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var occupiedKey = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var 行 in 行集合)
+        foreach (var Row in RowCollection)
         {
-            占用键.Add(行.项.键);
+            occupiedKey.Add(Row.Item.Key);
         }
 
-        foreach (var 项 in _请求.项集合)
+        foreach (var Item in _request.ItemCollection)
         {
-            占用键.Add(项.键);
+            occupiedKey.Add(Item.Key);
         }
 
-        foreach (var 行 in _已删除)
+        foreach (var Row in _deleted)
         {
-            占用键.Add(行.项.键);
+            occupiedKey.Add(Row.Item.Key);
         }
 
         // 占用键最多 Count 个，检查前 Count+1 个编号必有空位（鸽巢原理），循环必定终止。
-        for (var 序号 = 1; 序号 <= 占用键.Count + 1; 序号++)
+        for (var Sequence = 1; Sequence <= occupiedKey.Count + 1; Sequence++)
         {
-            if (!占用键.Contains($"{前缀}{序号}"))
+            if (!occupiedKey.Contains($"{prefix}{Sequence}"))
             {
-                return 序号;
+                return Sequence;
             }
         }
 
-        throw new InvalidOperationException($"前缀「{前缀}」的键已用尽。");
+        throw new InvalidOperationException($"前缀「{prefix}」的键已用尽。");
     }
 
     /// <summary>分组匹配（空分组视为全局元件，与页面地址服务同口径）。</summary>
-    private static bool 分组匹配(string 元件分组, string 页面分组) =>
-        string.IsNullOrWhiteSpace(元件分组)
-        || string.IsNullOrWhiteSpace(页面分组)
-        || string.Equals(元件分组, 页面分组, StringComparison.OrdinalIgnoreCase);
+    private static bool GroupMatch(string componentGroup, string PageGroup) =>
+        string.IsNullOrWhiteSpace(componentGroup)
+        || string.IsNullOrWhiteSpace(PageGroup)
+        || string.Equals(componentGroup, PageGroup, StringComparison.OrdinalIgnoreCase);
 
-    private void 删除行(object 发送者, RoutedEventArgs 事件参数)
+    private void DeleteRow(object sender, RoutedEventArgs eventArgs)
     {
-        if (发送者 is not FrameworkElement 元素 || 元素.DataContext is not 地址行 行)
+        if (sender is not FrameworkElement ElementItem || ElementItem.DataContext is not AddressRow Row)
         {
             return;
         }
 
-        行集合.Remove(行);
+        RowCollection.Remove(Row);
 
-        if (!行.项.新增)
+        if (!Row.Item.Insert)
         {
-            _已删除.Add(行);
+            _deleted.Add(Row);
         }
     }
 
-    private void 确认(object 发送者, RoutedEventArgs 事件参数)
+    private void Confirm(object sender, RoutedEventArgs eventArgs)
     {
-        foreach (var 行 in 行集合)
+        foreach (var Row in RowCollection)
         {
-            if (string.IsNullOrWhiteSpace(行.地址文本))
+            if (string.IsNullOrWhiteSpace(Row.AddressText))
             {
-                消息文本.Text = $"「{行.名称}」的地址不能为空。";
+                MessageText.Text = $"「{Row.Name}」的地址不能为空。";
                 return;
             }
 
-            行.项.名称 = 行.名称.Trim();
-            行.项.地址文本 = 行.地址文本.Trim();
-            行.项.数据类型文本 = 行.数据类型文本;
-            行.项.结构体成员 = 行.结构体成员;
+            Row.Item.Name = Row.Name.Trim();
+            Row.Item.AddressText = Row.AddressText.Trim();
+            Row.Item.DataTypeText = Row.DataTypeText;
+            Row.Item.StructMember = Row.StructMember;
         }
 
-        _请求.项集合.Clear();
-        _请求.项集合.AddRange(行集合.Select(行 => 行.项));
+        _request.ItemCollection.Clear();
+        _request.ItemCollection.AddRange(RowCollection.Select(Row => Row.Item));
 
-        _请求.已删除项.Clear();
-        _请求.已删除项.AddRange(_已删除.Select(行 => 行.项));
+        _request.DeletedItem.Clear();
+        _request.DeletedItem.AddRange(_deleted.Select(Row => Row.Item));
 
         DialogResult = true;
     }
 
-    private void 取消(object 发送者, RoutedEventArgs 事件参数) => DialogResult = false;
+    private void Cancel(object sender, RoutedEventArgs eventArgs) => DialogResult = false;
 }

@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
-using 上位机.应用.服务;
-using 上位机.核心.模型;
+using PlcHmi.App.Services;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>
 /// <see cref="点表基类视图模型"/> 的「辅助地址」部分（partial）。
@@ -14,39 +14,39 @@ namespace 上位机.应用.视图模型;
 ///
 /// <para>从主文件拆出：主文件已顶到项目规模门禁（400 行）。</para>
 /// </summary>
-public abstract partial class 点表示教视图模型
+public abstract partial class PointTableTeachViewModel
 {
     // ── 辅助地址 ────────────────────────────────────────────────────────
 
     /// <summary>辅助地址「实时读写」的统一实现（2026-11-12）：填完即写 + 周期回读 + 手动使能拦截。</summary>
-    private readonly 辅助地址实时写入手柄 _辅助地址写入;
+    private readonly AuxAddressRealtimeWriteHandle _auxAddressWrite;
 
     /// <summary>
     /// 读取全部辅助地址的当前值。
-    /// <para>失败向上抛给调用方：命令走 <see cref="界面命令.异步执行"/> 会记日志并提示操作员；
+    /// <para>失败向上抛给调用方：命令走 <see cref="UiCommand.ExecuteAsync"/> 会记日志并提示操作员；
     /// 页面初始化失败由主视图模型的"即发即忘"兜底。这里不再各自吞掉异常——
     /// 否则"读取没反应"会变成查不出原因的现象。</para>
     /// </summary>
-    protected Task 异步读取辅助地址() =>
+    protected Task ReadAuxAddressAsync() =>
         // 2026-11-19 性能改造：与周期回读共用同一套合并读取（上限 30 行后逐行读会连发 30 个请求）
-        辅助地址行视图模型.异步批量刷新(辅助地址集合);
+        AuxAddressRowViewModel.BatchRefreshAsync(AuxAddressCollection);
 
     /// <summary>按配置创建一行辅助地址（实时写入的回调与可编辑状态由共享手柄统一挂上）。</summary>
-    private 辅助地址行视图模型 创建辅助地址行(辅助地址项 项) =>
-        _辅助地址写入.创建(项, 页面地址服务);
+    private AuxAddressRowViewModel CreateAuxAddressRow(AuxAddressItem Item) =>
+        _auxAddressWrite.Create(Item, PageAddressService);
 
     /// <summary>按当前配置重建辅助地址行（改地址后刷新用）。</summary>
-    protected void 重建辅助地址()
+    protected void RebuildAuxAddress()
     {
-        辅助地址集合.Clear();
+        AuxAddressCollection.Clear();
 
-        foreach (var 项 in 页面地址服务.辅助地址(分组))
+        foreach (var Item in PageAddressService.AuxAddress(Group))
         {
-            辅助地址集合.Add(创建辅助地址行(项));
+            AuxAddressCollection.Add(CreateAuxAddressRow(Item));
         }
 
         // 新建的行默认是第 0 点：必须立刻对齐到当前选中点，否则会"改着第 3 点、读到第 1 点"
-        刷新辅助地址点号();
+        RefreshAuxAddressPointNumber();
     }
 
     /// <summary>
@@ -54,10 +54,10 @@ public abstract partial class 点表示教视图模型
     /// <para>改辅助地址的当前值等于改工艺参数，必须与点动 / 动作按钮同一道门：
     /// 没开手动使能就只能看，不能改。</para>
     /// </summary>
-    private void 刷新辅助地址可编辑() => _辅助地址写入.刷新可编辑(辅助地址集合);
+    private void RefreshAuxAddressEditable() => _auxAddressWrite.RefreshEditable(AuxAddressCollection);
 
     /// <summary>周期回读辅助地址的显示值（2026-11-12：不再需要按「读取」）。</summary>
-    protected Task 异步刷新辅助地址值() => _辅助地址写入.异步刷新值(辅助地址集合);
+    protected Task RefreshAuxAddressValueAsync() => _auxAddressWrite.RefreshValueAsync(AuxAddressCollection);
 
 
     /// <summary>
@@ -70,36 +70,36 @@ public abstract partial class 点表示教视图模型
     /// 点序号可能没变，但摘要与每行地址都必须重算——此前只按点序号刷新，
     /// 于是长度从 8 改成 7 之后界面还写着 "× 8"、成员地址也停在旧偏移（D3506 而不是 D3505）。</para>
     /// </summary>
-    private void 刷新辅助地址点号()
+    private void RefreshAuxAddressPointNumber()
     {
-        if (辅助地址集合.Count == 0)
+        if (AuxAddressCollection.Count == 0)
         {
-            辅助地址摘要 = string.Empty;
+            AuxAddressSummary = string.Empty;
             return;
         }
 
-        foreach (var 行项 in 辅助地址集合)
+        foreach (var rowItem in AuxAddressCollection)
         {
-            行项.点序号 = 选中序号;
-            行项.刷新地址();   // 点序号没变也要重算：成员偏移 / 长度可能刚被改过
+            rowItem.PointSequence = SelectedIndex;
+            rowItem.RefreshAddress();   // 点序号没变也要重算：成员偏移 / 长度可能刚被改过
         }
 
-        var 数组行 = 辅助地址集合.Where(行项 => 行项.是结构体数组).ToList();
+        var arrayRow = AuxAddressCollection.Where(rowItem => rowItem.IsStructArray).ToList();
 
-        if (数组行.Count == 0)
+        if (arrayRow.Count == 0)
         {
-            辅助地址摘要 = string.Empty;
+            AuxAddressSummary = string.Empty;
             return;
         }
 
         // 基址 / 长度取全组成员的极值：保存时已统一，这里仍按极值算，手工改 JSON 造成的不一致也不会算出坏地址
-        var 基址 = 数组行.Min(行项 => 行项.定义.结构体基址);
-        var 长度 = 数组行.Max(行项 => 行项.定义.结构体长度);
-        var 起始 = 基址 + 选中序号 * 长度;
+        var BaseAddress = arrayRow.Min(rowItem => rowItem.Definition.StructBaseAddress);
+        var length = arrayRow.Max(rowItem => rowItem.Definition.StructLength);
+        var StartAt = BaseAddress + SelectedIndex * length;
 
-        辅助地址摘要 = $"当前为第 {选中序号 + 1} 点 · 地址 D{起始}–D{起始 + 长度 - 1}"
-                        + $"（基址 D{基址} + 点序号 × {长度}，共 {数组行.Count} 个成员）";
+        AuxAddressSummary = $"当前为第 {SelectedIndex + 1} 点 · 地址 D{StartAt}–D{StartAt + length - 1}"
+                        + $"（基址 D{BaseAddress} + 点序号 × {length}，共 {arrayRow.Count} 个成员）";
 
-        异步安全调用.即发即忘(异步读取辅助地址, _日志, "读取当前点辅助地址");
+        SafeInvokeAsync.FireAndForget(ReadAuxAddressAsync, _log, "读取当前点辅助地址");
     }
 }

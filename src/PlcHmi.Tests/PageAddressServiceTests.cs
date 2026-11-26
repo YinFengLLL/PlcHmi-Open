@@ -1,14 +1,14 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.通信.仿真;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Communication.Simulation;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 页面地址服务测试。
@@ -18,90 +18,90 @@ namespace 上位机.上位机测试;
 /// "这个按钮地址改不了，只能去改 JSON"的返工。同时它承担管理员权限边界。</para>
 /// </summary>
 [Collection("config-files")]
-public class 页面地址服务测试
+public class PageAddressServiceTest
 {
     /// <summary>全部拒绝的权限守卫（仅测试用）。</summary>
-    private sealed class 拒绝全部权限守卫 : 权限守卫接口
+    private sealed class RejectAllPermissionGuard : IPermissionGuard
     {
-        public void 要求(权限 权限项) =>
-            throw new UnauthorizedAccessException($"测试：缺少「{权限项}」权限。");
+        public void WantRequire(Permission permissionItem) =>
+            throw new UnauthorizedAccessException($"测试：缺少「{permissionItem}」权限。");
     }
 
-    private static 页面地址服务 新服务(权限守卫接口 守卫, Modbus客户端接口 连接)
+    private static PageAddressService NewService(IPermissionGuard guard, IModbusClient Connect)
     {
-        var 解析器 = new 汇川地址解析器(PLC系列.小型PLC);
+        var Parser = new InovanceAddressParser(PlcSeries.SmallPlc);
 
-        return new 页面地址服务(
-            连接,
-            new 标签写入器(连接, new 标签仓储(NullLogger<标签仓储>.Instance), 解析器,
-                NullLogger<标签写入器>.Instance),
-            配方配置加载器.加载(out _),
-            守卫,
-            NullLogger<页面地址服务>.Instance);
+        return new PageAddressService(
+            Connect,
+            new TagWriter(Connect, new TagRepository(NullLogger<TagRepository>.Instance), Parser,
+                NullLogger<TagWriter>.Instance),
+            RecipeConfigLoader.Load(out _),
+            guard,
+            NullLogger<PageAddressService>.Instance);
     }
 
     [Fact]
-    public async Task 收集锁附页应覆盖全部五类元件()
+    public async Task CollectSetScrewPageShouldOverwriteAllFiveCategoryComponent()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
-        var 列表 = 服务实例.收集点表页("锁附");
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
+        var list = serviceInstance.CollectSetPointTablePage("锁附");
 
         // 点表列：X / Y / 浮高
-        var 点表列 = 列表.Where(项 => 项.类别 == "点表列").ToList();
-        Assert.Equal(3, 点表列.Count);
-        Assert.Contains(点表列, 项 => 项.键 == "浮高" && 项.地址文本 == "D2620");
+        var pointTableColumn = list.Where(Item => Item.Category == "点表列").ToList();
+        Assert.Equal(3, pointTableColumn.Count);
+        Assert.Contains(pointTableColumn, Item => Item.Key == "浮高" && Item.AddressText == "D2620");
 
         // 动作按钮、点动、回零、辅助地址都要收齐
-        Assert.Contains(列表, 项 => 项.类别 == "动作按钮" && 项.名称 == "电机复位");
-        Assert.Contains(列表, 项 => 项.类别 == "点动" && 项.键 == "X|正转" && 项.地址文本 == "M1002");
-        Assert.Contains(列表, 项 => 项.类别 == "回零" && 项.键 == "ZZ" && 项.地址文本 == "M443");
-        Assert.Contains(列表, 项 => 项.类别 == "辅助地址" && 项.键 == "上料点Y" && 项.可删除);
+        Assert.Contains(list, Item => Item.Category == "动作按钮" && Item.Name == "电机复位");
+        Assert.Contains(list, Item => Item.Category == "点动" && Item.Key == "X|正转" && Item.AddressText == "M1002");
+        Assert.Contains(list, Item => Item.Category == "回零" && Item.Key == "ZZ" && Item.AddressText == "M443");
+        Assert.Contains(list, Item => Item.Category == "辅助地址" && Item.Key == "上料点Y" && Item.Deletable);
 
         // 锁附页只收锁附分组的点动轴（X/Y/Z/ZZ），不收点胶轴
-        Assert.DoesNotContain(列表, 项 => 项.类别 == "点动" && 项.键.StartsWith("GlueX", StringComparison.Ordinal));
+        Assert.DoesNotContain(list, Item => Item.Category == "点动" && Item.Key.StartsWith("GlueX", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task 收集点胶页应只含点胶分组的轴()
+    public async Task CollectSetDispensePageShouldOnlyHasDispenseGroupAxis()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
-        var 列表 = 服务实例.收集点表页("点胶");
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
+        var list = serviceInstance.CollectSetPointTablePage("点胶");
 
-        var 点动轴 = 列表
-            .Where(项 => 项.类别 == "点动")
-            .Select(项 => 项.键.Split('|')[0])
+        var jogAxis = list
+            .Where(Item => Item.Category == "点动")
+            .Select(Item => Item.Key.Split('|')[0])
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         // 点胶 X / Y（与锁附 Y 共轴）/ Z
-        Assert.Equal(3, 点动轴.Count);
-        Assert.Contains("GlueX", 点动轴);
-        Assert.Contains("Y", 点动轴);
-        Assert.Contains("GlueZ", 点动轴);
+        Assert.Equal(3, jogAxis.Count);
+        Assert.Contains("GlueX", jogAxis);
+        Assert.Contains("Y", jogAxis);
+        Assert.Contains("GlueZ", jogAxis);
 
         // 指令码列也在点表列里
-        Assert.Contains(列表, 项 => 项.类别 == "点表列" && 项.键 == "指令码" && 项.地址文本 == "D3400");
+        Assert.Contains(list, Item => Item.Category == "点表列" && Item.Key == "指令码" && Item.AddressText == "D3400");
     }
 
     [Fact]
-    public async Task 收集标定页应含中心点偏移与标定启动()
+    public async Task CollectSetCalibrationPageShouldContainCenterOffsetAndCalibrationStart()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
-        var 列表 = 服务实例.收集标定页();
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
+        var list = serviceInstance.CollectSetCalibrationPage();
 
         // 地址对齐现场稳定版（2026-11-10 现场配置为准）：上相机 X/Y/Z = D1650 / D1652 / D1554、
         // 偏移 D1654、启动 M84（现场把标定启动从 M82 挪到 M84，M83 留给下相机）
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "X" && 项.地址文本 == "D1650");
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "Y" && 项.地址文本 == "D1652");
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "Z" && 项.地址文本 == "D1554");
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "偏移量" && 项.地址文本 == "D1654");
-        Assert.Contains(列表, 项 => 项.类别 == "标定按钮" && 项.键 == "启动" && 项.地址文本 == "M84");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "X" && Item.AddressText == "D1650");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "Y" && Item.AddressText == "D1652");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "Z" && Item.AddressText == "D1554");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "偏移量" && Item.AddressText == "D1654");
+        Assert.Contains(list, Item => Item.Category == "标定按钮" && Item.Key == "启动" && Item.AddressText == "M84");
 
         // 固定标定按钮不再有「移至指定位置」（现场改用「标定」分组的可配置动作按钮）
-        Assert.DoesNotContain(列表, 项 => 项.类别 == "标定按钮" && 项.名称.Contains("移至", StringComparison.Ordinal));
+        Assert.DoesNotContain(list, Item => Item.Category == "标定按钮" && Item.Name.Contains("移至", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -110,20 +110,20 @@ public class 页面地址服务测试
     /// 与上相机的 X / Z 重键会把两套地址写串（改下相机会把上相机改掉）。</para>
     /// </summary>
     [Fact]
-    public async Task 收集标定页应含下相机三项且没有Y()
+    public async Task CollectSetCalibrationPageShouldContainBottomCameraThreeItemAndNoHasY()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
-        var 列表 = 服务实例.收集标定页();
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
+        var list = serviceInstance.CollectSetCalibrationPage();
 
         // 现场配置已带下相机 X/Z（2026-11-10 现场稳定版）：X=D1660 / Z=D1556、偏移沿用 D1664、启动 M83
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "下相机X" && 项.地址文本 == "D1660");
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "下相机Z" && 项.地址文本 == "D1556");
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "下相机偏移量" && 项.地址文本 == "D1664");
-        Assert.Contains(列表, 项 => 项.类别 == "标定按钮" && 项.键 == "下相机启动" && 项.地址文本 == "M83");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "下相机X" && Item.AddressText == "D1660");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "下相机Z" && Item.AddressText == "D1556");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "下相机偏移量" && Item.AddressText == "D1664");
+        Assert.Contains(list, Item => Item.Category == "标定按钮" && Item.Key == "下相机启动" && Item.AddressText == "M83");
 
         // 下相机没有 Y：不得出现「下相机Y」这一行
-        Assert.DoesNotContain(列表, 项 => 项.键.Contains("下相机Y", StringComparison.Ordinal));
+        Assert.DoesNotContain(list, Item => Item.Key.Contains("下相机Y", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -132,35 +132,35 @@ public class 页面地址服务测试
     /// 下相机从 3608 起排——一旦地址写重叠，两个字段会互相覆盖寄存器（值看着像"随机跳"）。</para>
     /// </summary>
     [Fact]
-    public void 出厂配置_下相机应只有X与Z且地址不与上相机重叠()
+    public void FactoryConfig_BottomCameraShouldOnlyHasXAndZAndAddressNotAndTopCameraOverlap()
     {
-        var 配置项 = 配方配置加载器.加载(out _).标定;
+        var configItem = RecipeConfigLoader.Load(out _).Calibration;
 
-        Assert.Equal(2, 配置项.下相机中心点.Count);
-        Assert.Equal(["X", "Z"], 配置项.下相机中心点.Select(字段项 => 字段项.键).ToArray());
-        Assert.Null(配置项.查找下相机("Y"));   // 下相机没有 Y
+        Assert.Equal(2, configItem.BottomCameraCenter.Count);
+        Assert.Equal(["X", "Z"], configItem.BottomCameraCenter.Select(fieldItem => fieldItem.Key).ToArray());
+        Assert.Null(configItem.FindBottomCamera("Y"));   // 下相机没有 Y
 
         // 全部标定字段（上相机 X/Y/Z + 上相机偏移 + 下相机 X/Z + 下相机偏移）两两不重叠
-        var 区间列表 = 配置项.中心点
-            .Concat([配置项.每点偏移])
-            .Concat(配置项.下相机中心点)
-            .Concat([配置项.下相机每点偏移])
-            .Select(字段项 => (字段项.显示名称, 起: 字段项.基址, 止: 字段项.基址 + 字段项.寄存器数量 - 1))
+        var areaBetweenList = configItem.Center
+            .Concat([configItem.PerPointOffset])
+            .Concat(configItem.BottomCameraCenter)
+            .Concat([configItem.BottomCameraPerPointOffset])
+            .Select(fieldItem => (fieldItem.DisplayName, begin: fieldItem.BaseAddress, stop: fieldItem.BaseAddress + fieldItem.RegisterCount - 1))
             .ToList();
 
-        for (var 甲 = 0; 甲 < 区间列表.Count; 甲++)
+        for (var item = 0; item < areaBetweenList.Count; item++)
         {
-            for (var 乙 = 甲 + 1; 乙 < 区间列表.Count; 乙++)
+            for (var item2 = item + 1; item2 < areaBetweenList.Count; item2++)
             {
-                var 交叉 = 区间列表[甲].起 <= 区间列表[乙].止 && 区间列表[乙].起 <= 区间列表[甲].止;
+                var commitCross = areaBetweenList[item].begin <= areaBetweenList[item2].stop && areaBetweenList[item2].begin <= areaBetweenList[item].stop;
 
-                Assert.False(交叉,
-                    $"{区间列表[甲].显示名称}(D{区间列表[甲].起}) 与 {区间列表[乙].显示名称}(D{区间列表[乙].起}) 地址重叠");
+                Assert.False(commitCross,
+                    $"{areaBetweenList[item].DisplayName}(D{areaBetweenList[item].begin}) 与 {areaBetweenList[item2].DisplayName}(D{areaBetweenList[item2].begin}) 地址重叠");
             }
         }
 
         // 两个启动按钮也必须是不同的 M 位（同址会同时触发两台相机的标定）
-        Assert.NotEqual(配置项.启动地址, 配置项.下相机启动地址);
+        Assert.NotEqual(configItem.StartAddress, configItem.BottomCameraStartAddress);
     }
 
     /// <summary>
@@ -168,233 +168,233 @@ public class 页面地址服务测试
     /// 键前缀写错就会"改下相机、上相机跟着变"（数据串位，现场极难查）。
     /// </summary>
     [Fact]
-    public async Task 保存标定页_下相机地址不得写串到上相机()
+    public async Task SaveCalibrationPage_BottomCameraAddressMustNotWriteSerialToTopCamera()
     {
-        var 配方路径 = 配置路径.配方配置;
-        var 原始 = await File.ReadAllTextAsync(配方路径);
+        var recipePath = ConfigPath.RecipeConfig;
+        var Original = await File.ReadAllTextAsync(recipePath);
 
         try
         {
-            await using var 客户端 = new 替身Modbus客户端();
-            var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
+            await using var Client = new FakeModbusClient();
+            var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
 
-            var 项集合 = 服务实例.收集标定页().ToList();
+            var ItemCollection = serviceInstance.CollectSetCalibrationPage().ToList();
 
             // 3748 / 3750：避开点胶结构体数组（D3500–D3739）与其它点（3760 起）
-            项集合.First(项 => 项.键 == "下相机X").地址文本 = "D3748";
-            项集合.First(项 => 项.键 == "下相机偏移量").地址文本 = "D3750";
-            项集合.First(项 => 项.键 == "下相机启动").地址文本 = "M430";
+            ItemCollection.First(Item => Item.Key == "下相机X").AddressText = "D3748";
+            ItemCollection.First(Item => Item.Key == "下相机偏移量").AddressText = "D3750";
+            ItemCollection.First(Item => Item.Key == "下相机启动").AddressText = "M430";
 
-            await 服务实例.异步保存标定页(new 地址编辑请求
+            await serviceInstance.SaveCalibrationPageAsync(new AddressEditRequest
             {
-                标题 = "标定 · 其它点",
-                项集合 = 项集合,
+                Title = "标定 · 其它点",
+                ItemCollection = ItemCollection,
             });
 
             // 从磁盘重新加载：同时验证"已落盘"（服务内部快照是另一个对象）
-            var 配置项 = 配方配置加载器.加载(out _).标定;
-            Assert.Equal(3748, 配置项.查找下相机("X")!.基址);
-            Assert.Equal(3750, 配置项.下相机每点偏移.基址);
-            Assert.Equal("M430", 配置项.下相机启动地址);
+            var configItem = RecipeConfigLoader.Load(out _).Calibration;
+            Assert.Equal(3748, configItem.FindBottomCamera("X")!.BaseAddress);
+            Assert.Equal(3750, configItem.BottomCameraPerPointOffset.BaseAddress);
+            Assert.Equal("M430", configItem.BottomCameraStartAddress);
 
             // 上相机三项必须原封不动（现场地址：X=D1650、偏移=D1654、启动 M84）
-            Assert.Equal(1650, 配置项.查找中心点("X")!.基址);
-            Assert.Equal(1654, 配置项.每点偏移.基址);
-            Assert.Equal("M84", 配置项.启动地址);
+            Assert.Equal(1650, configItem.FindCenter("X")!.BaseAddress);
+            Assert.Equal(1654, configItem.PerPointOffset.BaseAddress);
+            Assert.Equal("M84", configItem.StartAddress);
         }
         finally
         {
-            await File.WriteAllTextAsync(配方路径, 原始);
+            await File.WriteAllTextAsync(recipePath, Original);
         }
     }
 
     [Fact]
-    public async Task 非管理员保存应被拒绝()
+    public async Task NonAdminSaveShouldBeRejected()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(new 拒绝全部权限守卫(), 客户端);
-        var 请求 = new 地址编辑请求
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(new RejectAllPermissionGuard(), Client);
+        var Request = new AddressEditRequest
         {
-            标题 = "锁附示教",
-            项集合 = 服务实例.收集点表页("锁附").ToList(),
+            Title = "锁附示教",
+            ItemCollection = serviceInstance.CollectSetPointTablePage("锁附").ToList(),
         };
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => 服务实例.异步保存点表页("锁附", 请求));
+            () => serviceInstance.SavePointTablePageAsync("锁附", Request));
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => 服务实例.异步保存标定页(请求));
+            () => serviceInstance.SaveCalibrationPageAsync(Request));
     }
 
     [Fact]
-    public async Task 保存点表页应写回点表列与辅助地址()
+    public async Task SavePointTablePageShouldWriteBackPointTableColumnAndAuxAddress()
     {
-        var 配方路径 = 配置路径.配方配置;
-        var 原始 = await File.ReadAllTextAsync(配方路径);
+        var recipePath = ConfigPath.RecipeConfig;
+        var Original = await File.ReadAllTextAsync(recipePath);
 
         try
         {
-            await using var 客户端 = new 替身Modbus客户端();
-            var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
-            var 请求 = new 地址编辑请求
+            await using var Client = new FakeModbusClient();
+            var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
+            var Request = new AddressEditRequest
             {
-                标题 = "锁附示教",
-                默认分组 = "锁附",
-                项集合 = 服务实例.收集点表页("锁附").ToList(),
+                Title = "锁附示教",
+                DefaultGroup = "锁附",
+                ItemCollection = serviceInstance.CollectSetPointTablePage("锁附").ToList(),
             };
 
-            var X列 = 请求.项集合.First(项 => 项.类别 == "点表列" && 项.键 == "X");
-            X列.地址文本 = "D2450";
+            var xColumn = Request.ItemCollection.First(Item => Item.Category == "点表列" && Item.Key == "X");
+            xColumn.AddressText = "D2450";
 
-            var 上料点Y = 请求.项集合.First(项 => 项.类别 == "辅助地址" && 项.键 == "上料点Y");
-            上料点Y.地址文本 = "D2684";
+            var onMaterialPointY = Request.ItemCollection.First(Item => Item.Category == "辅助地址" && Item.Key == "上料点Y");
+            onMaterialPointY.AddressText = "D2684";
 
             // 删除一个辅助地址
-            var 待删 = 请求.项集合.First(项 => 项.类别 == "辅助地址" && 项.键 == "辅助地址11");
-            请求.项集合.Remove(待删);
-            请求.已删除项.Add(待删);
+            var pendingDelete = Request.ItemCollection.First(Item => Item.Category == "辅助地址" && Item.Key == "辅助地址11");
+            Request.ItemCollection.Remove(pendingDelete);
+            Request.DeletedItem.Add(pendingDelete);
 
-            await 服务实例.异步保存点表页("锁附", 请求);
+            await serviceInstance.SavePointTablePageAsync("锁附", Request);
 
-            var 文本 = await File.ReadAllTextAsync(配方路径);
-            Assert.Contains("2450", 文本, StringComparison.Ordinal);
-            Assert.Contains("D2684", 文本, StringComparison.Ordinal);
-            Assert.DoesNotContain("辅助地址11", 文本, StringComparison.Ordinal);
+            var Text = await File.ReadAllTextAsync(recipePath);
+            Assert.Contains("2450", Text, StringComparison.Ordinal);
+            Assert.Contains("D2684", Text, StringComparison.Ordinal);
+            Assert.DoesNotContain("辅助地址11", Text, StringComparison.Ordinal);
         }
         finally
         {
-            await File.WriteAllTextAsync(配方路径, 原始);
+            await File.WriteAllTextAsync(recipePath, Original);
         }
     }
 
     [Fact]
-    public async Task 保存点表页应可新增与删除动作按钮()
+    public async Task SavePointTablePageShouldBeAbleToAddAndDeleteActionButton()
     {
-        var 配方路径 = 配置路径.配方配置;
-        var 原始 = await File.ReadAllTextAsync(配方路径);
+        var recipePath = ConfigPath.RecipeConfig;
+        var Original = await File.ReadAllTextAsync(recipePath);
 
         try
         {
-            await using var 客户端 = new 替身Modbus客户端();
-            var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
-            var 请求 = new 地址编辑请求
+            await using var Client = new FakeModbusClient();
+            var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
+            var Request = new AddressEditRequest
             {
-                标题 = "锁附示教",
-                默认分组 = "锁附",
-                项集合 = 服务实例.收集点表页("锁附").ToList(),
+                Title = "锁附示教",
+                DefaultGroup = "锁附",
+                ItemCollection = serviceInstance.CollectSetPointTablePage("锁附").ToList(),
             };
 
-            请求.项集合.Add(new 地址编辑项
+            Request.ItemCollection.Add(new AddressEditItem
             {
-                类别 = "动作按钮",
-                键 = "锁附-自定义动作",
-                名称 = "自定义动作",
-                地址文本 = "M499",
-                数据类型文本 = "布尔",
-                分组 = "锁附",
-                可删除 = true,
-                新增 = true,
+                Category = "动作按钮",
+                Key = "锁附-自定义动作",
+                Name = "自定义动作",
+                AddressText = "M499",
+                DataTypeText = "布尔",
+                Group = "锁附",
+                Deletable = true,
+                Insert = true,
             });
 
-            var 待删 = 请求.项集合.First(项 => 项.类别 == "动作按钮" && 项.键 == "锁附-电批启动");
-            请求.项集合.Remove(待删);
-            请求.已删除项.Add(待删);
+            var pendingDelete = Request.ItemCollection.First(Item => Item.Category == "动作按钮" && Item.Key == "锁附-电批启动");
+            Request.ItemCollection.Remove(pendingDelete);
+            Request.DeletedItem.Add(pendingDelete);
 
-            await 服务实例.异步保存点表页("锁附", 请求);
+            await serviceInstance.SavePointTablePageAsync("锁附", Request);
 
-            var 配置 = 配方配置加载器.加载(out _);
-            var 新按钮 = 配置.动作按钮.FirstOrDefault(项 => 项.键 == "锁附-自定义动作");
-            Assert.NotNull(新按钮);
-            Assert.Equal("M499", 新按钮!.地址);
-            Assert.Equal("锁附", 新按钮.分组);
-            Assert.DoesNotContain(配置.动作按钮, 项 => 项.键 == "锁附-电批启动");
+            var Config = RecipeConfigLoader.Load(out _);
+            var newButton = Config.ActionButton.FirstOrDefault(Item => Item.Key == "锁附-自定义动作");
+            Assert.NotNull(newButton);
+            Assert.Equal("M499", newButton!.Address);
+            Assert.Equal("锁附", newButton.Group);
+            Assert.DoesNotContain(Config.ActionButton, Item => Item.Key == "锁附-电批启动");
         }
         finally
         {
-            await File.WriteAllTextAsync(配方路径, 原始);
+            await File.WriteAllTextAsync(recipePath, Original);
         }
     }
 
     [Fact]
-    public async Task 标定页应可新增动作按钮与辅助地址()
+    public async Task CalibrationPageShouldBeAbleToAddActionButtonAndAuxAddress()
     {
-        var 配方路径 = 配置路径.配方配置;
-        var 原始 = await File.ReadAllTextAsync(配方路径);
+        var recipePath = ConfigPath.RecipeConfig;
+        var Original = await File.ReadAllTextAsync(recipePath);
 
         try
         {
-            await using var 客户端 = new 替身Modbus客户端();
-            var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
+            await using var Client = new FakeModbusClient();
+            var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
 
-            var 请求 = new 地址编辑请求
+            var Request = new AddressEditRequest
             {
-                标题 = "标定 · 其它点",
-                默认分组 = "标定",
-                项集合 = 服务实例.收集标定页().ToList(),
+                Title = "标定 · 其它点",
+                DefaultGroup = "标定",
+                ItemCollection = serviceInstance.CollectSetCalibrationPage().ToList(),
             };
 
-            请求.项集合.Add(new 地址编辑项
+            Request.ItemCollection.Add(new AddressEditItem
             {
-                类别 = "动作按钮",
-                键 = "标定-确认",
-                名称 = "标定确认",
-                地址文本 = "M498",
-                数据类型文本 = "布尔",
-                分组 = "标定",
-                可删除 = true,
-                新增 = true,
+                Category = "动作按钮",
+                Key = "标定-确认",
+                Name = "标定确认",
+                AddressText = "M498",
+                DataTypeText = "布尔",
+                Group = "标定",
+                Deletable = true,
+                Insert = true,
             });
 
-            请求.项集合.Add(new 地址编辑项
+            Request.ItemCollection.Add(new AddressEditItem
             {
-                类别 = "辅助地址",
-                键 = "标定-中心偏差",
-                名称 = "中心偏差",
-                地址文本 = "D3748",
-                数据类型文本 = "Float32",
-                分组 = "标定",
-                可删除 = true,
-                新增 = true,
+                Category = "辅助地址",
+                Key = "标定-中心偏差",
+                Name = "中心偏差",
+                AddressText = "D3748",
+                DataTypeText = "Float32",
+                Group = "标定",
+                Deletable = true,
+                Insert = true,
             });
 
-            await 服务实例.异步保存标定页(请求);
+            await serviceInstance.SaveCalibrationPageAsync(Request);
 
-            var 配置 = 配方配置加载器.加载(out _);
-            Assert.Contains(配置.动作按钮, 项 => 项.键 == "标定-确认" && 项.地址 == "M498" && 项.分组 == "标定");
-            Assert.Contains(配置.辅助地址, 项 => 项.键 == "标定-中心偏差" && 项.地址 == "D3748");
+            var Config = RecipeConfigLoader.Load(out _);
+            Assert.Contains(Config.ActionButton, Item => Item.Key == "标定-确认" && Item.Address == "M498" && Item.Group == "标定");
+            Assert.Contains(Config.AuxAddress, Item => Item.Key == "标定-中心偏差" && Item.Address == "D3748");
 
             // 保存后应能被重新收集（页面刷新依据）
-            Assert.Contains(服务实例.收集标定页(), 项 => 项.类别 == "动作按钮" && 项.键 == "标定-确认");
+            Assert.Contains(serviceInstance.CollectSetCalibrationPage(), Item => Item.Category == "动作按钮" && Item.Key == "标定-确认");
         }
         finally
         {
-            await File.WriteAllTextAsync(配方路径, 原始);
+            await File.WriteAllTextAsync(recipePath, Original);
         }
     }
 
     [Fact]
-    public async Task 辅助地址应可写入并读回()
+    public async Task AuxAddressShouldBeAbleToWriteAndReadBack()
     {
-        await using var 设备 = new 虚拟PLC设备(NullLogger<虚拟PLC设备>.Instance);
-        await using var 客户端 = new 仿真Modbus客户端(设备, NullLogger<仿真Modbus客户端>.Instance);
-        await 客户端.异步连接();
+        await using var Device = new VirtualPlcDevice(NullLogger<VirtualPlcDevice>.Instance);
+        await using var Client = new SimulationModbusClient(Device, NullLogger<SimulationModbusClient>.Instance);
+        await Client.ConnectAsync();
 
-        var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
-        var 项 = 服务实例.辅助地址("锁附").First(甲 => 甲.键 == "上料点Y");
+        var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
+        var Item = serviceInstance.AuxAddress("锁附").First(item => item.Key == "上料点Y");
 
-        await 服务实例.异步写入辅助地址(项, 123.45);
+        await serviceInstance.WriteAuxAddressAsync(Item, 123.45);
 
-        var 回读 = await 服务实例.异步读取辅助地址(项);
-        Assert.Equal(123.45, 回读, 2);
+        var ReadBack = await serviceInstance.ReadAuxAddressAsync(Item);
+        Assert.Equal(123.45, ReadBack, 2);
     }
 
     [Fact]
-    public async Task 未连接时读取辅助地址应返回零()
+    public async Task DisconnectedWhenReadAuxAddressShouldReturnZero()
     {
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = 新服务(new 允许全部权限守卫(), 客户端);
-        var 项 = 服务实例.辅助地址("锁附").First(甲 => 甲.键 == "上料点Y");
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = NewService(new AllowAllPermissionGuard(), Client);
+        var Item = serviceInstance.AuxAddress("锁附").First(item => item.Key == "上料点Y");
 
-        Assert.Equal(0, await 服务实例.异步读取辅助地址(项));
+        Assert.Equal(0, await serviceInstance.ReadAuxAddressAsync(Item));
     }
 }

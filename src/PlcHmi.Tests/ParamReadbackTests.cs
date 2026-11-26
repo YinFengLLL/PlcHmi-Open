@@ -1,12 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 参数页延时表 / 按钮表的 <b>PLC 回读</b>回归（2026-10-17 现场要求）。
@@ -20,199 +20,199 @@ namespace 上位机.上位机测试;
 /// 因此本组用例<b>自带一份参数表</b>再跑——延时回读的语义与工厂里有没有延时无关。</para>
 /// </summary>
 [Collection("config-files")]
-public class 参数回读测试
+public class ParameterReadBackTest
 {
     /// <summary>用例自带的参数表：两条 DINT 延时（D1000 / D1002）+ 一条按钮（M5000）。</summary>
-    private const string 测试参数表 = """
+    private const string testParameterTable = """
         {
-          "延迟集合": [
+          "delayCollection": [
             {
-              "标识": "t1",
-              "名称": "测试延时1",
-              "地址": "D1000",
-              "单元": "s",
-              "最小": 0,
-              "最大": 2147483.647,
-              "启用": true,
-              "顺序": 1
+              "id": "t1",
+              "name": "测试延时1",
+              "address": "D1000",
+              "unit": "s",
+              "min": 0,
+              "max": 2147483.647,
+              "enabled": true,
+              "order": 1
             },
             {
-              "标识": "t2",
-              "名称": "测试延时2",
-              "地址": "D1002",
-              "单元": "s",
-              "最小": 0,
-              "最大": 2147483.647,
-              "启用": true,
-              "顺序": 2
+              "id": "t2",
+              "name": "测试延时2",
+              "address": "D1002",
+              "unit": "s",
+              "min": 0,
+              "max": 2147483.647,
+              "enabled": true,
+              "order": 2
             }
           ],
-          "按钮集合": [
+          "buttonCollection": [
             {
-              "标识": "b1",
-              "名称": "测试按钮",
-              "地址": "M5000",
-              "启用": true,
-              "顺序": 1
+              "id": "b1",
+              "name": "测试按钮",
+              "address": "M5000",
+              "enabled": true,
+              "order": 1
             }
           ]
         }
         """;
 
     /// <summary>
-    /// 装上测试参数表并构造被测服务。返回的 <c>原始</c> 必须写回（<see cref="恢复"/>）。
+    /// 装上测试参数表并构造被测服务。返回的 <c>原始</c> 必须写回（<see cref="Recover"/>）。
     /// </summary>
-    private static async Task<(string 原始, 参数表格服务 服务, 替身Modbus客户端 客户端)> 新建服务()
+    private static async Task<(string Original, ParameterTableService Service, FakeModbusClient Client)> NewBuildService()
     {
-        var 路径 = 配置路径.参数表格;
-        var 原始 = await File.ReadAllTextAsync(路径);
-        await File.WriteAllTextAsync(路径, 测试参数表);
+        var path = ConfigPath.ParameterTable;
+        var Original = await File.ReadAllTextAsync(path);
+        await File.WriteAllTextAsync(path, testParameterTable);
 
-        var 客户端 = new 替身Modbus客户端();
-        var 解析器 = new 汇川地址解析器(PLC系列.小型PLC);
-        var 写入器 = new 标签写入器(
-            客户端, new 替身标签仓储(), 解析器, NullLogger<标签写入器>.Instance);
+        var Client = new FakeModbusClient();
+        var Parser = new InovanceAddressParser(PlcSeries.SmallPlc);
+        var Writer = new TagWriter(
+            Client, new FakeTagRepository(), Parser, NullLogger<TagWriter>.Instance);
 
-        var 服务 = new 参数表格服务(
-            解析器, 写入器, NullLogger<参数表格服务>.Instance, new 允许全部权限守卫());
+        var Service = new ParameterTableService(
+            Parser, Writer, NullLogger<ParameterTableService>.Instance, new AllowAllPermissionGuard());
 
-        await 服务.异步初始化();
+        await Service.InitializeAsync();
 
-        return (原始, 服务, 客户端);
+        return (Original, Service, Client);
     }
 
-    private static Task 恢复(string 原始) =>
-        File.WriteAllTextAsync(配置路径.参数表格, 原始);
+    private static Task Recover(string Original) =>
+        File.WriteAllTextAsync(ConfigPath.ParameterTable, Original);
 
     [Fact]
-    public async Task 回读_应读出DINT延时与按钮状态()
+    public async Task ReadBack_ShouldReadOutDintDelayAndButtonState()
     {
-        var (原始, 服务, 客户端) = await 新建服务();
+        var (Original, Service, Client) = await NewBuildService();
 
         try
         {
-            var 延时项 = 服务.延迟集合[0];   // 测试参数表第一条：D1000
-            var 按钮项 = 服务.按钮集合[0];   // 测试参数表第一条：M5000
+            var delayItem = Service.DelayCollection[0];   // 测试参数表第一条：D1000
+            var ButtonItem = Service.ButtonCollection[0];   // 测试参数表第一条：M5000
 
-            Assert.Equal("D1000", 延时项.地址);
-            Assert.Equal("M5000", 按钮项.地址);
+            Assert.Equal("D1000", delayItem.Address);
+            Assert.Equal("M5000", ButtonItem.Address);
 
             // PLC 侧的值：D1000 = 2500 ms（2.5 S，占 D1000/D1001 两字，低字在前）、M5000 = ON
-            客户端.预设保持寄存器(1000, 2500);
-            客户端.预设保持寄存器(1001, 0);
-            客户端.预设线圈(5000, true);
+            Client.PreSetHoldingRegister(1000, 2500);
+            Client.PreSetHoldingRegister(1001, 0);
+            Client.PreSetCoil(5000, true);
 
-            await 服务.异步回读();
+            await Service.ReadBackAsync();
 
-            Assert.Equal(2.5, 服务.回读延时值(延时项.标识));
-            Assert.True(服务.回读按钮状态(按钮项.标识));
+            Assert.Equal(2.5, Service.ReadBackDelayValue(delayItem.Id));
+            Assert.True(Service.ReadBackButtonState(ButtonItem.Id));
         }
         finally
         {
-            await 恢复(原始);
-            await 客户端.DisposeAsync();
+            await Recover(Original);
+            await Client.DisposeAsync();
         }
     }
 
     [Fact]
-    public async Task 回读_大延时应按32位正确换算()
+    public async Task ReadBack_LargeDelayShouldBy32BitPositiveConfirmConvert()
     {
-        var (原始, 服务, 客户端) = await 新建服务();
+        var (Original, Service, Client) = await NewBuildService();
 
         try
         {
-            var 延时项 = 服务.延迟集合[0];
+            var delayItem = Service.DelayCollection[0];
 
             // 65536 ms = 65.536 S：16 位时代装不下的值，DINT 下低字 0、高字 1
-            客户端.预设保持寄存器(1000, 0);
-            客户端.预设保持寄存器(1001, 1);
+            Client.PreSetHoldingRegister(1000, 0);
+            Client.PreSetHoldingRegister(1001, 1);
 
-            await 服务.异步回读();
+            await Service.ReadBackAsync();
 
-            Assert.Equal(65.536, 服务.回读延时值(延时项.标识));
+            Assert.Equal(65.536, Service.ReadBackDelayValue(delayItem.Id));
         }
         finally
         {
-            await 恢复(原始);
-            await 客户端.DisposeAsync();
+            await Recover(Original);
+            await Client.DisposeAsync();
         }
     }
 
     /// <summary>读不到的项只跳过自己：其余项照常回读，且不抛异常打断页面。</summary>
     [Fact]
-    public async Task 回读_单项失败不应影响其它项()
+    public async Task ReadBack_SingleItemFailedShouldNotAffectImpactOtherItem()
     {
-        var (原始, 服务, 客户端) = await 新建服务();
+        var (Original, Service, Client) = await NewBuildService();
 
         try
         {
-            var 甲 = 服务.延迟集合[0];   // D1000
-            var 乙 = 服务.延迟集合[1];   // D1002
+            var item = Service.DelayCollection[0];   // D1000
+            var item2 = Service.DelayCollection[1];   // D1002
 
             // 只预设第一条：第二条查不到（按 0），正好验证"读不到也给出确定值、不抛异常"
-            客户端.预设保持寄存器(1000, 3000);
-            客户端.预设保持寄存器(1001, 0);
+            Client.PreSetHoldingRegister(1000, 3000);
+            Client.PreSetHoldingRegister(1001, 0);
 
-            await 服务.异步回读();
+            await Service.ReadBackAsync();
 
-            Assert.Equal(3.0, 服务.回读延时值(甲.标识));
-            Assert.Equal(0.0, 服务.回读延时值(乙.标识));
+            Assert.Equal(3.0, Service.ReadBackDelayValue(item.Id));
+            Assert.Equal(0.0, Service.ReadBackDelayValue(item2.Id));
         }
         finally
         {
-            await 恢复(原始);
-            await 客户端.DisposeAsync();
+            await Recover(Original);
+            await Client.DisposeAsync();
         }
     }
 
     /// <summary>从未回读过的项返回 <c>null</c>（界面据此显示"—"而不是 0，避免误导）。</summary>
     [Fact]
-    public async Task 回读前_应返回空而不是零值()
+    public async Task ReadBackBefore_ShouldReturnEmptyInsteadOfZero()
     {
-        var (原始, 服务, 客户端) = await 新建服务();
+        var (Original, Service, Client) = await NewBuildService();
 
         try
         {
-            Assert.Null(服务.回读延时值(服务.延迟集合[0].标识));
-            Assert.Null(服务.回读按钮状态(服务.按钮集合[0].标识));
+            Assert.Null(Service.ReadBackDelayValue(Service.DelayCollection[0].Id));
+            Assert.Null(Service.ReadBackButtonState(Service.ButtonCollection[0].Id));
         }
         finally
         {
-            await 恢复(原始);
-            await 客户端.DisposeAsync();
+            await Recover(Original);
+            await Client.DisposeAsync();
         }
     }
 
     /// <summary>停用的条目不回读（地址可能已被改成别的用途，读回来反而是噪声）。</summary>
     [Fact]
-    public async Task 回读_停用条目应跳过()
+    public async Task ReadBack_StopUseEntryShouldSkip()
     {
-        var (原始, 服务, 客户端) = await 新建服务();
+        var (Original, Service, Client) = await NewBuildService();
 
         try
         {
-            var 条目 = 服务.延迟集合[0].克隆();
-            条目.启用 = false;
-            服务.更新(参数表格类别.延迟, 条目);
+            var Entry = Service.DelayCollection[0].Clone();
+            Entry.Enabled = false;
+            Service.Update(ParameterTableCategory.Delay, Entry);
 
-            客户端.预设保持寄存器(1000, 3000);
-            客户端.预设保持寄存器(1001, 0);
+            Client.PreSetHoldingRegister(1000, 3000);
+            Client.PreSetHoldingRegister(1001, 0);
 
-            await 服务.异步回读();
+            await Service.ReadBackAsync();
 
-            Assert.Null(服务.回读延时值(条目.标识));
+            Assert.Null(Service.ReadBackDelayValue(Entry.Id));
         }
         finally
         {
-            await 恢复(原始);
-            await 客户端.DisposeAsync();
+            await Recover(Original);
+            await Client.DisposeAsync();
         }
     }
 
     /// <summary>回读间隔必须是 2s（与动作按钮同节奏：够快又不挤占串行 Modbus 链路）。</summary>
     [Fact]
-    public void 回读间隔应为两秒()
+    public void ReadBackIntervalShouldAsTwoSeconds()
     {
-        Assert.Equal(TimeSpan.FromSeconds(2), 参数表格服务.回读间隔);
+        Assert.Equal(TimeSpan.FromSeconds(2), ParameterTableService.readBackInterval);
     }
 }

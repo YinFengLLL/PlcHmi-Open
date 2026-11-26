@@ -1,0 +1,132 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ════════════════════════════════════════════════════════════════
+         动效字典（v3）
+         ════════════════════════════════════════════════════════════════
+
+         三条纪律，写在这里是为了让后来改的人不必去翻文档：
+
+         1. 只动 Opacity / RenderTransform。宽度、边距、位置一律不动 ——
+            这些属性每帧都要重跑布局，在低端工控机上直接掉帧。
+
+         2. 数值绝不做补间。轴坐标、节拍、产量显示的中间帧，是设备从未
+            处于过的状态；操作员照着它判断就是事故。允许动画的只有"表示层"
+            （进度条长度、指示灯亮度、卡片出入场），不允许动画"读数层"。
+
+         3. 缓动只用 EaseOut 系，不用回弹 / 弹性。带过冲的动效在监控界面上
+            读起来像"数据在抖"，工业场景不需要这种活泼。
+
+         冻结陷阱备忘（v2 用注释回避位移、v3 用机制解决）：
+            Style Setter 里声明的 Freezable（Transform / Brush）会被冻结并在
+            所有实例间共享，动画一跑就抛"无法在冻结对象上做动画"。
+            所以位移类动画的前提是：**变换声明在使用方的元素 XAML 里**
+            （每个实例自己的 TranslateTransform / ScaleTransform），
+            样式只负责动画路径。各页面根 Grid 的 RenderTransform、
+            按钮模板根 Grid 的 ScaleTransform 都是这个用途，删不得。
+
+         关闭方式：界面自检模式（smoke / shots 命令行参数）下由 主窗口 把
+         PageTransitionStyle 与 CardEnterStyle1~3 整体替换为无触发的样式；
+         各页必须用 DynamicResource 引用，StaticResource 是换不掉的。
+
+         动效的"尊重系统减少动效设置"由各处引用点的 MultiDataTrigger 负责
+         （绑定 SystemParameters.ClientAreaAnimation），示范见 MainWindow.xaml
+         的 连接指示点 / 报警图标 —— 放在这里会与具体绑定路径耦合。
+         ════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── 页面入场：淡入 + 8px 上浮（v3）────────────────────────────
+         每次切页，ContentControl 的 DataTemplate 会重建视图实例，
+         因此根元素的 Loaded 必然重新触发 —— 这是本方案敢用 Loaded 的依据。
+
+         位移能成立的前提：各页面根 Grid 自带 TranslateTransform（见上方
+         冻结陷阱备忘）。没有声明变换的元素，位移动画静默不生效（不抛异常），
+         淡入仍然工作 —— 所以漏声明的页面只是退回 v2 的纯淡入，不是故障。
+
+         不做交叉溶解：那要求新旧两页同时留在视觉树上，切页瞬间的
+         内存与渲染开销翻倍。 -->
+    <Style x:Key="PageTransitionStyle" TargetType="FrameworkElement">
+        <Style.Triggers>
+            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                         From="0" To="1" Duration="0:0:0.22">
+                            <DoubleAnimation.EasingFunction>
+                                <CubicEase EasingMode="EaseOut" />
+                            </DoubleAnimation.EasingFunction>
+                        </DoubleAnimation>
+                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                         From="8" To="0" Duration="0:0:0.24">
+                            <DoubleAnimation.EasingFunction>
+                                <CubicEase EasingMode="EaseOut" />
+                            </DoubleAnimation.EasingFunction>
+                        </DoubleAnimation>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ── 卡片 stagger 入场（RunView 指标卡）─────────────────────────
+         逐卡 40ms 错峰淡入，引导视线从左到右扫过首屏指标。
+         BasedOn MetricCard：外观（描边 / 圆角 / hover）原样继承，
+         这里只叠加入场触发器。Setter Opacity=0 配合"只写 To 不写 From"——
+         BeginTime 之前的等待期元素保持 0，不会先闪现再淡入。
+
+         三档是最多有名字的档位：需要第四张卡时复用 CardEnterStyle3，
+         stagger 超过 3 档就变成拖延而不是引导了。 -->
+    <Style x:Key="CardEnterStyle1" TargetType="Border" BasedOn="{StaticResource MetricCard}">
+        <Setter Property="Opacity" Value="0" />
+        <Style.Triggers>
+            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                         To="1" Duration="0:0:0.25" BeginTime="0:0:0.04">
+                            <DoubleAnimation.EasingFunction>
+                                <CubicEase EasingMode="EaseOut" />
+                            </DoubleAnimation.EasingFunction>
+                        </DoubleAnimation>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="CardEnterStyle2" TargetType="Border" BasedOn="{StaticResource MetricCard}">
+        <Setter Property="Opacity" Value="0" />
+        <Style.Triggers>
+            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                         To="1" Duration="0:0:0.25" BeginTime="0:0:0.08">
+                            <DoubleAnimation.EasingFunction>
+                                <CubicEase EasingMode="EaseOut" />
+                            </DoubleAnimation.EasingFunction>
+                        </DoubleAnimation>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="CardEnterStyle3" TargetType="Border" BasedOn="{StaticResource MetricCard}">
+        <Setter Property="Opacity" Value="0" />
+        <Style.Triggers>
+            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                <BeginStoryboard>
+                    <Storyboard>
+                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                         To="1" Duration="0:0:0.25" BeginTime="0:0:0.12">
+                            <DoubleAnimation.EasingFunction>
+                                <CubicEase EasingMode="EaseOut" />
+                            </DoubleAnimation.EasingFunction>
+                        </DoubleAnimation>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+        </Style.Triggers>
+    </Style>
+
+</ResourceDictionary>

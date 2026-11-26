@@ -1,13 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using 上位机.业务;
-using 上位机.业务.配置;
-using 上位机.业务.服务;
-using 上位机.通信.Modbus;
-using 上位机.核心.抽象;
-using 上位机.核心.模型;
+using PlcHmi.Business;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 机种切换回归（2026-10-21 现场报障）。
@@ -19,70 +19,70 @@ namespace 上位机.上位机测试;
 /// <para>手动「下发机种」仍然拒绝空机种——那等于一声不响把区段清空，必须走「切换」这条确认路径。</para>
 /// </summary>
 [Collection("config-files")]
-public class 机种切换测试
+public class MachineModelSwitchTest
 {
-    private static ServiceProvider 构建运行期()
+    private static ServiceProvider BuildRuntime()
     {
-        var 设置 = 应用设置加载器.加载(out var 设置错误);
-        var 配方配置 = 配方配置加载器.加载(out var 配方错误);
+        var Settings = AppSettingsLoader.Load(out var SettingsError);
+        var RecipeConfig = RecipeConfigLoader.Load(out var recipeError);
 
-        Assert.Null(设置错误);
-        Assert.Null(配方错误);
+        Assert.Null(SettingsError);
+        Assert.Null(recipeError);
 
-        设置.PLC连接.使用模拟器 = true;
-        设置.轮询.快间隔毫秒 = 50;
-        设置.轮询.慢间隔毫秒 = 100;
-        设置.轮询.事件间隔毫秒 = 100;
+        Settings.PlcConnection.UseSimulator = true;
+        Settings.Polling.FastIntervalMilliseconds = 50;
+        Settings.Polling.SlowIntervalMilliseconds = 100;
+        Settings.Polling.EventIntervalMilliseconds = 100;
 
-        var 服务集合 = new ServiceCollection();
-        服务集合.AddLogging();
-        服务集合.添加上位机服务(设置.PLC连接, 设置.轮询, 配方配置);
-        服务集合.AddSingleton<权限守卫接口, 允许全部权限守卫>();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddLogging();
+        serviceCollection.AddPlcHmiService(Settings.PlcConnection, Settings.Polling, RecipeConfig);
+        serviceCollection.AddSingleton<IPermissionGuard, AllowAllPermissionGuard>();
 
-        return 服务集合.BuildServiceProvider(validateScopes: true);
+        return serviceCollection.BuildServiceProvider(validateScopes: true);
     }
 
     [Fact]
-    public async Task 切到没有数据的机种应成功并清空机种区段()
+    public async Task SwitchToNoHasDataMachineModelShouldSucceedAndClearEmptyMachineModelSection()
     {
-        await using var 提供者 = 构建运行期();
-        var 托管 = 提供者.GetRequiredService<IHostedService>();
-        await 托管.StartAsync(CancellationToken.None);
+        await using var provider = BuildRuntime();
+        var hosting = provider.GetRequiredService<IHostedService>();
+        await hosting.StartAsync(CancellationToken.None);
 
-        var 客户端 = 提供者.GetRequiredService<Modbus客户端接口>();
-        var 配方 = 提供者.GetRequiredService<配方服务接口>();
+        var Client = provider.GetRequiredService<IModbusClient>();
+        var Recipe = provider.GetRequiredService<IRecipeService>();
 
-        var 原号 = 配方.当前配方号;
-        var 目标号 = 原号 == 20 ? 19 : 20;
+        var originalNumber = Recipe.CurrentRecipeNumber;
+        var targetNumber = originalNumber == 20 ? 19 : 20;
 
         try
         {
             // 目标机种确保是"没有数据"的空机种
-            await 配方.异步写入机种快照(目标号, new Dictionary<int, int>());
-            Assert.Empty(配方.区段快照(目标号));
+            await Recipe.WriteMachineModelSnapshotAsync(targetNumber, new Dictionary<int, int>());
+            Assert.Empty(Recipe.SectionSnapshot(targetNumber));
 
             // PLC 里先放旧机种的残留数据（机种区段内）
-            await 客户端.异步写入多个寄存器(2500, [1, 2, 3]);
+            await Client.WriteMultiRegisterAsync(2500, [1, 2, 3]);
 
-            await 配方.异步切换(目标号);
+            await Recipe.SwitchAsync(targetNumber);
 
             // 切换生效：内存与 PLC 的机种号都变了
-            Assert.Equal(目标号, 配方.当前配方号);
-            Assert.Equal(目标号, (await 客户端.异步读取保持寄存器(3330, 1))[0]);
+            Assert.Equal(targetNumber, Recipe.CurrentRecipeNumber);
+            Assert.Equal(targetNumber, (await Client.ReadHoldingRegisterAsync(3330, 1))[0]);
 
             // 空机种下发 = 区段整段清零（不留上一机种的点位）
-            var 区段首字 = await 客户端.异步读取保持寄存器(2500, 3);
-            Assert.All(区段首字, 值 => Assert.Equal(0, 值));
+            var sectionFirstWord = await Client.ReadHoldingRegisterAsync(2500, 3);
+            Assert.All(sectionFirstWord, Value => Assert.Equal(0, Value));
         }
         finally
         {
             // 还原当前机种号，避免影响同集合里的其它用例
-            if (配方.当前配方号 != 原号)
+            if (Recipe.CurrentRecipeNumber != originalNumber)
             {
-                await 配方.异步切换(原号);
+                await Recipe.SwitchAsync(originalNumber);
             }
 
-            await 托管.StopAsync(CancellationToken.None);
+            await hosting.StopAsync(CancellationToken.None);
         }
     }
 }

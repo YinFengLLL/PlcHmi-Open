@@ -1,6 +1,6 @@
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.配置;
+namespace PlcHmi.Business.Configuration;
 
 /// <summary>
 /// 点胶页「参数模式」固定按钮的出厂定义与<b>老现场配置补齐</b>（2026-10-21 现场要求）。
@@ -13,46 +13,46 @@ namespace 上位机.业务.配置;
 /// 老文件里没有这条动作按钮 → 新版本装上后按钮不会出现（现场表现为"功能没生效"）。
 /// 这里在加载时补一条配置（并随下一次保存落盘），管理员可照常改地址。</para>
 /// </summary>
-public static class 参数模式按钮缺省
+public static class ParameterModeButtonDefault
 {
     /// <summary>按钮键（配置内唯一）。</summary>
-    public const string 键 = "点胶-参数模式";
+    public const string Key = "点胶-参数模式";
 
     /// <summary>所属页面分组。</summary>
-    public const string 分组 = "点胶";
+    public const string Group = "点胶";
 
     /// <summary>M 区缺省地址（现场口径）。</summary>
-    public const string 缺省地址 = "M5006";
+    public const string defaultAddress = "M5006";
 
     /// <summary>状态 0 文字。</summary>
-    public const string 状态0文本 = "默认参数";
+    public const string State0Text = "默认参数";
 
     /// <summary>状态 1 文字。</summary>
-    public const string 状态1文本 = "独立参数";
+    public const string State1Text = "独立参数";
 
     /// <summary>给缺少该按钮的配置补一条；返回补齐条数（0 = 已存在，无需补齐）。</summary>
-    public static int 应用(配方配置 配置对象)
+    public static int App(RecipeConfig configPairObject)
     {
-        ArgumentNullException.ThrowIfNull(配置对象);
+        ArgumentNullException.ThrowIfNull(configPairObject);
 
-        if (配置对象.动作按钮.Any(项 => 项.固定
-                && string.Equals(项.分组, 分组, StringComparison.OrdinalIgnoreCase)))
+        if (configPairObject.ActionButton.Any(Item => Item.Fixed
+                && string.Equals(Item.Group, Group, StringComparison.OrdinalIgnoreCase)))
         {
             return 0;
         }
 
         // 插到最前：即使别处按配置顺序展示，它也是第一个（服务层另有"固定按钮排首位"的排序）
-        配置对象.动作按钮.Insert(0, new 动作按钮项
+        configPairObject.ActionButton.Insert(0, new ActionButtonItem
         {
-            键 = 键,
-            名称 = "参数模式",
-            分组 = 分组,
-            地址 = 缺省地址,
-            是否脉冲 = false,
-            是否危险 = false,
-            固定 = true,
-            状态0文本 = 状态0文本,
-            状态1文本 = 状态1文本,
+            Key = Key,
+            Name = "参数模式",
+            Group = Group,
+            Address = defaultAddress,
+            IsPulse = false,
+            IsDanger = false,
+            Fixed = true,
+            State0Text = State0Text,
+            State1Text = State1Text,
         });
 
         return 1;

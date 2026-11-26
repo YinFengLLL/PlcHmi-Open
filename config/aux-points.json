@@ -1,46 +1,46 @@
 {
-  "点位": [
+  "point": [
     {
-      "名称": "清螺丝点",
-      "X基址": 1500,
-      "Y基址": 1524,
-      "Z基址": 1540
+      "name": "清螺丝点",
+      "xBaseAddress": 1500,
+      "yBaseAddress": 1524,
+      "zBaseAddress": 1540
     },
     {
-      "名称": "吸螺丝点",
-      "X基址": 1502,
-      "Y基址": 1524,
-      "Z基址": 1542
+      "name": "吸螺丝点",
+      "xBaseAddress": 1502,
+      "yBaseAddress": 1524,
+      "zBaseAddress": 1542
     },
     {
-      "名称": "拍照mark点1",
-      "X基址": 3300,
-      "Y基址": 3320,
-      "Z基址": 3340
+      "name": "拍照mark点1",
+      "xBaseAddress": 3300,
+      "yBaseAddress": 3320,
+      "zBaseAddress": 3340
     },
     {
-      "名称": "拍照mark点2",
-      "X基址": 3302,
-      "Y基址": 3322,
-      "Z基址": 3340
+      "name": "拍照mark点2",
+      "xBaseAddress": 3302,
+      "yBaseAddress": 3322,
+      "zBaseAddress": 3340
     },
     {
-      "名称": "标定中心点",
-      "X基址": 1650,
-      "Y基址": 1652,
-      "Z基址": 1554
+      "name": "标定中心点",
+      "xBaseAddress": 1650,
+      "yBaseAddress": 1652,
+      "zBaseAddress": 1554
     },
     {
-      "名称": "下相机标定起点",
-      "X基址": 1660,
-      "Y基址": 1524,
-      "Z基址": 1556
+      "name": "下相机标定起点",
+      "xBaseAddress": 1660,
+      "yBaseAddress": 1524,
+      "zBaseAddress": 1556
     },
     {
-      "名称": "下相机拍照点",
-      "X基址": 1510,
-      "Y基址": 1524,
-      "Z基址": 1556
+      "name": "下相机拍照点",
+      "xBaseAddress": 1510,
+      "yBaseAddress": 1524,
+      "zBaseAddress": 1556
     }
   ]
 }

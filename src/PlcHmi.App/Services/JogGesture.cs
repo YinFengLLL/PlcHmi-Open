@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 
-namespace 上位机.应用.服务;
+namespace PlcHmi.App.Services;
 
 /// <summary>
 /// 「按住才动、松开即停」手势助手。
@@ -27,7 +27,7 @@ namespace 上位机.应用.服务;
 ///
 /// <para>本类只负责"手势"，异步与异常由调用方（ViewModel）自行兜底，避免在这里再引一个日志器。</para>
 /// </summary>
-internal static class 点动手势
+internal static class JogGesture
 {
     /// <summary>
     /// 把「按住才动、松开即停」挂到方向按钮上。
@@ -35,76 +35,76 @@ internal static class 点动手势
     /// <param name="button">方向按钮。<b>不要给它绑 Command</b> —— 本助手自己管按下与松开。</param>
     /// <param name="start">按下时执行（启动点动）。</param>
     /// <param name="stop">松开或任一兜底触发时执行（停止点动，必须无条件生效）。</param>
-    public static void 附加(Button 按钮项, Action 启动, Action 停止动作)
+    public static void Additional(Button ButtonItem, Action Start, Action stopAction)
     {
-        ArgumentNullException.ThrowIfNull(按钮项);
-        ArgumentNullException.ThrowIfNull(启动);
-        ArgumentNullException.ThrowIfNull(停止动作);
+        ArgumentNullException.ThrowIfNull(ButtonItem);
+        ArgumentNullException.ThrowIfNull(Start);
+        ArgumentNullException.ThrowIfNull(stopAction);
 
-        var 活动 = false;
-        Window? 主机 = null;
+        var Active = false;
+        Window? Host = null;
 
-        void 停止()
+        void Stop()
         {
-            if (!活动)
+            if (!Active)
             {
                 return;
             }
 
-            活动 = false;
+            Active = false;
 
-            if (ReferenceEquals(Mouse.Captured, 按钮项))
+            if (ReferenceEquals(Mouse.Captured, ButtonItem))
             {
                 Mouse.Capture(null);
             }
 
-            停止动作();
+            stopAction();
         }
 
-        MouseButtonEventHandler 窗口鼠标抬起 = (_, _) => 停止();
-        EventHandler 窗口停用时 = (_, _) => 停止();
+        MouseButtonEventHandler windowMouseUp = (_, _) => Stop();
+        EventHandler whenWindowDisabled = (_, _) => Stop();
 
-        按钮项.PreviewMouseLeftButtonDown += (_, _) =>
+        ButtonItem.PreviewMouseLeftButtonDown += (_, _) =>
         {
-            if (活动 || !按钮项.IsEnabled)
+            if (Active || !ButtonItem.IsEnabled)
             {
                 return;
             }
 
             // 刻意不设 e.Handled：保留按钮自带的按下视觉反馈
-            活动 = true;
-            Mouse.Capture(按钮项, CaptureMode.Element);
-            启动();
+            Active = true;
+            Mouse.Capture(ButtonItem, CaptureMode.Element);
+            Start();
         };
 
-        按钮项.PreviewMouseLeftButtonUp += (_, _) => 停止();
-        按钮项.LostMouseCapture += (_, _) => 停止();
+        ButtonItem.PreviewMouseLeftButtonUp += (_, _) => Stop();
+        ButtonItem.LostMouseCapture += (_, _) => Stop();
 
-        按钮项.Loaded += (_, _) =>
+        ButtonItem.Loaded += (_, _) =>
         {
-            主机 = Window.GetWindow(按钮项);
+            Host = Window.GetWindow(ButtonItem);
 
-            if (主机 is null)
+            if (Host is null)
             {
                 return;
             }
 
-            主机.PreviewMouseUp += 窗口鼠标抬起;
-            主机.Deactivated += 窗口停用时;
+            Host.PreviewMouseUp += windowMouseUp;
+            Host.Deactivated += whenWindowDisabled;
         };
 
-        按钮项.Unloaded += (_, _) =>
+        ButtonItem.Unloaded += (_, _) =>
         {
-            停止();
+            Stop();
 
-            if (主机 is null)
+            if (Host is null)
             {
                 return;
             }
 
-            主机.PreviewMouseUp -= 窗口鼠标抬起;
-            主机.Deactivated -= 窗口停用时;
-            主机 = null;
+            Host.PreviewMouseUp -= windowMouseUp;
+            Host.Deactivated -= whenWindowDisabled;
+            Host = null;
         };
     }
 }

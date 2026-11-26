@@ -1,36 +1,36 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using 上位机.应用.服务;
-using 上位机.核心.抽象;
-using 上位机.核心.模型;
+using PlcHmi.App.Services;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>
 /// 机种列表里的一行。
-/// <para>包一层是为了承载「是否当前机种」这个纯界面状态——<see cref="配方信息"/> 是 Core 模型，
+/// <para>包一层是为了承载「是否当前机种」这个纯界面状态——<see cref="RecipeInfo"/> 是 Core 模型，
 /// 不该知道界面选中状态。</para>
 /// </summary>
-public sealed partial class 配方行视图模型 : ObservableObject
+public sealed partial class RecipeRowViewModel : ObservableObject
 {
-    [ObservableProperty] private bool _是否当前;
+    [ObservableProperty] private bool _isCurrent;
 
-    public 配方行视图模型(配方信息 信息项, bool 是否当前)
+    public RecipeRowViewModel(RecipeInfo infoItem, bool IsCurrent)
     {
-        信息 = 信息项;
-        _是否当前 = 是否当前;
+        Info = infoItem;
+        _isCurrent = IsCurrent;
     }
 
     /// <summary>底层机种信息。</summary>
-    public 配方信息 信息 { get; }
+    public RecipeInfo Info { get; }
 
-    public int 号 => 信息.号;
-    public string 显示名称 => 信息.显示名称;
+    public int Number => Info.Number;
+    public string DisplayName => Info.DisplayName;
     /// <summary>机种数据量（区段快照中的寄存器项数）。</summary>
-    public string 数据摘要 => 信息.数据摘要;
+    public string DataSummary => Info.DataSummary;
 
-    public bool 有数据 => 信息.有数据;
+    public bool HasData => Info.HasData;
 }
 
 /// <summary>
@@ -46,45 +46,45 @@ public sealed partial class 配方行视图模型 : ObservableObject
 /// <para><b>保存机种：</b>把 PLC 当前 D2500–D3999 的实际值读回来存成该机种——
 /// 现场在示教页调好点位后，回本页点「保存机种」。</para>
 /// </summary>
-public sealed partial class 配方视图模型 : 视图模型基类
+public sealed partial class RecipeViewModel : ViewModelBase
 {
-    private readonly 配方服务接口 _配方;
-    private readonly 对话框服务接口 _对话框;
-    private readonly 文件对话框服务接口 _文件对话框;
-    private readonly ILogger<配方视图模型> _日志;
+    private readonly IRecipeService _recipe;
+    private readonly IDialogService _dialog;
+    private readonly IFileDialogService _fileDialog;
+    private readonly ILogger<RecipeViewModel> _log;
 
-    [ObservableProperty] private int _当前号 = 1;
-    [ObservableProperty] private string _当前名称 = string.Empty;
-    [ObservableProperty] private string _一致性文本 = string.Empty;
-    [ObservableProperty] private bool _有一致性问题;
+    [ObservableProperty] private int _currentNumber = 1;
+    [ObservableProperty] private string _currentName = string.Empty;
+    [ObservableProperty] private string _consistencyText = string.Empty;
+    [ObservableProperty] private bool _hasConsistencyIssue;
 
-    public 配方视图模型(
-        配方服务接口 配方项,
-        对话框服务接口 对话框集合,
-        文件对话框服务接口 文件对话框,
-        ILogger<配方视图模型> 日志)
+    public RecipeViewModel(
+        IRecipeService recipeItem,
+        IDialogService dialogCollection,
+        IFileDialogService FileDialog,
+        ILogger<RecipeViewModel> Log)
     {
-        _配方 = 配方项;
-        _对话框 = 对话框集合;
-        _文件对话框 = 文件对话框;
-        _日志 = 日志;
+        _recipe = recipeItem;
+        _dialog = dialogCollection;
+        _fileDialog = FileDialog;
+        _log = Log;
 
-        标题 = "机种管理";
-        副标题 = $"一个机种 = D{机种区段.起始}–D{机种区段.结束} 的一份数据快照 · 切换后自动下发";
+        Title = "机种管理";
+        Subtitle = $"一个机种 = D{MachineModelSection.StartAt}–D{MachineModelSection.end} 的一份数据快照 · 切换后自动下发";
 
 
-        _配方.配方已变更 += (_, _) => 在界面线程执行(刷新全部);
+        _recipe.recipeChanged += (_, _) => AtUiThreadExecute(RefreshAll);
 
-        刷新全部();
+        RefreshAll();
     }
 
     /// <summary>机种列表。</summary>
-    public 批量可观察集合<配方行视图模型> 配方集合 { get; } = new();
+    public BatchObservableCollection<RecipeRowViewModel> RecipeCollection { get; } = new();
 
     /// <inheritdoc />
-    public override Task 异步初始化()
+    public override Task InitializeAsync()
     {
-        刷新全部();
+        RefreshAll();
         return Task.CompletedTask;
     }
 
@@ -92,29 +92,29 @@ public sealed partial class 配方视图模型 : 视图模型基类
 
     /// <summary>切换到指定机种（含自动下发）。</summary>
     [RelayCommand]
-    private async Task 异步切换配方(配方行视图模型? 行项)
+    private async Task SwitchRecipeAsync(RecipeRowViewModel? rowItem)
     {
-        if (行项 is null)
+        if (rowItem is null)
         {
             return;
         }
 
-        if (行项.号 == _配方.当前配方号)
+        if (rowItem.Number == _recipe.CurrentRecipeNumber)
         {
-            _对话框.提示("无需切换", $"当前已经是机种 {行项.号:00}。");
+            _dialog.Hint("无需切换", $"当前已经是机种 {rowItem.Number:00}。");
             return;
         }
 
         // 空机种（从未保存过数据）也可以切换——新机种本来就是空白，
         // 切换后区段整段清零；现场要先能切过去才谈得上示教
-        var 空提示 = 行项.有数据
+        var emptyHint = rowItem.HasData
             ? string.Empty
             : "\n\n该机种还没有保存过数据：切换后 PLC 的机种区段会被整段清零，可随即在示教页开始示教。";
 
-        if (!_对话框.确认("切换机种",
-                $"确认切换到机种 {行项.号:00}「{行项.显示名称}」？{空提示}",
-                视图.确认等级.警告, "切换",
-                $"切换后会把该机种的 D{机种区段.起始}–D{机种区段.结束} 数据写入 PLC，"
+        if (!_dialog.Confirm("切换机种",
+                $"确认切换到机种 {rowItem.Number:00}「{rowItem.DisplayName}」？{emptyHint}",
+                Views.ConfirmLevel.Warning, "切换",
+                $"切换后会把该机种的 D{MachineModelSection.StartAt}–D{MachineModelSection.end} 数据写入 PLC，"
                 + "现场点位立即改变。轴速度等全局参数不受影响。"))
         {
             return;
@@ -122,45 +122,45 @@ public sealed partial class 配方视图模型 : 视图模型基类
 
         try
         {
-            是否忙碌 = true;
-            await _配方.异步切换(行项.号).ConfigureAwait(false);
+            IsBusy = true;
+            await _recipe.SwitchAsync(rowItem.Number).ConfigureAwait(false);
 
-            在界面线程执行(刷新全部);
+            AtUiThreadExecute(RefreshAll);
 
-            _日志.LogInformation("已切换到机种 {No}", 行项.号);
-            _对话框.提示("切换完成", $"已切换到机种 {行项.号:00}「{行项.显示名称}」，数据已下发。");
+            _log.LogInformation("已切换到机种 {No}", rowItem.Number);
+            _dialog.Hint("切换完成", $"已切换到机种 {rowItem.Number:00}「{rowItem.DisplayName}」，数据已下发。");
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "切换机种失败");
-            _对话框.错误信息("切换失败", 异常.Message);
+            _log.LogError(exception, "切换机种失败");
+            _dialog.ErrorInfo("切换失败", exception.Message);
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
     /// <summary>保存当前机种名。</summary>
     [RelayCommand]
-    private async Task 异步保存名称()
+    private async Task SaveNameAsync()
     {
         try
         {
-            是否忙碌 = true;
-            await _配方.异步重命名(_配方.当前配方号, 当前名称).ConfigureAwait(false);
+            IsBusy = true;
+            await _recipe.RenameAsync(_recipe.CurrentRecipeNumber, CurrentName).ConfigureAwait(false);
 
-            在界面线程执行(刷新全部);
-            _对话框.提示("保存成功", $"机种 {_配方.当前配方号:00} 已命名为「{当前名称}」。");
+            AtUiThreadExecute(RefreshAll);
+            _dialog.Hint("保存成功", $"机种 {_recipe.CurrentRecipeNumber:00} 已命名为「{CurrentName}」。");
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "保存机种名失败");
-            _对话框.错误信息("保存失败", 异常.Message);
+            _log.LogError(exception, "保存机种名失败");
+            _dialog.ErrorInfo("保存失败", exception.Message);
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
@@ -169,91 +169,91 @@ public sealed partial class 配方视图模型 : 视图模型基类
     /// <para>现场流程：示教页调好点位 → 回本页点「保存机种」→ 数据持久化到 recipes.json。</para>
     /// </summary>
     [RelayCommand]
-    private async Task 异步保存机种()
+    private async Task SaveMachineModelAsync()
     {
-        if (!_对话框.确认("保存机种",
-                $"把 PLC 当前的 D{机种区段.起始}–D{机种区段.结束} 数据"
-                + $"保存为机种 {_配方.当前配方号:00}「{_配方.当前配方名称}」？",
-                视图.确认等级.中性, "保存",
+        if (!_dialog.Confirm("保存机种",
+                $"把 PLC 当前的 D{MachineModelSection.StartAt}–D{MachineModelSection.end} 数据"
+                + $"保存为机种 {_recipe.CurrentRecipeNumber:00}「{_recipe.CurrentRecipeName}」？",
+                Views.ConfirmLevel.Neutral, "保存",
                 "这会覆盖该机种已保存的数据（不影响 PLC 里的当前值）。"))
         {
             return;
         }
 
-        是否忙碌 = true;
+        IsBusy = true;
 
         try
         {
-            var 成功 = await 界面命令
-                .异步执行(_日志, _对话框, "保存机种", () => _配方.异步保存机种(_配方.当前配方号))
+            var Success = await UiCommand
+                .ExecuteAsync(_log, _dialog, "保存机种", () => _recipe.SaveMachineModelAsync(_recipe.CurrentRecipeNumber))
                 .ConfigureAwait(true);
 
-            if (成功)
+            if (Success)
             {
-                在界面线程执行(刷新全部);
-                _对话框.提示("保存完成", $"机种 {_配方.当前配方号:00} 已保存当前 PLC 数据。");
+                AtUiThreadExecute(RefreshAll);
+                _dialog.Hint("保存完成", $"机种 {_recipe.CurrentRecipeNumber:00} 已保存当前 PLC 数据。");
             }
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
     /// <summary>下发机种：把当前机种的快照写到 PLC 的 D2500–D3999（不切换机种号）。</summary>
     [RelayCommand]
-    private async Task 异步下发机种()
+    private async Task SendMachineModelAsync()
     {
-        if (!_对话框.确认("下发机种",
-                $"把机种 {_配方.当前配方号:00}「{_配方.当前配方名称}」的数据下发到 PLC？",
-                视图.确认等级.警告, "下发",
-                $"PLC 的 D{机种区段.起始}–D{机种区段.结束} 会被整段覆盖，"
+        if (!_dialog.Confirm("下发机种",
+                $"把机种 {_recipe.CurrentRecipeNumber:00}「{_recipe.CurrentRecipeName}」的数据下发到 PLC？",
+                Views.ConfirmLevel.Warning, "下发",
+                $"PLC 的 D{MachineModelSection.StartAt}–D{MachineModelSection.end} 会被整段覆盖，"
                 + "确认现场无人员处于设备动作范围。"))
         {
             return;
         }
 
-        是否忙碌 = true;
+        IsBusy = true;
 
         try
         {
-            if (await 界面命令
-                    .异步执行(_日志, _对话框, "下发机种", () => _配方.异步下发机种(_配方.当前配方号))
+            if (await UiCommand
+                    .ExecuteAsync(_log, _dialog, "下发机种", () => _recipe.SendMachineModelAsync(_recipe.CurrentRecipeNumber))
                     .ConfigureAwait(true))
             {
-                _对话框.提示("下发完成", $"机种 {_配方.当前配方号:00} 的数据已写入 PLC。");
+                _dialog.Hint("下发完成", $"机种 {_recipe.CurrentRecipeNumber:00} 的数据已写入 PLC。");
             }
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
     /// <summary>重新从本地文件加载机种清单。</summary>
     [RelayCommand]
-    private void 刷新() => 刷新全部();
+    private void Refresh() => RefreshAll();
 
     // ── 内部 ───────────────────────────────────────────────────────────
 
-    private void 刷新全部()
+    private void RefreshAll()
     {
-        当前号 = _配方.当前配方号;
-        当前名称 = _配方.当前配方名称;
+        CurrentNumber = _recipe.CurrentRecipeNumber;
+        CurrentName = _recipe.CurrentRecipeName;
 
-        配方集合.替换全部(_配方.配方集合.Select(信息项 =>
-            new 配方行视图模型(信息项, 信息项.号 == _配方.当前配方号)));
+        RecipeCollection.ReplaceAll(_recipe.RecipeCollection.Select(infoItem =>
+            new RecipeRowViewModel(infoItem, infoItem.Number == _recipe.CurrentRecipeNumber)));
 
-        var 上报 = _配方.最后一次一致性报告;
+        var Report = _recipe.LastOnceConsistencyReport;
 
-        if (上报 is null)
+        if (Report is null)
         {
-            一致性文本 = "尚未做启动一致性校验。";
-            有一致性问题 = false;
+            ConsistencyText = "尚未做启动一致性校验。";
+            HasConsistencyIssue = false;
             return;
         }
 
-        一致性文本 = 上报.摘要;
-        有一致性问题 = !上报.是否一致;
+        ConsistencyText = Report.Summary;
+        HasConsistencyIssue = !Report.IsConsistent;
     }
 }

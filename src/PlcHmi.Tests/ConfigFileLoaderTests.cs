@@ -1,7 +1,7 @@
 using System.Text.Json;
-using 上位机.业务.配置;
+using PlcHmi.Business.Configuration;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 配置加载的回退与修复测试。
@@ -12,23 +12,23 @@ namespace 上位机.上位机测试;
 ///
 /// <para>测试全部在临时目录里进行，不触碰 <c>config/</c> 下的真实文件。</para>
 /// </summary>
-public class 配置文件加载器测试 : IDisposable
+public class ConfigFileLoaderTest : IDisposable
 {
-    private readonly string _目录;
+    private readonly string _dir;
 
-    public 配置文件加载器测试()
+    public ConfigFileLoaderTest()
     {
-        _目录 = Path.Combine(Path.GetTempPath(), "plchmi-cfg-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_目录);
+        _dir = Path.Combine(Path.GetTempPath(), "plchmi-cfg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_dir);
     }
 
     public void Dispose()
     {
         try
         {
-            if (Directory.Exists(_目录))
+            if (Directory.Exists(_dir))
             {
-                Directory.Delete(_目录, recursive: true);
+                Directory.Delete(_dir, recursive: true);
             }
         }
         catch (IOException)
@@ -39,192 +39,192 @@ public class 配置文件加载器测试 : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private string 取路径(string 名称值) => Path.Combine(_目录, 名称值);
+    private string GetPath(string nameValue) => Path.Combine(_dir, nameValue);
 
-    private sealed class 测试载荷
+    private sealed class TestPayload
     {
-        public int 值 { get; set; }
+        public int Value { get; set; }
     }
 
-    private static 配置加载结果<测试载荷> 加载(string 文件路径) =>
-        配置文件加载器.加载JSON<测试载荷>(文件路径, JSON配置.读取);
+    private static ConfigLoadResult<TestPayload> Load(string filePath) =>
+        ConfigFileLoader.LoadJson<TestPayload>(filePath, JsonConfig.Read);
 
     // ── 正常与缺失 ──────────────────────────────────────────────────────
 
     [Fact]
-    public void 主文件正常时应直接加载()
+    public void MainFileNormalWhenShouldDirectConnectLoad()
     {
-        var 文件路径 = 取路径("ok.json");
-        File.WriteAllText(文件路径, """{"值":7}""");
+        var filePath = GetPath("ok.json");
+        File.WriteAllText(filePath, """{"value":7}""");
 
-        var 结果值 = 加载(文件路径);
+        var resultValue = Load(filePath);
 
-        Assert.Equal(加载结果分类.已加载, 结果值.加载结果);
-        Assert.Equal(7, 结果值.值!.值);
-        Assert.False(结果值.需要关注);
+        Assert.Equal(LoadResultSplitCategory.Loaded, resultValue.loadResult);
+        Assert.Equal(7, resultValue.Value!.Value);
+        Assert.False(resultValue.NeedCloseNote);
     }
 
     [Fact]
-    public void 文件不存在应报告Missing而不是Failed()
+    public void FileMissingShouldReportMissingInsteadOfFailed()
     {
-        var 结果值 = 加载(取路径("nope.json"));
+        var resultValue = Load(GetPath("nope.json"));
 
-        Assert.Equal(加载结果分类.缺失, 结果值.加载结果);
-        Assert.Null(结果值.值);
+        Assert.Equal(LoadResultSplitCategory.Missing, resultValue.loadResult);
+        Assert.Null(resultValue.Value);
 
         // 首次运行不算降级：各加载器对缺失文件有自己的默认值策略
-        Assert.False(结果值.需要关注);
+        Assert.False(resultValue.NeedCloseNote);
     }
 
     // ── 损坏与恢复 ──────────────────────────────────────────────────────
 
     [Fact]
-    public void 主文件损坏但备份完好时应从备份恢复并修复主文件()
+    public void MainFileCorruptButBackupIntactWhenShouldFromBackupRestoreAndFixMainFile()
     {
-        var 文件路径 = 取路径("recipes.json");
-        File.WriteAllText(文件路径, """{"值":1}""" + "###被截断的垃圾###");
-        File.WriteAllText(文件路径 + ".bak", """{"值":42}""");
+        var filePath = GetPath("recipes.json");
+        File.WriteAllText(filePath, """{"value":1}""" + "###被截断的垃圾###");
+        File.WriteAllText(filePath + ".bak", """{"value":42}""");
 
-        var 结果值 = 加载(文件路径);
+        var resultValue = Load(filePath);
 
-        Assert.Equal(加载结果分类.已从备份恢复, 结果值.加载结果);
-        Assert.Equal(42, 结果值.值!.值);
-        Assert.True(结果值.需要关注, "数据曾丢失，必须让上层能够示警");
+        Assert.Equal(LoadResultSplitCategory.RestoredFromBackup, resultValue.loadResult);
+        Assert.Equal(42, resultValue.Value!.Value);
+        Assert.True(resultValue.NeedCloseNote, "数据曾丢失，必须让上层能够示警");
 
         // 关键：主文件必须被修复回可用状态。
         // 否则下一次保存会把这份坏内容轮换成 .bak，把唯一的好副本也毁掉。
-        Assert.Equal("""{"值":42}""", File.ReadAllText(文件路径));
-        Assert.Equal(加载结果分类.已加载, 加载(文件路径).加载结果);
+        Assert.Equal("""{"value":42}""", File.ReadAllText(filePath));
+        Assert.Equal(LoadResultSplitCategory.Loaded, Load(filePath).loadResult);
     }
 
     [Fact]
-    public void 主文件与备份都损坏应报告Failed()
+    public void MainFileAndBackupBothCorruptShouldReportFailed()
     {
-        var 文件路径 = 取路径("tags.json");
-        File.WriteAllText(文件路径, "{ 坏");
-        File.WriteAllText(文件路径 + ".bak", "也坏");
+        var filePath = GetPath("tags.json");
+        File.WriteAllText(filePath, "{ 坏");
+        File.WriteAllText(filePath + ".bak", "也坏");
 
-        var 结果值 = 加载(文件路径);
+        var resultValue = Load(filePath);
 
-        Assert.Equal(加载结果分类.失败, 结果值.加载结果);
-        Assert.Null(结果值.值);
-        Assert.True(结果值.需要关注);
+        Assert.Equal(LoadResultSplitCategory.Failed, resultValue.loadResult);
+        Assert.Null(resultValue.Value);
+        Assert.True(resultValue.NeedCloseNote);
     }
 
     [Fact]
-    public void 主文件损坏且无备份应报告Failed()
+    public void MainFileCorruptAndNoneBackupShouldReportFailed()
     {
-        var 文件路径 = 取路径("alarms.json");
-        File.WriteAllText(文件路径, "不是 JSON");
+        var filePath = GetPath("alarms.json");
+        File.WriteAllText(filePath, "不是 JSON");
 
-        var 结果值 = 加载(文件路径);
+        var resultValue = Load(filePath);
 
-        Assert.Equal(加载结果分类.失败, 结果值.加载结果);
-        Assert.True(结果值.需要关注);
+        Assert.Equal(LoadResultSplitCategory.Failed, resultValue.loadResult);
+        Assert.True(resultValue.NeedCloseNote);
     }
 
     [Fact]
-    public void 零字节主文件应能从备份恢复()
+    public void ZeroByteMainFileShouldBeAbleToFromBackupRestore()
     {
         // 断电最典型的残留形态：替换已完成，但数据从未落盘
-        var 文件路径 = 取路径("users.json");
-        File.WriteAllBytes(文件路径, []);
-        File.WriteAllText(文件路径 + ".bak", """{"值":5}""");
+        var filePath = GetPath("users.json");
+        File.WriteAllBytes(filePath, []);
+        File.WriteAllText(filePath + ".bak", """{"value":5}""");
 
-        var 结果值 = 加载(文件路径);
+        var resultValue = Load(filePath);
 
-        Assert.Equal(加载结果分类.已从备份恢复, 结果值.加载结果);
-        Assert.Equal(5, 结果值.值!.值);
+        Assert.Equal(LoadResultSplitCategory.RestoredFromBackup, resultValue.loadResult);
+        Assert.Equal(5, resultValue.Value!.Value);
     }
 
     [Fact]
-    public async Task 异步加载同样支持备份恢复()
+    public async Task LoadSameSampleSupportBackupRestoreAsync()
     {
-        var 文件路径 = 取路径("param-tables.json");
-        await File.WriteAllTextAsync(文件路径, "坏内容");
-        await File.WriteAllTextAsync(文件路径 + ".bak", """{"值":9}""");
+        var filePath = GetPath("param-tables.json");
+        await File.WriteAllTextAsync(filePath, "坏内容");
+        await File.WriteAllTextAsync(filePath + ".bak", """{"value":9}""");
 
-        var 结果值 = await 配置文件加载器
-            .异步加载JSON<测试载荷>(文件路径, JSON配置.读取);
+        var resultValue = await ConfigFileLoader
+            .LoadJsonAsync<TestPayload>(filePath, JsonConfig.Read);
 
-        Assert.Equal(加载结果分类.已从备份恢复, 结果值.加载结果);
-        Assert.Equal(9, 结果值.值!.值);
+        Assert.Equal(LoadResultSplitCategory.RestoredFromBackup, resultValue.loadResult);
+        Assert.Equal(9, resultValue.Value!.Value);
     }
 
     // ── 备份本身不得被坏数据覆盖 ────────────────────────────────────────
 
     [Fact]
-    public async Task 主文件为空时保存不应把备份覆盖成空()
+    public async Task MainFileIsEmptyWhenSaveShouldNotBackupOverwriteAsEmpty()
     {
         // 现场形态：recipes.json 被截断成 0 字节，而 .bak 里还留着最后一份好数据。
         // 此时若照常轮换，好副本会被这个 0 字节文件顶掉 —— 等于亲手毁掉退路。
-        var 文件路径 = 取路径("recipes.json");
-        await File.WriteAllTextAsync(文件路径 + ".bak", "最后一次好数据");
-        File.WriteAllBytes(文件路径, []);
+        var filePath = GetPath("recipes.json");
+        await File.WriteAllTextAsync(filePath + ".bak", "最后一次好数据");
+        File.WriteAllBytes(filePath, []);
 
-        await 原子文件.异步写入全部文本(文件路径, "新数据");
+        await AtomicFile.WriteAllTextAsync(filePath, "新数据");
 
-        Assert.Equal("新数据", await File.ReadAllTextAsync(文件路径));
-        Assert.Equal("最后一次好数据", await File.ReadAllTextAsync(文件路径 + ".bak"));
+        Assert.Equal("新数据", await File.ReadAllTextAsync(filePath));
+        Assert.Equal("最后一次好数据", await File.ReadAllTextAsync(filePath + ".bak"));
     }
 
     [Fact]
-    public void 恢复备份失败时不应抛异常()
+    public void RestoreBackupFailedWhenShouldNotThrowException()
     {
-        Assert.False(原子文件.尝试恢复备份(取路径("根本不存在.json")));
+        Assert.False(AtomicFile.TryRestoreBackup(GetPath("根本不存在.json")));
     }
 
     // ── 健康登记 ────────────────────────────────────────────────────────
 
     [Fact]
-    public void 加载失败应登记到配置健康且Loaded不登记()
+    public void LoadFailedShouldRegisterToConfigHealthAndLoadedNotRegister()
     {
-        var 健康 = new 配置健康服务();
-        var 文件路径 = 取路径("alarms.json");
+        var Health = new ConfigHealthService();
+        var filePath = GetPath("alarms.json");
 
-        File.WriteAllText(文件路径, """{"值":1}""");
-        健康.上报("报警配置", 加载(文件路径));
-        Assert.False(健康.是否已降级);
+        File.WriteAllText(filePath, """{"value":1}""");
+        Health.Report("报警配置", Load(filePath));
+        Assert.False(Health.IsDegraded);
 
-        File.WriteAllText(文件路径, "坏");
-        健康.上报("报警配置", 加载(文件路径));
+        File.WriteAllText(filePath, "坏");
+        Health.Report("报警配置", Load(filePath));
 
-        Assert.True(健康.是否已降级);
-        Assert.Single(健康.问题集合);
-        Assert.True(健康.问题集合[0].是否阻塞);
-        Assert.Contains("报警配置", 健康.问题集合[0].摘要, StringComparison.Ordinal);
+        Assert.True(Health.IsDegraded);
+        Assert.Single(Health.IssueCollection);
+        Assert.True(Health.IssueCollection[0].IsBlocked);
+        Assert.Contains("报警配置", Health.IssueCollection[0].Summary, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void 同一配置重复登记应覆盖而不是堆积()
+    public void SameOneConfigDuplicateRegisterShouldOverwriteInsteadOfHeapAccumulate()
     {
-        var 健康 = new 配置健康服务();
+        var Health = new ConfigHealthService();
 
-        健康.上报(new 配置问题("报警配置", 加载结果分类.失败, "第一次"));
-        健康.上报(new 配置问题("报警配置", 加载结果分类.失败, "第二次"));
+        Health.Report(new ConfigIssue("报警配置", LoadResultSplitCategory.Failed, "第一次"));
+        Health.Report(new ConfigIssue("报警配置", LoadResultSplitCategory.Failed, "第二次"));
 
-        Assert.Single(健康.问题集合);
-        Assert.Equal("第二次", 健康.问题集合[0].详情);
+        Assert.Single(Health.IssueCollection);
+        Assert.Equal("第二次", Health.IssueCollection[0].detail);
     }
 
     [Fact]
-    public void 健康状态变化应触发事件()
+    public void HealthStateChangeShouldTriggerEvent()
     {
-        var 健康 = new 配置健康服务();
-        var 已触发 = 0;
+        var Health = new ConfigHealthService();
+        var Triggered = 0;
 
-        健康.已变更 += (_, _) => 已触发++;
-        健康.上报(new 配置问题("点位表", 加载结果分类.失败, "损坏"));
+        Health.changed += (_, _) => Triggered++;
+        Health.Report(new ConfigIssue("点位表", LoadResultSplitCategory.Failed, "损坏"));
 
-        Assert.Equal(1, 已触发);
+        Assert.Equal(1, Triggered);
     }
 
     [Fact]
-    public void 从备份恢复应标记为需要示警但不阻断()
+    public void FromBackupRestoreShouldMarkAsNeedWarnButNotBlock()
     {
-        var 问题项 = new 配置问题("机种数据", 加载结果分类.已从备份恢复, "已恢复");
+        var issueItem = new ConfigIssue("机种数据", LoadResultSplitCategory.RestoredFromBackup, "已恢复");
 
-        Assert.False(问题项.是否阻塞);
-        Assert.Contains("已从备份恢复", 问题项.摘要, StringComparison.Ordinal);
+        Assert.False(issueItem.IsBlocked);
+        Assert.Contains("已从备份恢复", issueItem.Summary, StringComparison.Ordinal);
     }
 }

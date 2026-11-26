@@ -1,18 +1,18 @@
-namespace 上位机.核心.枚举;
+namespace PlcHmi.Core.Enums;
 
 /// <summary>
 /// 运行模式。决定通信客户端连接的是<b>真实 PLC</b>还是<b>内置虚拟 PLC</b>。
 ///
-/// <para><b>与 <see cref="通讯协议"/> 的区别：</b>协议决定"用哪种语言与 PLC 说话"（DI 装配定型，改需重启）；
+/// <para><b>与 <see cref="CommunicationProtocol"/> 的区别：</b>协议决定"用哪种语言与 PLC 说话"（DI 装配定型，改需重启）；
 /// 运行模式决定"对谁说话"（Modbus 模式下可在运行期切换，无需重启）。</para>
 /// </summary>
-public enum 运行模式
+public enum RunMode
 {
     /// <summary>真实 PLC。程序启动时的缺省模式。</summary>
-    真实PLC = 0,
+    RealPlc = 0,
 
     /// <summary>模拟 PLC（内置虚拟设备，供无真机时的离线调试）。</summary>
-    模拟PLC = 1,
+    SimulationPlc = 1,
 }
 
 /// <summary>
@@ -29,23 +29,23 @@ public enum 运行模式
 ///   界面看着一切正常、产线其实不受控，属于必须杜绝的隐性风险。因此模拟开关不写回配置文件。</item>
 /// </list>
 /// </summary>
-public static class 运行模式策略
+public static class RunModeStrategy
 {
     /// <summary>该协议是否允许在运行期切换运行模式（仅 Modbus TCP）。</summary>
-    public static bool 可运行期切换(通讯协议 协议) => 协议 == 通讯协议.ModbusTCP;
+    public static bool RuntimeSwitchable(CommunicationProtocol Protocol) => Protocol == CommunicationProtocol.ModbusTCP;
 
     /// <summary>
     /// 启动缺省模式。可运行期切换的协议一律从真实 PLC 起步（不记忆上次选择）；
     /// 其余协议沿用配置中的模拟开关。
     /// </summary>
-    public static 运行模式 取启动模式(通讯协议 协议, bool 使用模拟器)
+    public static RunMode GetStartMode(CommunicationProtocol Protocol, bool UseSimulator)
     {
-        if (可运行期切换(协议))
+        if (RuntimeSwitchable(Protocol))
         {
-            return 运行模式.真实PLC;
+            return RunMode.RealPlc;
         }
 
-        return 使用模拟器 ? 运行模式.模拟PLC : 运行模式.真实PLC;
+        return UseSimulator ? RunMode.SimulationPlc : RunMode.RealPlc;
     }
 
     /// <summary>
@@ -54,6 +54,6 @@ public static class 运行模式策略
     /// <para>可运行期切换的协议<b>恒为 <c>false</c></b>：模拟开关是运行期状态，不进配置文件，
     /// 下次启动才不会"记住"上次的模拟选择。</para>
     /// </summary>
-    public static bool 持久化模拟开关(通讯协议 协议, bool 运行期使用模拟器)
-        => 可运行期切换(协议) ? false : 运行期使用模拟器;
+    public static bool PersistSimulationSwitch(CommunicationProtocol Protocol, bool runtimeUseSimulator)
+        => RuntimeSwitchable(Protocol) ? false : runtimeUseSimulator;
 }

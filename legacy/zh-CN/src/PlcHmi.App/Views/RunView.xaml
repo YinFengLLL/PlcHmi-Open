@@ -1,0 +1,431 @@
+<UserControl x:Class="上位机.应用.视图.运行视图"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:上位机.应用.转换器"
+             xmlns:vm="clr-namespace:上位机.应用.视图模型"
+             xmlns:charts="clr-namespace:上位机.应用.视图"
+             xmlns:sys="clr-namespace:System.Windows;assembly=PresentationFramework"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:运行视图模型}"
+             mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <conv:资源键画刷转换器 x:Key="KeyToBrush" />
+        <conv:设备状态图标转换器 x:Key="StateToIcon" />
+        <conv:布尔可见性转换器 x:Key="BoolToVis" />
+
+        <!-- 报警横幅图标：紧急级闪烁；尊重系统"减少动效"设置（关掉动效则静态常亮）。
+             与顶栏报警图标、示教页状态灯同一套做法。 -->
+        <Style x:Key="AlarmBannerIcon" TargetType="Path">
+            <Setter Property="Stretch" Value="None" />
+            <Setter Property="StrokeThickness" Value="1.8" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding 报警闪烁}" Value="True" />
+                        <Condition Binding="{Binding Source={x:Static sys:SystemParameters.ClientAreaAnimation}}"
+                                   Value="True" />
+                    </MultiDataTrigger.Conditions>
+                    <MultiDataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                 From="1" To="0.25" Duration="0:0:0.6"
+                                                 AutoReverse="True" RepeatBehavior="Forever" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </MultiDataTrigger.EnterActions>
+                    <MultiDataTrigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.15" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </MultiDataTrigger.ExitActions>
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="{StaticResource PageMargin}"
+          Style="{DynamicResource PageTransitionStyle}">
+        <!-- 入场上移动画的载体：变换声明在元素上而非样式里（Motion.xaml 冻结陷阱备忘） -->
+        <Grid.RenderTransform>
+            <TranslateTransform />
+        </Grid.RenderTransform>
+
+        <!-- 内容高于视口时允许滚动：1360×820 下末行胶囊卡曾被整体裁掉、
+             操作按钮被压成细条（启停键不可裁剪，这是安全件） -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" PanningMode="VerticalOnly">
+        <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 页面标题（右侧：管理员编辑元件地址入口） -->
+        <Grid Grid.Row="0" Margin="{StaticResource PageHeaderMargin}">
+            <StackPanel>
+                <TextBlock Text="{Binding 标题}" Style="{StaticResource PageTitleText}" />
+                <TextBlock Text="{Binding 副标题}" Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <!-- 当前工单号（2026-11-12 现场要求）：扫码结果只存内存，和机种一起放在首屏右上，
+                     属于"跑错件"的第一道人工防线。未扫过时显示"未扫码"。 -->
+                <Border Padding="12,6" CornerRadius="8" Margin="{StaticResource GapRight12}"
+                        Background="{DynamicResource SurfaceAltBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        VerticalAlignment="Center"
+                        ToolTip="当前工单号（最近一次扫码结果；只保存在本机内存，关闭软件即清空）">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="工单" Style="{StaticResource CaptionText}"
+                                   VerticalAlignment="Center" Margin="{StaticResource GapRight4}" />
+                        <TextBlock Text="{Binding 工单号文本}" Style="{StaticResource BodyText}"
+                                   FontFamily="{StaticResource NumericFontFamily}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 当前机种：现场最怕"跑错机种"，放在首屏右上第一眼可见处 -->
+                <Border Padding="12,6" CornerRadius="8" Margin="{StaticResource GapRight12}"
+                        Background="{DynamicResource PrimarySoftBrush}"
+                        BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="1"
+                        VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="当前" Style="{StaticResource CaptionText}"
+                                   VerticalAlignment="Center" Margin="{StaticResource GapRight4}" />
+                        <TextBlock Text="{Binding 当前机种文本}" Style="{StaticResource BodyText}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource PrimaryBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <Button VerticalAlignment="Center"
+                        Content="编辑元件地址"
+                        Style="{StaticResource SecondaryButton}" Height="40"
+                        ToolTip="配置运行页监控元件与操作按钮的 PLC 地址（仅管理员）"
+                        Visibility="{Binding 可编辑地址, Converter={StaticResource BoolToVis}}"
+                        Command="{Binding 异步编辑地址Command}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ══ 主视觉（Hero）══════════════════════════════════════════
+             这一块是首屏的"一眼结论"：设备现在处于什么状态。
+
+             为什么状态色没有出现在这张卡里：卡底是深蓝平色，压在它上面的
+             绿/橙/红与蓝底的对比度都极低（例如成功绿 #15803D 压主蓝
+             #0B3D91 只有 2.10:1），现场看就是一团糊。所以 Hero 用
+             **图标形状 + 状态文字**双编码，不用颜色编码；
+             颜色编码留给下方白底卡片 —— 那里才有达标的对比度。
+
+             右侧是工艺流程图（传送带 → 传感器 → 机械手 → 气缸），
+             纯装饰线稿，不带实时数据，所以配了"工艺流程示意"的小字
+             免得有人把它当成实时工位状态图。 -->
+        <Border Grid.Row="1" Style="{StaticResource HeroCard}" Margin="{StaticResource GapBottom16}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <!-- 报警横幅（2026-10-16 现场要求：报警要更显眼）：有活动报警时占据首屏第一眼，
+                         红底白字 + 放大加粗（22px），紧急级图标闪烁；
+                         PLC 侧报警位复位为 0 → 报警扫描服务产生"已清除" → 横幅自动消失。 -->
+                    <Border CornerRadius="8" Padding="14,10"
+                            Margin="{StaticResource GapBottom12}"
+                            Background="{DynamicResource DangerBrush}"
+                            Visibility="{Binding 有活动报警, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource AlarmBannerIcon}"
+                                  Data="{StaticResource Icon.Status.Alarm}"
+                                  Stroke="{DynamicResource TextOnPrimaryBrush}"
+                                  Width="28" Height="28"
+                                  Margin="{StaticResource GapRight12}" />
+                            <TextBlock Text="{Binding 报警摘要}"
+                                       FontSize="22"
+                                       FontWeight="Bold"
+                                       Foreground="{DynamicResource TextOnPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="当前设备状态"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               Foreground="{DynamicResource OnShellSecondaryBrush}" />
+
+                    <StackPanel Orientation="Horizontal" Margin="{StaticResource GapTop8}">
+                        <Path Style="{StaticResource IconPathLarge}"
+                              Data="{Binding 设备状态文本, Converter={StaticResource StateToIcon}}"
+                              Stroke="{DynamicResource OnShellPrimaryBrush}"
+                              Margin="{StaticResource GapRight12}" />
+                        <TextBlock Text="{Binding 设备状态文本}"
+                                   FontSize="{StaticResource FontSizeDisplay}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource OnShellPrimaryBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- 无报警时才显示这行"当前无报警"：有警时上方横幅已说明，同一屏不重复两遍 -->
+                    <TextBlock Style="{StaticResource CaptionText}"
+                               Foreground="{DynamicResource OnShellSecondaryBrush}"
+                               Margin="{StaticResource GapTop12}"
+                               TextTrimming="CharacterEllipsis"
+                               Visibility="{Binding 无活动报警, Converter={StaticResource BoolToVis}}"
+                               Text="当前无报警" />
+                </StackPanel>
+
+                <!-- 工艺流程示意（装饰） -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center"
+                            Margin="32,0,0,0" IsHitTestVisible="False">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Path Style="{StaticResource IconPathLarge}"
+                              Data="{StaticResource Icon.Device.Conveyor}"
+                              Stroke="{DynamicResource OnShellSecondaryBrush}" />
+
+                        <Path Style="{StaticResource IconPath}"
+                              Data="M0,0 L5,5 L0,10" Margin="12,0"
+                              Stretch="None" Width="5" Height="10" StrokeThickness="1.5"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Stroke="{DynamicResource OnShellMutedBrush}" />
+
+                        <Path Style="{StaticResource IconPathLarge}"
+                              Data="{StaticResource Icon.Device.Sensor}"
+                              Stroke="{DynamicResource OnShellSecondaryBrush}" />
+
+                        <Path Style="{StaticResource IconPath}"
+                              Data="M0,0 L5,5 L0,10" Margin="12,0"
+                              Stretch="None" Width="5" Height="10" StrokeThickness="1.5"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Stroke="{DynamicResource OnShellMutedBrush}" />
+
+                        <Path Style="{StaticResource IconPathLarge}"
+                              Data="{StaticResource Icon.Device.Robot}"
+                              Stroke="{DynamicResource OnShellSecondaryBrush}" />
+
+                        <Path Style="{StaticResource IconPath}"
+                              Data="M0,0 L5,5 L0,10" Margin="12,0"
+                              Stretch="None" Width="5" Height="10" StrokeThickness="1.5"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Stroke="{DynamicResource OnShellMutedBrush}" />
+
+                        <Path Style="{StaticResource IconPathLarge}"
+                              Data="{StaticResource Icon.Device.Cylinder}"
+                              Stroke="{DynamicResource OnShellSecondaryBrush}" />
+                    </StackPanel>
+
+                    <TextBlock Text="装配工位 · 工艺流程示意"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               Foreground="{DynamicResource OnShellSecondaryBrush}"
+                               HorizontalAlignment="Center"
+                               Margin="{StaticResource GapTop8}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 指标卡：仪表级 48px 等宽数字，操作员两米外也要读得到；
+             三卡 40ms 错峰淡入（CardEnterStyle1~3），引导视线从左到右。
+             产量 / 目标 / 达成率已并入下方数据分析组合视图（同一张卡，视线不用跳）。 -->
+        <UniformGrid Grid.Row="2" Rows="1" Columns="3" Margin="{StaticResource GapBottom16}">
+            <Border Style="{DynamicResource CardEnterStyle1}" Margin="{StaticResource GapRight12}">
+                <StackPanel>
+                    <TextBlock Text="当前节拍 (s)" Style="{StaticResource MetricLabelText}" />
+                    <TextBlock Text="{Binding 周期时间文本}" Style="{StaticResource MetricValueHeroText}" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{DynamicResource CardEnterStyle2}" Margin="{StaticResource GapRight12}">
+                <StackPanel>
+                    <TextBlock Text="良品数量" Style="{StaticResource MetricLabelText}" />
+                    <TextBlock Text="{Binding 良品数量文本}" Style="{StaticResource MetricValueHeroText}"
+                               Foreground="{DynamicResource SuccessBrush}" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{DynamicResource CardEnterStyle3}">
+                <StackPanel>
+                    <TextBlock Text="不良品数量" Style="{StaticResource MetricLabelText}" />
+                    <TextBlock Text="{Binding 不良品数量文本}" Style="{StaticResource MetricValueHeroText}"
+                               Foreground="{DynamicResource DangerBrush}" />
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+
+        <!-- ══ 数据分析组合视图 ═══════════════════════════════════════
+             左侧常驻"产量与目标"进度卡（当前产量 / 目标 / 达成率），
+             右侧四张数据分析图通过 ‹ › 按钮循环翻页：
+             1 占比饼图  2 今日每小时柱状图  3 近 7 天折线  4 今昨同小时对比折线。
+             图表全部自绘（无第三方库），主题色与全站一致。 -->
+        <Border Grid.Row="3" Style="{StaticResource CardBorder}" Margin="{StaticResource GapBottom16}">
+            <Grid Margin="20,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="200" />
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 左：产量与目标进度 -->
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="当前产量 / 目标" Style="{StaticResource MetricLabelText}" />
+                    <TextBlock Text="{Binding 输出数量文本}" Style="{StaticResource MetricValueDisplayText}" />
+                    <TextBlock Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}">
+                        <Run Text="目标 " />
+                        <Run Text="{Binding 目标数量文本, Mode=OneWay}" />
+                    </TextBlock>
+
+                    <TextBlock Text="达成率" Style="{StaticResource MetricLabelText}"
+                               Margin="{StaticResource GapTop12}" />
+                    <TextBlock Text="{Binding 达成文本}"
+                               Style="{StaticResource MetricValueDisplayText}"
+                               Foreground="{DynamicResource PrimaryBrush}" />
+                    <!-- 条只表达进度感，精确值看上面的数字（超产时条钳在 100%） -->
+                    <ProgressBar Value="{Binding 达成率}" Maximum="100" Height="10"
+                                 Margin="{StaticResource GapTop8}" />
+                </StackPanel>
+
+                <Border Grid.Column="1" Width="1" Background="{DynamicResource BorderBrush}" Margin="0,2" />
+
+                <!-- 右：图表翻页区 -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="{StaticResource GapBottom8}">
+                        <TextBlock Text="{Binding 图表标题}"
+                                   Style="{StaticResource SectionTitleText}"
+                                   VerticalAlignment="Center" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                    VerticalAlignment="Center">
+                            <!-- 数据清除：调试 / 交接班动作，不与启停同级——
+                                 缩成与图表翻页按钮一致的小按钮放在图表顶部，
+                                 仅工程师 / 管理员可见（确认弹窗仍保留，防误触） -->
+                            <Button Content="数据清除"
+                                    Style="{StaticResource ButtonWarning}"
+                                    Height="30" Padding="12,0" FontSize="12"
+                                    Margin="{StaticResource GapRight16}"
+                                    ToolTip="清零 PLC 累计数据（复归型脉冲命令，仅工程师 / 管理员）"
+                                    Visibility="{Binding 可清除数据, Converter={StaticResource BoolToVis}}"
+                                    Command="{Binding 异步清除数据Command}" />
+
+                            <Button Content="‹" Style="{StaticResource SecondaryButton}"
+                                    Width="34" Height="30" Padding="0"
+                                    FontSize="15" FontWeight="Bold"
+                                    ToolTip="上一张图"
+                                    Command="{Binding 上一图表Command}" />
+                            <TextBlock Text="{Binding 页码文本}" Width="46"
+                                       FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       TextAlignment="Center" VerticalAlignment="Center" />
+                            <Button Content="›" Style="{StaticResource SecondaryButton}"
+                                    Width="34" Height="30" Padding="0"
+                                    FontSize="15" FontWeight="Bold"
+                                    ToolTip="下一张图"
+                                    Command="{Binding 下一图表Command}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Grid.Row="1" MinHeight="225">
+                        <!-- 1. 良品 / 不良品占比（饼图） -->
+                        <charts:环形占比图 值甲="{Binding 占比良品值}"
+                                  值乙="{Binding 占比不良品值}"
+                                  标签甲="良品" 标签乙="不良品"
+                                  Visibility="{Binding 显示占比图, Converter={StaticResource BoolToVis}}" />
+
+                        <!-- 2. 今日每小时产量（柱状图，高亮当前小时） -->
+                        <charts:柱状图控件 数值集合="{Binding 今日小时集合}"
+                                  标签集合="{Binding 小时标签集合}"
+                                  高亮索引="{Binding 当前小时索引}"
+                                  Visibility="{Binding 显示小时图, Converter={StaticResource BoolToVis}}" />
+
+                        <!-- 3. 近 7 天每日产量（折线图） -->
+                        <charts:折线图控件 系列集合="{Binding 周产量系列}"
+                                  标签集合="{Binding 周标签集合}"
+                                  Visibility="{Binding 显示周图, Converter={StaticResource BoolToVis}}" />
+
+                        <!-- 4. 今日与昨日同小时对比（双系列折线图） -->
+                        <charts:折线图控件 系列集合="{Binding 对比系列}"
+                                  标签集合="{Binding 小时标签集合}"
+                                  Visibility="{Binding 显示对比图, Converter={StaticResource BoolToVis}}" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- ══ 操作按钮 ═══════════════════════════════════════════════
+             四个都是安全关键操作，一律保持"实心色块 + 大触控面积"，
+             不做卡片化 / 玻璃化 / 弱描边化 —— 那些手法会削弱可感知性，
+             适合文档导航，不适合启停。
+             数据清除不在此列：它是调试 / 交接班动作而非启停操作，
+             已缩为小按钮移入下方数据图表顶部（仅工程师 / 管理员可见）。 -->
+        <UniformGrid Grid.Row="4" Rows="1" Columns="4" Margin="{StaticResource GapBottom16}">
+            <Button Style="{StaticResource ButtonSuccess}"
+                    Margin="{StaticResource GapRight12}"
+                    Command="{Binding 异步启动Command}">
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Action.Start}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          Margin="{StaticResource GapRight8}" />
+                    <TextBlock Text="启 动" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource ButtonWarning}"
+                    Margin="{StaticResource GapRight12}"
+                    Command="{Binding 异步停止Command}">
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Action.Stop}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          Margin="{StaticResource GapRight8}" />
+                    <TextBlock Text="停 止" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource ButtonNeutral}"
+                    Margin="{StaticResource GapRight12}"
+                    Command="{Binding 异步重置Command}">
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Action.Reset}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          Margin="{StaticResource GapRight8}" />
+                    <TextBlock Text="复 位" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource ButtonDanger}"
+                    ToolTip="向 PLC 下发报警清除命令"
+                    Command="{Binding 异步清空报警Command}">
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Status.Alarm}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          Margin="{StaticResource GapRight8}" />
+                    <TextBlock Text="报警清除" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+        </UniformGrid>
+
+        <!-- 左下状态条：通信 / 锁附 / 点胶 / 加工 / 已锁附颗数 / 报警。
+             "设备"项已删——它和 Hero 的状态完全重复，设备状态以 Hero 为唯一来源。
+             原"报警摘要条"也一并删掉：它和这里的"报警"读的是同一个绑定，
+             同一屏显示两遍不增加信息，只增加噪声。
+             整体拆到 RunStatusStrip.xaml（2026-10-16 加了工位三灯与颗数后本行变长，
+             拆出去也让"状态条有哪些项"集中在一个文件里）。 -->
+        <charts:运行状态条 Grid.Row="5" />
+        </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

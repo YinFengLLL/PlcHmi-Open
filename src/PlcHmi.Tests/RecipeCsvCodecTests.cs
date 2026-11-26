@@ -1,6 +1,6 @@
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 机种数据 CSV 编解码测试。
@@ -13,161 +13,161 @@ namespace 上位机.上位机测试;
 /// <para>导出给 Excel 编辑、机种之间拷贝用；<b>主存始终是 recipes.json</b>，
 /// CSV 必须经「导入」才生效。</para>
 /// </summary>
-public class 配方CSV编解码器测试
+public class RecipeCsvCodecTest
 {
-    private static 配方数据 示例机种()
+    private static RecipeData IndicateCaseMachineModel()
     {
-        var 配方项 = new 配方数据 { 号 = 3, 名称 = "锁附 A" };
+        var recipeItem = new RecipeData { Number = 3, Name = "锁附 A" };
 
         // 锁附示教第 1/2 点 X（Float32，低字在前）300.0f = 0x4396_0000
-        配方项.置(2500, 0x0000);
-        配方项.置(2501, 0x4396);
-        配方项.置(2502, 0x0000);
-        配方项.置(2503, 0x4396);
+        recipeItem.put(2500, 0x0000);
+        recipeItem.put(2501, 0x4396);
+        recipeItem.put(2502, 0x0000);
+        recipeItem.put(2503, 0x4396);
 
         // 点胶指令码 D3400 = 5（UInt16 单字）
-        配方项.置(3400, 5);
+        recipeItem.put(3400, 5);
 
         // 锁附辅助地址（同属机种区段）
-        配方项.置(2680, 0x0000);
-        配方项.置(2681, 0x42C8);
+        recipeItem.put(2680, 0x0000);
+        recipeItem.put(2681, 0x42C8);
 
-        return 配方项;
+        return recipeItem;
     }
 
     [Fact]
-    public void 编码应含机种信息段与寄存器段()
+    public void EncodeShouldContainMachineModelInfoSectionAndRegisterSection()
     {
-        var 文本 = 配方CSV编解码器.编码(示例机种());
+        var Text = RecipeCsvCodec.Encode(IndicateCaseMachineModel());
 
-        Assert.Contains("[机种]", 文本, StringComparison.Ordinal);
-        Assert.Contains("[寄存器]", 文本, StringComparison.Ordinal);
-        Assert.Contains("号,名称", 文本, StringComparison.Ordinal);
-        Assert.Contains("地址,值", 文本, StringComparison.Ordinal);
-        Assert.Contains("3,锁附 A", 文本, StringComparison.Ordinal);
-        Assert.Contains("D2501,17302", 文本, StringComparison.Ordinal);   // 0x4396
-        Assert.Contains("D3400,5", 文本, StringComparison.Ordinal);
-        Assert.Contains($"D{机种区段.起始} – D{机种区段.结束}", 文本, StringComparison.Ordinal);
+        Assert.Contains("[机种]", Text, StringComparison.Ordinal);
+        Assert.Contains("[寄存器]", Text, StringComparison.Ordinal);
+        Assert.Contains("号,名称", Text, StringComparison.Ordinal);
+        Assert.Contains("地址,值", Text, StringComparison.Ordinal);
+        Assert.Contains("3,锁附 A", Text, StringComparison.Ordinal);
+        Assert.Contains("D2501,17302", Text, StringComparison.Ordinal);   // 0x4396
+        Assert.Contains("D3400,5", Text, StringComparison.Ordinal);
+        Assert.Contains($"D{MachineModelSection.StartAt} – D{MachineModelSection.end}", Text, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void 编码应只写非零寄存器()
+    public void EncodeShouldOnlyWriteNonZeroRegister()
     {
-        var 文本 = 配方CSV编解码器.编码(示例机种());
+        var Text = RecipeCsvCodec.Encode(IndicateCaseMachineModel());
 
         // 稀疏：值为 0 的字（D2500/D2502）整行都不写
-        Assert.DoesNotContain("D2500,", 文本, StringComparison.Ordinal);
-        Assert.DoesNotContain("D2502,", 文本, StringComparison.Ordinal);
+        Assert.DoesNotContain("D2500,", Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("D2502,", Text, StringComparison.Ordinal);
 
-        var 数据行 = 文本
+        var dataRow = Text
             .Split('\n')
-            .Select(行 => 行.Trim())
-            .Where(行 => 行.StartsWith("D", StringComparison.Ordinal))
+            .Select(Row => Row.Trim())
+            .Where(Row => Row.StartsWith("D", StringComparison.Ordinal))
             .ToList();
 
-        Assert.Equal(4, 数据行.Count);   // 2501 / 2503 / 2681 / 3400
+        Assert.Equal(4, dataRow.Count);   // 2501 / 2503 / 2681 / 3400
     }
 
     [Fact]
-    public void 编码解码往返应保持一致()
+    public void EncodeDecodeRoundTripShouldKeepConsistent()
     {
-        var 原项 = 示例机种();
-        var 文本 = 配方CSV编解码器.编码(原项);
-        var 结果值 = 配方CSV编解码器.解码(文本, 1);
+        var originalItem = IndicateCaseMachineModel();
+        var Text = RecipeCsvCodec.Encode(originalItem);
+        var resultValue = RecipeCsvCodec.Decode(Text, 1);
 
-        Assert.True(结果值.成功, 结果值.摘要);
-        Assert.NotNull(结果值.配方);
-        Assert.Equal(3, 结果值.配方!.号);
-        Assert.Equal("锁附 A", 结果值.配方.名称);
-        Assert.Equal(4, 结果值.配方.区段快照.Count);
+        Assert.True(resultValue.Success, resultValue.Summary);
+        Assert.NotNull(resultValue.Recipe);
+        Assert.Equal(3, resultValue.Recipe!.Number);
+        Assert.Equal("锁附 A", resultValue.Recipe.Name);
+        Assert.Equal(4, resultValue.Recipe.SectionSnapshot.Count);
 
-        foreach (var (偏移, 值) in 原项.区段快照)
+        foreach (var (Offset, Value) in originalItem.SectionSnapshot)
         {
-            Assert.Equal(值, 结果值.配方.区段快照[偏移]);
+            Assert.Equal(Value, resultValue.Recipe.SectionSnapshot[Offset]);
         }
     }
 
     [Fact]
-    public void 文件未写机种号时应使用回退号()
+    public void FileNotWriteMachineModelNumberWhenShouldUseFallbackNumber()
     {
-        const string 文本 = """
+        const string Text = """
             # 只有数据，没有机种段
             [寄存器]
             地址,值
             D2501,17302
             """;
 
-        var 结果值 = 配方CSV编解码器.解码(文本, 7);
+        var resultValue = RecipeCsvCodec.Decode(Text, 7);
 
-        Assert.True(结果值.成功, 结果值.摘要);
-        Assert.Equal(7, 结果值.配方!.号);
-        Assert.Equal(0x4396, 结果值.配方.取(2501));
+        Assert.True(resultValue.Success, resultValue.Summary);
+        Assert.Equal(7, resultValue.Recipe!.Number);
+        Assert.Equal(0x4396, resultValue.Recipe.Take(2501));
     }
 
     [Fact]
-    public void 区段外地址应被拒绝()
+    public void SectionOuterAddressShouldBeRejected()
     {
-        const string 文本 = """
+        const string Text = """
             [寄存器]
             地址,值
             D1202,300
             """;
 
-        var 结果值 = 配方CSV编解码器.解码(文本, 1);
+        var resultValue = RecipeCsvCodec.Decode(Text, 1);
 
-        Assert.False(结果值.成功);
-        Assert.Contains(结果值.错误集合, 事件参数 => 事件参数.Contains("不在机种区段", StringComparison.Ordinal));
+        Assert.False(resultValue.Success);
+        Assert.Contains(resultValue.ErrorCollection, eventArgs => eventArgs.Contains("不在机种区段", StringComparison.Ordinal));
     }
 
     [Theory]
     [InlineData("D2500,abc")]      // 值不是整数
     [InlineData("D2500,70000")]    // 超出 16 位
     [InlineData("X2500,1")]        // 不是 D 区
-    public void 非法数据行应被拒绝并给出明确提示(string 行)
+    public void IllegalDataRowShouldBeRejectedAndGiveExplicitConfirmHint(string Row)
     {
-        var 文本 = $"[寄存器]\n地址,值\n{行}\n";
+        var Text = $"[寄存器]\n地址,值\n{Row}\n";
 
-        var 结果值 = 配方CSV编解码器.解码(文本, 1);
+        var resultValue = RecipeCsvCodec.Decode(Text, 1);
 
-        Assert.False(结果值.成功);
-        Assert.NotEmpty(结果值.错误集合);
-        Assert.Contains("第 3 行", 结果值.摘要 + string.Join("|", 结果值.错误集合), StringComparison.Ordinal);
+        Assert.False(resultValue.Success);
+        Assert.NotEmpty(resultValue.ErrorCollection);
+        Assert.Contains("第 3 行", resultValue.Summary + string.Join("|", resultValue.ErrorCollection), StringComparison.Ordinal);
     }
 
     [Fact]
-    public void 空文件应报错而不是静默成功()
+    public void EmptyFileShouldReportWrongInsteadOfStaticSilentSuccess()
     {
-        var 结果值 = 配方CSV编解码器.解码("   ", 1);
+        var resultValue = RecipeCsvCodec.Decode("   ", 1);
 
-        Assert.False(结果值.成功);
-        Assert.Contains(结果值.错误集合, 事件参数 => 事件参数.Contains("文件为空", StringComparison.Ordinal));
+        Assert.False(resultValue.Success);
+        Assert.Contains(resultValue.ErrorCollection, eventArgs => eventArgs.Contains("文件为空", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void 段外散行只提示不应失败()
+    public void SectionOuterDiscreteRowOnlyHintShouldNotFailed()
     {
-        const string 文本 = """
+        const string Text = """
             随手写的一行
             [寄存器]
             D2501,17302
             """;
 
-        var 结果值 = 配方CSV编解码器.解码(文本, 1);
+        var resultValue = RecipeCsvCodec.Decode(Text, 1);
 
-        Assert.True(结果值.成功, 结果值.摘要);
-        Assert.Single(结果值.警告);
+        Assert.True(resultValue.Success, resultValue.Summary);
+        Assert.Single(resultValue.Warning);
     }
 
     [Fact]
-    public void 机种名里的逗号应被替换以免破坏列结构()
+    public void MachineModelNameInCommaNumberShouldBeReplaceWithAvoidBreakBadColumnStructure()
     {
-        var 配方项 = new 配方数据 { 号 = 1, 名称 = "锁附,A" };
-        配方项.置(2501, 1);
+        var recipeItem = new RecipeData { Number = 1, Name = "锁附,A" };
+        recipeItem.put(2501, 1);
 
-        var 文本 = 配方CSV编解码器.编码(配方项);
-        var 结果值 = 配方CSV编解码器.解码(文本, 1);
+        var Text = RecipeCsvCodec.Encode(recipeItem);
+        var resultValue = RecipeCsvCodec.Decode(Text, 1);
 
-        Assert.True(结果值.成功, 结果值.摘要);
-        Assert.Equal("锁附，A", 结果值.配方!.名称);
+        Assert.True(resultValue.Success, resultValue.Summary);
+        Assert.Equal("锁附，A", resultValue.Recipe!.Name);
     }
 }

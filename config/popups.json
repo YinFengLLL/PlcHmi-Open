@@ -1,40 +1,40 @@
 {
-  "弹窗集合": [
+  "popupCollection": [
     {
-      "键": "demo1",
-      "名称": "拍照失败",
-      "触发地址": "m490",
-      "内容": "拍照mark点2失败",
-      "按钮一名称": "退回",
-      "按钮一地址": "m471",
-      "按钮一模式": 0,
-      "按钮二名称": "重拍",
-      "按钮二地址": "m470",
-      "按钮二模式": 0
+      "key": "demo1",
+      "name": "拍照失败",
+      "triggerAddress": "m490",
+      "content": "拍照mark点2失败",
+      "button1Name": "退回",
+      "button1Address": "m471",
+      "button1Mode": 0,
+      "button2Name": "重拍",
+      "button2Address": "m470",
+      "button2Mode": 0
     },
     {
-      "键": "6299237e",
-      "名称": "急停报警",
-      "触发地址": "m3002",
-      "内容": "急停被按下!!!",
-      "按钮一名称": "确认",
-      "按钮一地址": "M3001",
-      "按钮一模式": 0,
-      "按钮二名称": "",
-      "按钮二地址": "",
-      "按钮二模式": 0
+      "key": "6299237e",
+      "name": "急停报警",
+      "triggerAddress": "m3002",
+      "content": "急停被按下!!!",
+      "button1Name": "确认",
+      "button1Address": "M3001",
+      "button1Mode": 0,
+      "button2Name": "",
+      "button2Address": "",
+      "button2Mode": 0
     },
     {
-      "键": "594a3b91",
-      "名称": "吸螺丝拍照识别失败",
-      "触发地址": "M443",
-      "内容": "吸螺丝拍照识别失败",
-      "按钮一名称": "确认",
-      "按钮一地址": "M444",
-      "按钮一模式": 0,
-      "按钮二名称": "重试",
-      "按钮二地址": "M445",
-      "按钮二模式": 0
+      "key": "594a3b91",
+      "name": "吸螺丝拍照识别失败",
+      "triggerAddress": "M443",
+      "content": "吸螺丝拍照识别失败",
+      "button1Name": "确认",
+      "button1Address": "M444",
+      "button1Mode": 0,
+      "button2Name": "重试",
+      "button2Address": "M445",
+      "button2Mode": 0
     }
   ]
 }

@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>
 /// 侧栏收起模式（P3 响应式）。
@@ -12,12 +12,12 @@ namespace 上位机.应用.视图模型;
 ///
 /// <para>拆为 partial 的原因：主文件已贴近 400 行规模门禁基线。</para>
 /// </summary>
-public sealed partial class 主视图模型
+public sealed partial class MasterViewModel
 {
     /// <summary>侧栏是否已收起（true = 64px 纯图标栏）。</summary>
-    [ObservableProperty] private bool _侧栏已收起;
+    [ObservableProperty] private bool _sidebarCollapsed;
 
     /// <summary>切换侧栏展开 / 收起。</summary>
     [RelayCommand]
-    private void 切换侧栏() => 侧栏已收起 = !侧栏已收起;
+    private void SwitchSidebar() => SidebarCollapsed = !SidebarCollapsed;
 }

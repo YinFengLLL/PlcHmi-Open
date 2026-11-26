@@ -1,10 +1,10 @@
 using System.IO.Ports;
 using System.Net.Sockets;
 using System.Text;
-using 上位机.核心.抽象;
-using 上位机.核心.模型;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 扫码枪数据帧切分（参考 SmartScanner 的 <c>FrameParser</c>）。
@@ -12,128 +12,128 @@ namespace 上位机.业务.服务;
 /// <para>扫码枪可配 CR / CRLF / LF 三种结尾，现场没人会去翻说明书确认是哪一种：
 /// 三种都认，未收完的半截留在缓冲里等下一块数据。</para>
 /// </summary>
-public static class 扫码帧解析器
+public static class ScanFrameParser
 {
-    /// <summary>把新到的字符块追加进 <paramref name="缓冲"/>，切出所有完整帧（不含结尾符）。</summary>
-    public static IReadOnlyList<string> 切分(string 块, StringBuilder 缓冲)
+    /// <summary>把新到的字符块追加进 <paramref name="buffer"/>，切出所有完整帧（不含结尾符）。</summary>
+    public static IReadOnlyList<string> Slice(string block, StringBuilder buffer)
     {
-        ArgumentNullException.ThrowIfNull(缓冲);
+        ArgumentNullException.ThrowIfNull(buffer);
 
-        if (!string.IsNullOrEmpty(块))
+        if (!string.IsNullOrEmpty(block))
         {
-            缓冲.Append(块);
+            buffer.Append(block);
         }
 
-        var 帧集合 = new List<string>();
+        var frameCollection = new List<string>();
 
         while (true)
         {
-            var 待处理 = 缓冲.ToString();
-            var 换行 = 待处理.IndexOf('\n');
-            var 回车 = 待处理.IndexOf('\r');
+            var PendingProcess = buffer.ToString();
+            var newLine = PendingProcess.IndexOf('\n');
+            var carriageReturn = PendingProcess.IndexOf('\r');
 
-            if (换行 < 0 && 回车 < 0)
+            if (newLine < 0 && carriageReturn < 0)
             {
                 break;   // 还没收到行结束符：等下一块
             }
 
-            var 位置 = 换行 >= 0 && 回车 >= 0 ? Math.Min(换行, 回车) : Math.Max(换行, 回车);
-            var 行 = 待处理[..位置];
-            缓冲.Remove(0, 位置 + 1);
+            var Position = newLine >= 0 && carriageReturn >= 0 ? Math.Min(newLine, carriageReturn) : Math.Max(newLine, carriageReturn);
+            var Row = PendingProcess[..Position];
+            buffer.Remove(0, Position + 1);
 
             // CRLF：CR 已被消费，紧跟的 LF 一并吃掉，避免产生空帧
-            if (待处理[位置] == '\r' && 缓冲.Length > 0 && 缓冲[0] == '\n')
+            if (PendingProcess[Position] == '\r' && buffer.Length > 0 && buffer[0] == '\n')
             {
-                缓冲.Remove(0, 1);
+                buffer.Remove(0, 1);
             }
 
-            if (行.Length > 0)
+            if (Row.Length > 0)
             {
-                帧集合.Add(行);
+                frameCollection.Add(Row);
             }
         }
 
-        return 帧集合;
+        return frameCollection;
     }
 }
 
 /// <summary>串口扫码枪（USB 转 COM）。</summary>
-public sealed class 串口扫码传输 : 扫码枪传输接口
+public sealed class SerialPortScanTransport : IScannerTransport
 {
-    private readonly StringBuilder _缓冲 = new();
-    private SerialPort? _端口;
+    private readonly StringBuilder _buffer = new();
+    private SerialPort? _port;
 
     /// <inheritdoc />
-    public bool 已打开 => _端口 is { IsOpen: true };
+    public bool Opened => _port is { IsOpen: true };
 
     /// <inheritdoc />
-    public event EventHandler<string>? 条码已接收;
+    public event EventHandler<string>? barcodeReceived;
 
     /// <inheritdoc />
-    public event EventHandler<bool>? 连接状态已变更;
+    public event EventHandler<bool>? ConnectionStateChanged;
 
     /// <inheritdoc />
-    public bool 打开(扫码枪配置 配置, out string? 错误)
+    public bool Open(ScannerConfig Config, out string? error)
     {
-        ArgumentNullException.ThrowIfNull(配置);
+        ArgumentNullException.ThrowIfNull(Config);
 
-        错误 = null;
-        关闭();
+        error = null;
+        Close();
 
         try
         {
-            var 端口 = new SerialPort(
-                配置.串口号.Trim(),
-                配置.波特率,
-                校验位(配置.校验),
-                配置.数据位,
-                停止位(配置.停止位))
+            var Port = new SerialPort(
+                Config.SerialPortName.Trim(),
+                Config.BaudRate,
+                ParseParity(Config.Validate),
+                Config.DataBit,
+                ParseStopBits(Config.StopBits))
             {
                 Encoding = Encoding.ASCII,
                 ReadTimeout = 500,
                 WriteTimeout = 500,
             };
 
-            端口.DataReceived += 端口_数据到达;
-            端口.Open();
+            Port.DataReceived += Port_DataToReach;
+            Port.Open();
 
-            _端口 = 端口;
-            连接状态已变更?.Invoke(this, true);
+            _port = Port;
+            ConnectionStateChanged?.Invoke(this, true);
             return true;
         }
-        catch (UnauthorizedAccessException 异常)
+        catch (UnauthorizedAccessException exception)
         {
-            错误 = $"串口 {配置.串口号} 被占用或无权限：{异常.Message}";
+            error = $"串口 {Config.SerialPortName} 被占用或无权限：{exception.Message}";
             return false;
         }
-        catch (IOException 异常)
+        catch (IOException exception)
         {
-            错误 = $"串口 {配置.串口号} 打开失败：{异常.Message}";
+            error = $"串口 {Config.SerialPortName} 打开失败：{exception.Message}";
             return false;
         }
-        catch (ArgumentException 异常)
+        catch (ArgumentException exception)
         {
-            错误 = $"串口参数无效（{配置.串口号}）：{异常.Message}";
+            error = $"串口参数无效（{Config.SerialPortName}）：{exception.Message}";
             return false;
         }
     }
 
     /// <inheritdoc />
-    public void 关闭()
+    public void Close()
     {
-        var 端口 = _端口;
-        _端口 = null;
+        var Port = _port;
+        _port = null;
 
-        if (端口 is null)
+        if (Port is null)
         {
             return;
         }
 
         try
         {
-            端口.DataReceived -= 端口_数据到达;
-            端口.Close();
-            端口.Dispose();
+            Port.DataReceived -= Port_DataToReach;
+            Port.Close();
+            Port.Dispose();
         }
         catch (IOException)
         {
@@ -144,20 +144,20 @@ public sealed class 串口扫码传输 : 扫码枪传输接口
             // 已关闭：释放即可
         }
 
-        连接状态已变更?.Invoke(this, false);
+        ConnectionStateChanged?.Invoke(this, false);
     }
 
     /// <inheritdoc />
-    public bool 发送指令(string 指令)
+    public bool SenderCommand(string command)
     {
-        if (_端口 is not { IsOpen: true } 端口 || string.IsNullOrEmpty(指令))
+        if (_port is not { IsOpen: true } Port || string.IsNullOrEmpty(command))
         {
             return false;
         }
 
         try
         {
-            端口.Write(指令);
+            Port.Write(command);
             return true;
         }
         catch (InvalidOperationException)
@@ -175,22 +175,22 @@ public sealed class 串口扫码传输 : 扫码枪传输接口
     }
 
     /// <inheritdoc />
-    public void Dispose() => 关闭();
+    public void Dispose() => Close();
 
-    private void 端口_数据到达(object 发送者, SerialDataReceivedEventArgs 事件参数)
+    private void Port_DataToReach(object sender, SerialDataReceivedEventArgs eventArgs)
     {
-        var 端口 = _端口;
+        var Port = _port;
 
-        if (端口 is null)
+        if (Port is null)
         {
             return;
         }
 
-        string 块;
+        string block;
 
         try
         {
-            块 = 端口.ReadExisting();
+            block = Port.ReadExisting();
         }
         catch (IOException)
         {
@@ -201,20 +201,20 @@ public sealed class 串口扫码传输 : 扫码枪传输接口
             return;
         }
 
-        foreach (var 帧 in 扫码帧解析器.切分(块, _缓冲))
+        foreach (var frame in ScanFrameParser.Slice(block, _buffer))
         {
-            条码已接收?.Invoke(this, 帧);
+            barcodeReceived?.Invoke(this, frame);
         }
     }
 
-    private static Parity 校验位(string 值) => 值?.Trim() switch
+    private static Parity ParseParity(string Value) => Value?.Trim() switch
     {
         "奇" => Parity.Odd,
         "偶" => Parity.Even,
         _ => Parity.None,
     };
 
-    private static StopBits 停止位(string 值) => 值?.Trim() switch
+    private static StopBits ParseStopBits(string Value) => Value?.Trim() switch
     {
         "2" => StopBits.Two,
         "1.5" => StopBits.OnePointFive,
@@ -223,118 +223,118 @@ public sealed class 串口扫码传输 : 扫码枪传输接口
 }
 
 /// <summary>TCP/IP 扫码枪（上位机作客户端，扫码枪侧配成 Server）。</summary>
-public sealed class Tcp扫码传输 : 扫码枪传输接口
+public sealed class TcpScanTransport : IScannerTransport
 {
-    private readonly StringBuilder _缓冲 = new();
-    private TcpClient? _客户端;
-    private NetworkStream? _流;
-    private CancellationTokenSource? _取消;
+    private readonly StringBuilder _buffer = new();
+    private TcpClient? _client;
+    private NetworkStream? _stream;
+    private CancellationTokenSource? _cancel;
 
     /// <inheritdoc />
-    public bool 已打开 => _流 is not null;
+    public bool Opened => _stream is not null;
 
     /// <inheritdoc />
-    public event EventHandler<string>? 条码已接收;
+    public event EventHandler<string>? barcodeReceived;
 
     /// <inheritdoc />
-    public event EventHandler<bool>? 连接状态已变更;
+    public event EventHandler<bool>? ConnectionStateChanged;
 
     /// <inheritdoc />
-    public bool 打开(扫码枪配置 配置, out string? 错误)
+    public bool Open(ScannerConfig Config, out string? error)
     {
-        ArgumentNullException.ThrowIfNull(配置);
+        ArgumentNullException.ThrowIfNull(Config);
 
-        错误 = null;
-        关闭();
+        error = null;
+        Close();
 
-        var 客户端 = new TcpClient();
+        var Client = new TcpClient();
 
         try
         {
             // 扫码枪没上电时 Connect 会挂很久：3 秒拿不到就连不上，别让启动流程等它
-            var 任务 = 客户端.ConnectAsync(配置.网口地址.Trim(), 配置.网口端口);
+            var task = Client.ConnectAsync(Config.EthernetAddress.Trim(), Config.EthernetPort);
 
-            if (!任务.Wait(TimeSpan.FromSeconds(3)))
+            if (!task.Wait(TimeSpan.FromSeconds(3)))
             {
-                客户端.Dispose();
-                错误 = $"连接扫码枪 {配置.网口地址}:{配置.网口端口} 超时。";
+                Client.Dispose();
+                error = $"连接扫码枪 {Config.EthernetAddress}:{Config.EthernetPort} 超时。";
                 return false;
             }
 
-            _客户端 = 客户端;
-            _流 = 客户端.GetStream();
-            _取消 = new CancellationTokenSource();
+            _client = Client;
+            _stream = Client.GetStream();
+            _cancel = new CancellationTokenSource();
 
-            var 令牌 = _取消.Token;
-            _ = Task.Run(() => 读循环(_流, 令牌), 令牌);
+            var token = _cancel.Token;
+            _ = Task.Run(() => ReadLoopRing(_stream, token), token);
 
-            连接状态已变更?.Invoke(this, true);
+            ConnectionStateChanged?.Invoke(this, true);
             return true;
         }
-        catch (AggregateException 异常)
+        catch (AggregateException exception)
         {
-            客户端.Dispose();
-            错误 = $"连接扫码枪 {配置.网口地址}:{配置.网口端口} 失败：{异常.InnerException?.Message ?? 异常.Message}";
+            Client.Dispose();
+            error = $"连接扫码枪 {Config.EthernetAddress}:{Config.EthernetPort} 失败：{exception.InnerException?.Message ?? exception.Message}";
             return false;
         }
-        catch (SocketException 异常)
+        catch (SocketException exception)
         {
-            客户端.Dispose();
-            错误 = $"连接扫码枪 {配置.网口地址}:{配置.网口端口} 失败：{异常.Message}";
+            Client.Dispose();
+            error = $"连接扫码枪 {Config.EthernetAddress}:{Config.EthernetPort} 失败：{exception.Message}";
             return false;
         }
-        catch (ArgumentException 异常)
+        catch (ArgumentException exception)
         {
-            客户端.Dispose();
-            错误 = $"扫码枪网络参数无效：{异常.Message}";
+            Client.Dispose();
+            error = $"扫码枪网络参数无效：{exception.Message}";
             return false;
         }
     }
 
     /// <inheritdoc />
-    public void 关闭()
+    public void Close()
     {
-        _取消?.Cancel();
-        _取消?.Dispose();
-        _取消 = null;
+        _cancel?.Cancel();
+        _cancel?.Dispose();
+        _cancel = null;
 
         try
         {
-            _流?.Dispose();
+            _stream?.Dispose();
         }
         catch (IOException)
         {
             // 断开时释放即可
         }
 
-        _流 = null;
+        _stream = null;
 
         try
         {
-            _客户端?.Dispose();
+            _client?.Dispose();
         }
         catch (SocketException)
         {
             // 断开时释放即可
         }
 
-        _客户端 = null;
+        _client = null;
     }
 
     /// <inheritdoc />
-    public bool 发送指令(string 指令)
+    public bool SenderCommand(string command)
     {
-        var 流 = _流;
+        var stream = _stream;
 
-        if (流 is null || string.IsNullOrEmpty(指令))
+        if (stream is null || string.IsNullOrEmpty(command))
         {
             return false;
         }
 
         try
         {
-            var 字节 = Encoding.ASCII.GetBytes(指令);
-            流.Write(字节, 0, 字节.Length);
+            var byteValue = Encoding.ASCII.GetBytes(command);
+            stream.Write(byteValue, 0, byteValue.Length);
             return true;
         }
         catch (IOException)
@@ -348,29 +348,29 @@ public sealed class Tcp扫码传输 : 扫码枪传输接口
     }
 
     /// <inheritdoc />
-    public void Dispose() => 关闭();
+    public void Dispose() => Close();
 
-    private void 读循环(NetworkStream 流, CancellationToken 取消)
+    private void ReadLoopRing(NetworkStream stream, CancellationToken Cancel)
     {
-        var 缓冲 = new byte[4096];
-        var 主动关闭 = false;
+        var buffer = new byte[4096];
+        var masterMoveClose = false;
 
         try
         {
-            while (!取消.IsCancellationRequested)
+            while (!Cancel.IsCancellationRequested)
             {
-                var 已读 = 流.Read(缓冲, 0, 缓冲.Length);
+                var read = stream.Read(buffer, 0, buffer.Length);
 
-                if (已读 <= 0)
+                if (read <= 0)
                 {
                     break;   // 对端关闭
                 }
 
-                var 块 = Encoding.ASCII.GetString(缓冲, 0, 已读);
+                var block = Encoding.ASCII.GetString(buffer, 0, read);
 
-                foreach (var 帧 in 扫码帧解析器.切分(块, _缓冲))
+                foreach (var frame in ScanFrameParser.Slice(block, _buffer))
                 {
-                    条码已接收?.Invoke(this, 帧);
+                    barcodeReceived?.Invoke(this, frame);
                 }
             }
         }
@@ -380,7 +380,7 @@ public sealed class Tcp扫码传输 : 扫码枪传输接口
         }
         catch (ObjectDisposedException)
         {
-            主动关闭 = 取消.IsCancellationRequested;
+            masterMoveClose = Cancel.IsCancellationRequested;
         }
         catch (SocketException)
         {
@@ -388,10 +388,10 @@ public sealed class Tcp扫码传输 : 扫码枪传输接口
         }
         finally
         {
-            if (!主动关闭)
+            if (!masterMoveClose)
             {
-                _流 = null;
-                连接状态已变更?.Invoke(this, false);
+                _stream = null;
+                ConnectionStateChanged?.Invoke(this, false);
             }
         }
     }

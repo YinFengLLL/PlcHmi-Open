@@ -1,11 +1,11 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
-using 上位机.通信.Modbus;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 轮询引擎。按分组周期采集点位，做变化检测后分发。
@@ -17,292 +17,292 @@ namespace 上位机.业务.服务;
 ///   <item>采集运行在后台线程，UI 只经事件收到变化的值。</item>
 /// </list>
 /// </summary>
-public sealed partial class 轮询引擎 : 轮询引擎接口, IAsyncDisposable
+public sealed partial class PollingEngine : IPollingEngine, IAsyncDisposable
 {
-    private readonly Modbus客户端接口 _客户端;
-    private readonly 标签仓储接口 _标签;
-    private readonly IO点位服务接口 _IO点位表;
-    private readonly 地址解析器接口 _解析器;
-    private readonly 标签值服务 _值列表;
-    private readonly 轮询选项 _轮询选项;
-    private readonly PLC连接选项 _PLC选项;
-    private readonly ILogger<轮询引擎> _日志;
+    private readonly IModbusClient _client;
+    private readonly ITagRepository _tag;
+    private readonly IIoPointService _ioPointTable;
+    private readonly IAddressParser _parser;
+    private readonly TagValueService _valueList;
+    private readonly PollingOptions _pollingOptions;
+    private readonly PlcConnectionOptions _plcOptions;
+    private readonly ILogger<PollingEngine> _log;
 
-    private readonly List<轮询分组> _分组 = new();
+    private readonly List<PollingGroup> _group = new();
 
     /// <summary>各分组最近一轮采集耗时。三个分组并发写，故单独用小锁保护。</summary>
-    private readonly Dictionary<标签分组, double> _周期毫秒分组 = new();
-    private readonly object _周期同步 = new();
+    private readonly Dictionary<TagGroup, double> _weekPeriodMillisecondsGroup = new();
+    private readonly object _weekPeriodSync = new();
 
-    private CancellationTokenSource? _取消令牌源;
-    private Task? _工作线程;
+    private CancellationTokenSource? _cancellationTokenSource;
+    private Task? _workerThread;
 
-    public 轮询引擎(
-        Modbus客户端接口 客户端,
-        标签仓储接口 标签列表,
-        IO点位服务接口 IO点位表,
-        地址解析器接口 解析器,
-        标签值服务 值列表,
-        轮询选项 轮询选项,
-        PLC连接选项 PLC选项,
-        ILogger<轮询引擎> 日志)
+    public PollingEngine(
+        IModbusClient Client,
+        ITagRepository tagList,
+        IIoPointService IoPointTable,
+        IAddressParser Parser,
+        TagValueService ValueList,
+        PollingOptions PollingOptions,
+        PlcConnectionOptions PlcOptions,
+        ILogger<PollingEngine> Log)
     {
-        _客户端 = 客户端;
-        _标签 = 标签列表;
-        _IO点位表 = IO点位表;
-        _解析器 = 解析器;
-        _值列表 = 值列表;
-        _轮询选项 = 轮询选项;
-        _PLC选项 = PLC选项;
-        _日志 = 日志;
+        _client = Client;
+        _tag = tagList;
+        _ioPointTable = IoPointTable;
+        _parser = Parser;
+        _valueList = ValueList;
+        _pollingOptions = PollingOptions;
+        _plcOptions = PlcOptions;
+        _log = Log;
     }
 
     /// <inheritdoc />
-    public IReadOnlyDictionary<标签分组, double> 周期毫秒分组
+    public IReadOnlyDictionary<TagGroup, double> WeekPeriodMillisecondsGroup
     {
         get
         {
-            lock (_周期同步)
+            lock (_weekPeriodSync)
             {
-                return new Dictionary<标签分组, double>(_周期毫秒分组);
+                return new Dictionary<TagGroup, double>(_weekPeriodMillisecondsGroup);
             }
         }
     }
 
     /// <inheritdoc />
-    public Task 异步启动(CancellationToken 取消令牌 = default)
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
-        if (_工作线程 is not null)
+        if (_workerThread is not null)
         {
             return Task.CompletedTask;
         }
 
-        准备方案列表();
+        PreparePlanList();
 
-        _取消令牌源 = CancellationTokenSource.CreateLinkedTokenSource(取消令牌);
-        _工作线程 = Task.Run(() => 异步运行(_取消令牌源.Token), CancellationToken.None);
+        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _workerThread = Task.Run(() => RunAsync(_cancellationTokenSource.Token), CancellationToken.None);
 
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public async Task 异步停止(CancellationToken 取消令牌 = default)
+    public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        if (_取消令牌源 is null || _工作线程 is null)
+        if (_cancellationTokenSource is null || _workerThread is null)
         {
             return;
         }
 
-        await _取消令牌源.CancelAsync().ConfigureAwait(false);
+        await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
 
-        var 等待超时 = TimeSpan.FromSeconds(5);
-        var 已退出 = false;
+        var waitTimeout = TimeSpan.FromSeconds(5);
+        var alreadyExit = false;
 
         try
         {
-            await _工作线程.WaitAsync(等待超时, 取消令牌).ConfigureAwait(false);
-            已退出 = true;
+            await _workerThread.WaitAsync(waitTimeout, cancellationToken).ConfigureAwait(false);
+            alreadyExit = true;
         }
         catch (TimeoutException)
         {
             // 5 秒内没退出 = 循环卡住的征兆，不是正常关闭，必须留下痕迹
-            _日志.LogWarning("等待轮询引擎退出超时（{Seconds}s），已放弃等待", 等待超时.TotalSeconds);
+            _log.LogWarning("等待轮询引擎退出超时（{Seconds}s），已放弃等待", waitTimeout.TotalSeconds);
         }
         catch (OperationCanceledException)
         {
             // 外部取消（程序退出），正常
-            已退出 = true;
+            alreadyExit = true;
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
             // 循环本身有兜底 catch，这里只是防御：任何残留异常都不该拖住程序退出
-            _日志.LogWarning(异常, "轮询引擎异常退出");
-            已退出 = true;
+            _log.LogWarning(exception, "轮询引擎异常退出");
+            alreadyExit = true;
         }
         finally
         {
-            _取消令牌源.Dispose();
-            _取消令牌源 = null;
+            _cancellationTokenSource.Dispose();
+            _cancellationTokenSource = null;
 
             // 仅当循环确认已退出才清空方案并放行下次启动：
             // 超时后旧线程可能仍在 foreach 读取方案——此时 Clear() 会抛
             // InvalidOperationException（表现为"这一轮采集静默丢失"），
             // 且紧随的"重建方案列表"会因 _工作线程 == null 启动第二个轮询循环，
             // 两个循环同时抢占同一个串行化连接。
-            if (已退出)
+            if (alreadyExit)
             {
-                _工作线程 = null;
-                _分组.Clear();
-                _IO读取方案.Clear();
+                _workerThread = null;
+                _group.Clear();
+                _ioReadPlan.Clear();
 
-                lock (_周期同步)
+                lock (_weekPeriodSync)
                 {
-                    _周期毫秒分组.Clear();
+                    _weekPeriodMillisecondsGroup.Clear();
                 }
             }
             else
             {
                 // 旧循环未退出：保留句柄让 异步启动 拒绝重复启动（fail-safe），
                 // 重建操作会因此被拒绝——比两个循环抢一条连接可诊断得多
-                _日志.LogWarning("轮询引擎旧循环仍未退出，已阻止重复启动；请重启程序恢复采集计划重建");
+                _log.LogWarning("轮询引擎旧循环仍未退出，已阻止重复启动；请重启程序恢复采集计划重建");
             }
         }
     }
 
     /// <inheritdoc />
-    public async Task 异步重建方案列表(CancellationToken 取消令牌 = default)
+    public async Task RebuildPlanListAsync(CancellationToken cancellationToken = default)
     {
         // 走"安全停止 → 重新编译 → 重新启动"，而不是运行中增量替换读取计划：
         // RunAsync 在启动那一刻就把 _groups 分发给各分组循环，运行中改集合会引入并发读写风险。
         // 重建只需几百毫秒，而且只在管理员改地址这种低频操作时发生，代价可接受。
-        await 异步停止(取消令牌).ConfigureAwait(false);
-        await 异步启动(取消令牌).ConfigureAwait(false);
+        await StopAsync(cancellationToken).ConfigureAwait(false);
+        await StartAsync(cancellationToken).ConfigureAwait(false);
 
-        _日志.LogInformation("采集计划已重建，共 {GroupCount} 个分组", _分组.Count);
+        _log.LogInformation("采集计划已重建，共 {GroupCount} 个分组", _group.Count);
     }
 
     /// <summary>构建各分组的读取计划。</summary>
-    private void 准备方案列表()
+    private void PreparePlanList()
     {
-        _分组.Clear();
+        _group.Clear();
 
-        var 表格项 = _IO点位表.表格;
-        _启用输入.Clear();
-        _启用输入.AddRange(表格项.输入.Where(输入点位 => 输入点位.启用));
-        _启用输出.Clear();
-        _启用输出.AddRange(表格项.输出.Where(输出点位 => 输出点位.启用));
+        var GridItem = _ioPointTable.DataGrid;
+        _enabledInput.Clear();
+        _enabledInput.AddRange(GridItem.Input.Where(inputPoint => inputPoint.Enabled));
+        _enabledOutput.Clear();
+        _enabledOutput.AddRange(GridItem.Output.Where(outputPoint => outputPoint.Enabled));
 
         // IO 点地址解析一次编译为读取方案（热路径每周期复用，不再重复正则解析）
         // X/Y 区位区可经 io-points.json 元显式覆盖（部分机型物理输入在离散输入区）
-        构建IO读取方案(表格项.元.X区域, 表格项.元.Y区域);
+        BuildIoReadPlan(GridItem.Element.XArea, GridItem.Element.YArea);
 
-        foreach (var (group, 间隔项) in new[]
+        foreach (var (group, intervalItem) in new[]
                  {
-                     (标签分组.快, _轮询选项.快间隔毫秒),
-                     (标签分组.慢, _轮询选项.慢间隔毫秒),
-                     (标签分组.事件, _轮询选项.事件间隔毫秒),
+                     (TagGroup.Fast, _pollingOptions.FastIntervalMilliseconds),
+                     (TagGroup.Slow, _pollingOptions.SlowIntervalMilliseconds),
+                     (TagGroup.Event, _pollingOptions.EventIntervalMilliseconds),
                  })
         {
-            var 分组标签 = _标签.获取分组(group);
-            var 方案列表 = 构建读取方案列表(分组标签);
+            var groupTag = _tag.GetGroup(group);
+            var planList = BuildReadPlanList(groupTag);
 
-            if (方案列表.Count == 0 && group != 标签分组.快)
+            if (planList.Count == 0 && group != TagGroup.Fast)
             {
                 continue;
             }
 
-            _分组.Add(new 轮询分组(group, TimeSpan.FromMilliseconds(间隔项), 方案列表, group == 标签分组.快));
+            _group.Add(new PollingGroup(group, TimeSpan.FromMilliseconds(intervalItem), planList, group == TagGroup.Fast));
         }
 
-        foreach (var 分组项 in _分组)
+        foreach (var groupItem in _group)
         {
-            _日志.LogInformation("轮询分组 {Group}：周期 {Interval}ms，{PlanCount} 个读取计划",
-                分组项.分组, 分组项.间隔.TotalMilliseconds, 分组项.方案集合.Count);
+            _log.LogInformation("轮询分组 {Group}：周期 {Interval}ms，{PlanCount} 个读取计划",
+                groupItem.Group, groupItem.interval.TotalMilliseconds, groupItem.planCollection.Count);
         }
 
-        _日志.LogInformation("IO 轮询：X {InputCount} 点、Y {OutputCount} 点，共 {PlanCount} 个读取计划",
-            _启用输入.Count, _启用输出.Count, _IO读取方案.Count);
+        _log.LogInformation("IO 轮询：X {InputCount} 点、Y {OutputCount} 点，共 {PlanCount} 个读取计划",
+            _enabledInput.Count, _enabledOutput.Count, _ioReadPlan.Count);
     }
 
     // 读取计划编译（构建读取方案列表 / 合并地址 / 计划记录类型）见 PollingEngine.Plans.cs（partial）。
 
-    private async Task 异步运行(CancellationToken 取消令牌)
+    private async Task RunAsync(CancellationToken cancellationToken)
     {
-        var 任务 = _分组.Select(分组项 => 异步运行分组(分组项, 取消令牌)).ToList();
+        var task = _group.Select(groupItem => RunGroupAsync(groupItem, cancellationToken)).ToList();
 
         try
         {
-            await Task.WhenAll(任务).ConfigureAwait(false);
+            await Task.WhenAll(task).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             // 正常退出
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "轮询引擎异常退出");
+            _log.LogError(exception, "轮询引擎异常退出");
         }
     }
 
-    private async Task 异步运行分组(轮询分组 group, CancellationToken 取消令牌)
+    private async Task RunGroupAsync(PollingGroup group, CancellationToken cancellationToken)
     {
-        using var 计时器 = new PeriodicTimer(group.间隔);
+        using var timer = new PeriodicTimer(group.interval);
 
-        while (await 计时器.WaitForNextTickAsync(取消令牌).ConfigureAwait(false))
+        while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
         {
-            if (!_客户端.是否已连接)
+            if (!_client.IsConnected)
             {
                 continue;
             }
 
-            var 计时 = Stopwatch.StartNew();
+            var countWhen = Stopwatch.StartNew();
 
             try
             {
                 // 快组顺带刷新 IO 点
-                if (group.含IO)
+                if (group.hasIo)
                 {
-                    await 异步轮询IO点位(取消令牌).ConfigureAwait(false);
+                    await PollingIoPointAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                await 异步轮询标签(group, 取消令牌).ConfigureAwait(false);
+                await PollingTagAsync(group, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 break;
             }
-            catch (Exception 异常)
+            catch (Exception exception)
             {
-                _日志.LogWarning("轮询分组 {Group} 出现异常：{Message}", group.分组, 异常.Message);
+                _log.LogWarning("轮询分组 {Group} 出现异常：{Message}", group.Group, exception.Message);
             }
 
-            计时.Stop();
+            countWhen.Stop();
 
-            lock (_周期同步)
+            lock (_weekPeriodSync)
             {
-                _周期毫秒分组[group.分组] = 计时.Elapsed.TotalMilliseconds;
+                _weekPeriodMillisecondsGroup[group.Group] = countWhen.Elapsed.TotalMilliseconds;
             }
         }
     }
 
     /// <summary>按读取计划采集点位，解码并发布。</summary>
-    private async Task 异步轮询标签(轮询分组 group, CancellationToken 取消令牌)
+    private async Task PollingTagAsync(PollingGroup group, CancellationToken cancellationToken)
     {
-        foreach (var 方案 in group.方案集合)
+        foreach (var plan in group.planCollection)
         {
             try
             {
-                switch (方案.区域)
+                switch (plan.Area)
                 {
-                    case Modbus区域.线圈:
+                    case ModbusArea.Coil:
                     {
-                        var 位 = await _客户端.异步读取线圈(方案.启动地址, 方案.数量, 取消令牌)
+                        var Bit = await _client.ReadCoilAsync(plan.StartAddress, plan.Count, cancellationToken)
                             .ConfigureAwait(false);
-                        发布方案值列表(方案, 位, null);
+                        RaiseLayoutPlanValueList(plan, Bit, null);
                         break;
                     }
 
-                    case Modbus区域.离散输入:
+                    case ModbusArea.DiscreteInput:
                     {
-                        var 位 = await _客户端.异步读取离散输入(方案.启动地址, 方案.数量, 取消令牌)
+                        var Bit = await _client.ReadDiscreteInputAsync(plan.StartAddress, plan.Count, cancellationToken)
                             .ConfigureAwait(false);
-                        发布方案值列表(方案, 位, null);
+                        RaiseLayoutPlanValueList(plan, Bit, null);
                         break;
                     }
 
-                    case Modbus区域.输入寄存器:
+                    case ModbusArea.InputRegister:
                     {
-                        var 寄存器列表 = await _客户端.异步读取输入寄存器(方案.启动地址, 方案.数量, 取消令牌)
+                        var registerList = await _client.ReadInputRegisterAsync(plan.StartAddress, plan.Count, cancellationToken)
                             .ConfigureAwait(false);
-                        发布方案值列表(方案, null, 寄存器列表);
+                        RaiseLayoutPlanValueList(plan, null, registerList);
                         break;
                     }
 
                     default:
                     {
-                        var 寄存器列表 = await _客户端.异步读取保持寄存器(方案.启动地址, 方案.数量, 取消令牌)
+                        var registerList = await _client.ReadHoldingRegisterAsync(plan.StartAddress, plan.Count, cancellationToken)
                             .ConfigureAwait(false);
-                        发布方案值列表(方案, null, 寄存器列表);
+                        RaiseLayoutPlanValueList(plan, null, registerList);
                         break;
                     }
                 }
@@ -311,13 +311,13 @@ public sealed partial class 轮询引擎 : 轮询引擎接口, IAsyncDisposable
             {
                 throw;
             }
-            catch (Exception 异常)
+            catch (Exception exception)
             {
                 // 单个读取计划失败只跳过它自己：曾用裸 foreach，任一计划抛异常
                 // （如某段地址 PLC 回异常码 03）会中断整组本轮采集，同组后续
                 // 全部点位本周期不刷新。IO 路径早已按此模式隔离，标签路径对齐。
-                _日志.LogWarning(异常, "读取计划 {Region} D{Start}x{Count} 执行失败，本周期跳过该计划",
-                    方案.区域, 方案.启动地址, 方案.数量);
+                _log.LogWarning(exception, "读取计划 {Region} D{Start}x{Count} 执行失败，本周期跳过该计划",
+                    plan.Area, plan.StartAddress, plan.Count);
             }
         }
     }
@@ -327,6 +327,6 @@ public sealed partial class 轮询引擎 : 轮询引擎接口, IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        await 异步停止().ConfigureAwait(false);
+        await StopAsync().ConfigureAwait(false);
     }
 }

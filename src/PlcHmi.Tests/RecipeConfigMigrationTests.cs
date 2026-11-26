@@ -1,9 +1,9 @@
 using System.Text.Json;
-using 上位机.业务.配置;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 老现场配置的「点胶 30 点 → 50 点」结构升级（2026-11）。
@@ -15,18 +15,18 @@ namespace 上位机.上位机测试;
 /// <para>另外钉死"最小改动"：迁移前后除那三处值以外<b>逐字节相同</b>
 /// （不重新序列化整个 JSON，避免重排字段 / 丢键）。</para>
 /// </summary>
-public class 配方配置迁移测试 : IDisposable
+public class RecipeConfigMigrationTest : IDisposable
 {
-    private readonly string _目录 =
+    private readonly string _dir =
         Path.Combine(Path.GetTempPath(), "plchmi-迁移-" + Guid.NewGuid().ToString("N")[..8]);
 
-    public 配方配置迁移测试() => Directory.CreateDirectory(_目录);
+    public RecipeConfigMigrationTest() => Directory.CreateDirectory(_dir);
 
     public void Dispose()
     {
         try
         {
-            Directory.Delete(_目录, recursive: true);
+            Directory.Delete(_dir, recursive: true);
         }
         catch (IOException)
         {
@@ -35,121 +35,121 @@ public class 配方配置迁移测试 : IDisposable
     }
 
     /// <summary>写一份"1.7.0 现场版"风格的配置（点胶 30 点、Y/Z 旧基址）。</summary>
-    private string 写配置(int 点数 = 30, int y基址 = 2760, int z基址 = 2820)
+    private string WriteConfig(int PointCount = 30, int yBaseAddress = 2760, int zBaseAddress = 2820)
     {
-        var 配置 = new 配方配置();
+        var Config = new RecipeConfig();
 
-        配置.点表.点表.Add(建表("锁附", 30, 2500, 2560, 2620));
-        配置.点表.点表.Add(建表("点胶", 点数, 2700, y基址, z基址, 含指令码: true));
+        Config.PointTable.PointTable.Add(BuildTable("锁附", 30, 2500, 2560, 2620));
+        Config.PointTable.PointTable.Add(BuildTable("点胶", PointCount, 2700, yBaseAddress, zBaseAddress, HasInstructionCode: true));
 
-        var 路径 = Path.Combine(_目录, "recipe-config.json");
-        File.WriteAllText(路径, JsonSerializer.Serialize(配置, JSON配置.写入));
-        return 路径;
+        var path = Path.Combine(_dir, "recipe-config.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(Config, JsonConfig.writeHumanStyle));
+        return path;
     }
 
-    private static 点表定义 建表(
-        string 键, int 点数, int x, int y, int z, bool 含指令码 = false)
+    private static PointTableDefinition BuildTable(
+        string Key, int PointCount, int x, int y, int z, bool HasInstructionCode = false)
     {
-        var 表 = new 点表定义 { 键 = 键, 名称 = $"{键}示教", 点数 = 点数 };
+        var Table = new PointTableDefinition { Key = Key, Name = $"{Key}示教", PointCount = PointCount };
 
-        if (含指令码)
+        if (HasInstructionCode)
         {
-            表.列.Add(new 点表列定义
+            Table.Column.Add(new PointTableColumnDefinition
             {
-                键 = "指令码", 名称 = "指令码", 基址 = 3400,
-                数据类型 = 标签数据类型.UInt16, 位置标签 = null,
+                Key = "指令码", Name = "指令码", BaseAddress = 3400,
+                DataType = TagDataType.UInt16, PositionTag = null,
             });
         }
 
-        表.列.Add(new 点表列定义 { 键 = "X", 名称 = "X坐标", 基址 = x, 位置标签 = "AxisGlueXPosition" });
-        表.列.Add(new 点表列定义 { 键 = "Y", 名称 = "Y坐标", 基址 = y, 位置标签 = "AxisYPosition" });
-        表.列.Add(new 点表列定义
+        Table.Column.Add(new PointTableColumnDefinition { Key = "X", Name = "X坐标", BaseAddress = x, PositionTag = "AxisGlueXPosition" });
+        Table.Column.Add(new PointTableColumnDefinition { Key = "Y", Name = "Y坐标", BaseAddress = y, PositionTag = "AxisYPosition" });
+        Table.Column.Add(new PointTableColumnDefinition
         {
-            键 = 键 == "锁附" ? "浮高" : "Z", 名称 = "Z坐标", 基址 = z, 位置标签 = "AxisGlueZPosition",
+            Key = Key == "锁附" ? "浮高" : "Z", Name = "Z坐标", BaseAddress = z, PositionTag = "AxisGlueZPosition",
         });
 
-        return 表;
+        return Table;
     }
 
-    private static 配方配置 读(string 路径) =>
-        JsonSerializer.Deserialize<配方配置>(File.ReadAllText(路径), JSON配置.读取)!;
+    private static RecipeConfig readOnce(string path) =>
+        JsonSerializer.Deserialize<RecipeConfig>(File.ReadAllText(path), JsonConfig.Read)!;
 
     [Fact]
-    public void 老配置应升级到50点并后移YZ基址()
+    public void LegacyConfigShouldUpgradeTo50PointAndAfterMoveYZBaseAddress()
     {
-        var 路径 = 写配置();
-        var 原文本 = File.ReadAllText(路径);
+        var path = WriteConfig();
+        var originalText = File.ReadAllText(path);
 
-        var 说明 = 配方配置迁移.应用(路径);
+        var Remark = RecipeConfigMigration.App(path);
 
-        Assert.NotNull(说明);
-        Assert.Contains("50 点", 说明, StringComparison.Ordinal);
+        Assert.NotNull(Remark);
+        Assert.Contains("50 点", Remark, StringComparison.Ordinal);
 
-        var 迁移后 = 读(路径);
-        var 点胶 = 迁移后.点表.查找("点胶")!;
+        var migrationAfter = readOnce(path);
+        var dispense = migrationAfter.PointTable.Find("点胶")!;
 
-        Assert.Equal(50, 点胶.点数);
-        Assert.Equal(2700, 点胶.查找列("X")!.基址);
-        Assert.Equal(2800, 点胶.查找列("Y")!.基址);
-        Assert.Equal(2900, 点胶.查找列("Z")!.基址);
-        Assert.Equal(3400, 点胶.查找列("指令码")!.基址);
+        Assert.Equal(50, dispense.PointCount);
+        Assert.Equal(2700, dispense.FindColumn("X")!.BaseAddress);
+        Assert.Equal(2800, dispense.FindColumn("Y")!.BaseAddress);
+        Assert.Equal(2900, dispense.FindColumn("Z")!.BaseAddress);
+        Assert.Equal(3400, dispense.FindColumn("指令码")!.BaseAddress);
 
         // 锁附不受影响
-        Assert.Equal(30, 迁移后.点表.查找("锁附")!.点数);
-        Assert.Equal(2560, 迁移后.点表.查找("锁附")!.查找列("Y")!.基址);
+        Assert.Equal(30, migrationAfter.PointTable.Find("锁附")!.PointCount);
+        Assert.Equal(2560, migrationAfter.PointTable.Find("锁附")!.FindColumn("Y")!.BaseAddress);
 
         // 只有那三处值变了：把新值改回旧值应与原文逐字节相同
-        var 迁移文本 = File.ReadAllText(路径);
-        var 回退 = 迁移文本
-            .Replace("\"点数\": 50", "\"点数\": 30", StringComparison.Ordinal)
-            .Replace("\"基址\": 2800", "\"基址\": 2760", StringComparison.Ordinal)
-            .Replace("\"基址\": 2900", "\"基址\": 2820", StringComparison.Ordinal);
+        var migrationText = File.ReadAllText(path);
+        var fallback = migrationText
+            .Replace("\"pointCount\": 50", "\"pointCount\": 30", StringComparison.Ordinal)
+            .Replace("\"baseAddress\": 2800", "\"baseAddress\": 2760", StringComparison.Ordinal)
+            .Replace("\"baseAddress\": 2900", "\"baseAddress\": 2820", StringComparison.Ordinal);
 
-        Assert.Equal(原文本, 回退);
+        Assert.Equal(originalText, fallback);
 
         // 旧文件已留备份
-        Assert.True(File.Exists(路径 + ".bak"), "迁移后应留下 .bak 以便回滚");
-        Assert.Equal(原文本, File.ReadAllText(路径 + ".bak"));
+        Assert.True(File.Exists(path + ".bak"), "迁移后应留下 .bak 以便回滚");
+        Assert.Equal(originalText, File.ReadAllText(path + ".bak"));
     }
 
     [Fact]
-    public void 迁移应幂等_再次启动不再改动()
+    public void MigrationShouldIdempotent_AgainTimesStartNoLongerChangeMove()
     {
-        var 路径 = 写配置();
+        var path = WriteConfig();
 
-        Assert.NotNull(配方配置迁移.应用(路径));
+        Assert.NotNull(RecipeConfigMigration.App(path));
 
-        var 一次后 = File.ReadAllText(路径);
+        var onceAfter = File.ReadAllText(path);
 
-        Assert.Null(配方配置迁移.应用(路径));
-        Assert.Equal(一次后, File.ReadAllText(路径));
+        Assert.Null(RecipeConfigMigration.App(path));
+        Assert.Equal(onceAfter, File.ReadAllText(path));
     }
 
     /// <summary>现场自己算过地址（基址不是出厂旧值）时，宁可不动，也不能把地址改错。</summary>
     [Fact]
-    public void 基址被现场改过时不应自动迁移()
+    public void BaseAddressBeFieldChangeBeyondWhenShouldNotAutoMigration()
     {
-        var 路径 = 写配置(y基址: 2761);
-        var 原文本 = File.ReadAllText(路径);
+        var path = WriteConfig(yBaseAddress: 2761);
+        var originalText = File.ReadAllText(path);
 
-        Assert.Null(配方配置迁移.应用(路径));
-        Assert.Equal(原文本, File.ReadAllText(路径));
-        Assert.Equal(30, 读(路径).点表.查找("点胶")!.点数);
+        Assert.Null(RecipeConfigMigration.App(path));
+        Assert.Equal(originalText, File.ReadAllText(path));
+        Assert.Equal(30, readOnce(path).PointTable.Find("点胶")!.PointCount);
     }
 
     [Fact]
-    public void 点数不是30的现场配置不应被改动()
+    public void PointCountNotIs30FieldConfigShouldNotBeChangeMove()
     {
-        var 路径 = 写配置(点数: 20);
-        var 原文本 = File.ReadAllText(路径);
+        var path = WriteConfig(PointCount: 20);
+        var originalText = File.ReadAllText(path);
 
-        Assert.Null(配方配置迁移.应用(路径));
-        Assert.Equal(原文本, File.ReadAllText(路径));
+        Assert.Null(RecipeConfigMigration.App(path));
+        Assert.Equal(originalText, File.ReadAllText(path));
     }
 
     [Fact]
-    public void 文件不存在时应安全返回()
+    public void FileMissingWhenShouldSafetyReturn()
     {
-        Assert.Null(配方配置迁移.应用(Path.Combine(_目录, "不存在.json")));
+        Assert.Null(RecipeConfigMigration.App(Path.Combine(_dir, "不存在.json")));
     }
 }

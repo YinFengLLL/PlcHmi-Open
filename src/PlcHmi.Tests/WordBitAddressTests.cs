@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.服务;
-using 上位机.通信.仿真;
-using 上位机.通信.汇川;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Simulation;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// D/R 区「字内位」寻址测试（2026-09-17 按 PLC 地址分配表引入）。
@@ -18,35 +18,35 @@ namespace 上位机.上位机测试;
 /// 归入同一集合，避免并行时读到半途的表。</para>
 /// </summary>
 [Collection("config-files")]
-public class 字位寻址测试
+public class WordBitAddressingTest
 {
-    private static 汇川地址解析器 解析器() => new(PLC系列.小型PLC);
+    private static InovanceAddressParser Parser() => new(PlcSeries.SmallPlc);
 
-    private static 标签仓储 仓储() => new(NullLogger<标签仓储>.Instance);
+    private static TagRepository Repository() => new(NullLogger<TagRepository>.Instance);
 
     // ── 解析 ────────────────────────────────────────────────────────────
 
     [Fact]
-    public void 解析_D区字位_应给出字地址与位号()
+    public void Parse_DAreaWordBit_ShouldGiveWordAddressAndBitNumber()
     {
-        var 地址值 = 解析器().解析("D1210.2");
+        var addressValue = Parser().Parse("D1210.2");
 
-        Assert.Equal(软元素.D, 地址值.元素);
-        Assert.Equal(1210, 地址值.逻辑序号);
-        Assert.Equal(1210, 地址值.Modbus地址);
-        Assert.Equal(Modbus区域.保持寄存器, 地址值.区域);
-        Assert.Equal(2, 地址值.位序号);
-        Assert.True(地址值.是字内位);
+        Assert.Equal(SoftElement.D, addressValue.ElementItem);
+        Assert.Equal(1210, addressValue.LogicIndex);
+        Assert.Equal(1210, addressValue.ModbusAddress);
+        Assert.Equal(ModbusArea.HoldingRegister, addressValue.Area);
+        Assert.Equal(2, addressValue.BitIndex);
+        Assert.True(addressValue.IsIntraWordBit);
     }
 
     [Fact]
-    public void 解析_R区字位_应同样支持且大小写不敏感()
+    public void Parse_RAreaWordBit_ShouldSameSampleSupportAndSizeWriteNotSensitiveSense()
     {
-        var 地址值 = 解析器().解析("r50.15");
+        var addressValue = Parser().Parse("r50.15");
 
-        Assert.Equal(软元素.R, 地址值.元素);
-        Assert.Equal(15, 地址值.位序号);
-        Assert.True(地址值.是字内位);
+        Assert.Equal(SoftElement.R, addressValue.ElementItem);
+        Assert.Equal(15, addressValue.BitIndex);
+        Assert.True(addressValue.IsIntraWordBit);
     }
 
     [Theory]
@@ -54,18 +54,18 @@ public class 字位寻址测试
     [InlineData("D1210.100")]
     [InlineData("D1210.")]
     [InlineData("M230.1")]     // 位元件不支持字内位写法
-    public void 解析_非法字位写法_应失败(string 地址文本)
+    public void Parse_IllegalWordBitWriteMethod_ShouldFail(string AddressText)
     {
-        Assert.False(解析器().尝试解析(地址文本, out _));
+        Assert.False(Parser().TryParse(AddressText, out _));
     }
 
     [Fact]
-    public void 解析_整字地址不应被判为字内位()
+    public void Parse_WholeWordAddressShouldNotBeJudgeAsIntraWordBit()
     {
-        var 地址值 = 解析器().解析("D1210");
+        var addressValue = Parser().Parse("D1210");
 
-        Assert.False(地址值.是字内位);
-        Assert.Equal(-1, 地址值.位序号);
+        Assert.False(addressValue.IsIntraWordBit);
+        Assert.Equal(-1, addressValue.BitIndex);
     }
 
     // ── X / Y 的功能码分工（2026-10-17 现场第二次报障后修正）────────────
@@ -80,130 +80,130 @@ public class 字位寻址测试
     [InlineData("X0", 63488)]
     [InlineData("X10", 63496)]    // 八进制：X10 = 序号 8
     [InlineData("X17", 63503)]    // 八进制：X17 = 序号 15
-    public void 解析_X区_应按物理输入落到离散输入区(string 地址文本, int 期望地址)
+    public void Parse_XArea_ShouldByPhysicalInputAtToDiscreteInputArea(string AddressText, int expectedAddress)
     {
-        var 地址值 = 解析器().解析(地址文本);
+        var addressValue = Parser().Parse(AddressText);
 
-        Assert.Equal(软元素.X, 地址值.元素);
-        Assert.Equal(期望地址, 地址值.Modbus地址);
-        Assert.Equal(Modbus区域.离散输入, 地址值.区域);
+        Assert.Equal(SoftElement.X, addressValue.ElementItem);
+        Assert.Equal(expectedAddress, addressValue.ModbusAddress);
+        Assert.Equal(ModbusArea.DiscreteInput, addressValue.Area);
     }
 
     [Theory]
     [InlineData("Y0", 64512)]
     [InlineData("Y10", 64520)]    // 八进制：Y10 = 序号 8
-    public void 解析_Y区_应按输出落到线圈区(string 地址文本, int 期望地址)
+    public void Parse_YArea_ShouldByOutputAtToCoilArea(string AddressText, int expectedAddress)
     {
-        var 地址值 = 解析器().解析(地址文本);
+        var addressValue = Parser().Parse(AddressText);
 
-        Assert.Equal(软元素.Y, 地址值.元素);
-        Assert.Equal(期望地址, 地址值.Modbus地址);
-        Assert.Equal(Modbus区域.线圈, 地址值.区域);
+        Assert.Equal(SoftElement.Y, addressValue.ElementItem);
+        Assert.Equal(expectedAddress, addressValue.ModbusAddress);
+        Assert.Equal(ModbusArea.Coil, addressValue.Area);
     }
 
     // ── 写通道：读-改-写 ────────────────────────────────────────────────
 
     [Fact]
-    public async Task 写D位_应只改目标位且保留同字其它位()
+    public async Task WriteDBit_ShouldOnlyChangeTargetBitAndRetainSameWordOtherBit()
     {
-        await using var 设备 = new 虚拟PLC设备(NullLogger<虚拟PLC设备>.Instance);
-        await using var 客户端 = new 仿真Modbus客户端(设备, NullLogger<仿真Modbus客户端>.Instance);
-        await 客户端.异步连接();
+        await using var Device = new VirtualPlcDevice(NullLogger<VirtualPlcDevice>.Instance);
+        await using var Client = new SimulationModbusClient(Device, NullLogger<SimulationModbusClient>.Instance);
+        await Client.ConnectAsync();
 
-        var 写入器 = new 标签写入器(客户端, 仓储(), 解析器(), NullLogger<标签写入器>.Instance);
+        var Writer = new TagWriter(Client, Repository(), Parser(), NullLogger<TagWriter>.Instance);
 
         // 命令字 D1210 预置：位 0（轴使能）与位 2（正向点动）为 1
-        设备.内存.不安全设置保持寄存器(1210, 0b0000_0000_0000_0101);
+        Device.memory.UnsafeSetHoldingRegister(1210, 0b0000_0000_0000_0101);
 
         // 写 JogXForward（D1210.2）为 false：只清位 2，位 0 必须原样保留
-        await 写入器.异步写入布尔("JogXForward", false);
+        await Writer.WriteBooleanAsync("JogXForward", false);
 
         Assert.Equal(
             (ushort)0b0000_0000_0000_0001,
-            设备.内存.不安全获取保持寄存器(1210));
+            Device.memory.UnsafeGetHoldingRegister(1210));
 
         // 再写回 true：位 0 仍保留
-        await 写入器.异步写入布尔("JogXForward", true);
+        await Writer.WriteBooleanAsync("JogXForward", true);
 
         Assert.Equal(
             (ushort)0b0000_0000_0000_0101,
-            设备.内存.不安全获取保持寄存器(1210));
+            Device.memory.UnsafeGetHoldingRegister(1210));
     }
 
     [Fact]
-    public async Task 写D位_同字两位互不干扰()
+    public async Task WriteDBit_SameWordTwoBitNotMutuallyInterfere()
     {
-        await using var 设备 = new 虚拟PLC设备(NullLogger<虚拟PLC设备>.Instance);
-        await using var 客户端 = new 仿真Modbus客户端(设备, NullLogger<仿真Modbus客户端>.Instance);
-        await 客户端.异步连接();
+        await using var Device = new VirtualPlcDevice(NullLogger<VirtualPlcDevice>.Instance);
+        await using var Client = new SimulationModbusClient(Device, NullLogger<SimulationModbusClient>.Instance);
+        await Client.ConnectAsync();
 
-        var 写入器 = new 标签写入器(客户端, 仓储(), 解析器(), NullLogger<标签写入器>.Instance);
+        var Writer = new TagWriter(Client, Repository(), Parser(), NullLogger<TagWriter>.Instance);
 
         // 正转 D1210.2 → 反转 D1210.3（正反转互锁：置一转必须清另一）
-        await 写入器.异步写入布尔("JogXForward", true);
-        await 写入器.异步写入布尔("JogXReverse", false);
+        await Writer.WriteBooleanAsync("JogXForward", true);
+        await Writer.WriteBooleanAsync("JogXReverse", false);
 
         Assert.Equal(
             (ushort)0b0000_0000_0000_0100,
-            设备.内存.不安全获取保持寄存器(1210));
+            Device.memory.UnsafeGetHoldingRegister(1210));
 
-        await 写入器.异步写入布尔("JogXForward", false);
-        await 写入器.异步写入布尔("JogXReverse", true);
+        await Writer.WriteBooleanAsync("JogXForward", false);
+        await Writer.WriteBooleanAsync("JogXReverse", true);
 
         Assert.Equal(
             (ushort)0b0000_0000_0000_1000,
-            设备.内存.不安全获取保持寄存器(1210));
+            Device.memory.UnsafeGetHoldingRegister(1210));
     }
 
     // ── 读通道：轮询按位解码 ────────────────────────────────────────────
 
     [Fact]
-    public async Task 轮询_D位点应按位解码订阅值()
+    public async Task Polling_DBitPointShouldByBitDecodeSubscribeValue()
     {
-        await using var 设备 = new 虚拟PLC设备(NullLogger<虚拟PLC设备>.Instance);
-        await using var 客户端 = new 仿真Modbus客户端(设备, NullLogger<仿真Modbus客户端>.Instance);
+        await using var Device = new VirtualPlcDevice(NullLogger<VirtualPlcDevice>.Instance);
+        await using var Client = new SimulationModbusClient(Device, NullLogger<SimulationModbusClient>.Instance);
 
-        var 点位表 = 仓储();
-        var 点动正转 = 点位表.查找("JogXForward");
-        Assert.NotNull(点动正转);
+        var pointTable = Repository();
+        var JogForward = pointTable.Find("JogXForward");
+        Assert.NotNull(JogForward);
 
         // 点动点是「命令」组（只写不采集），这里改到快组以便轮询引擎把它编进采集计划
-        点动正转!.分组 = 标签分组.快;
+        JogForward!.Group = TagGroup.Fast;
 
-        var 值列表 = new 标签值服务(NullLogger<标签值服务>.Instance);
+        var ValueList = new TagValueService(NullLogger<TagValueService>.Instance);
 
-        await using var 引擎 = new 轮询引擎(
-            客户端,
-            点位表,
-            new IO点位服务(new 允许全部权限守卫(), NullLogger<IO点位服务>.Instance),
-            解析器(),
-            值列表,
-            new 轮询选项 { 快间隔毫秒 = 50, 慢间隔毫秒 = 100, 事件间隔毫秒 = 100 },
-            new PLC连接选项(),
-            NullLogger<轮询引擎>.Instance);
+        await using var engine = new PollingEngine(
+            Client,
+            pointTable,
+            new IoPointService(new AllowAllPermissionGuard(), NullLogger<IoPointService>.Instance),
+            Parser(),
+            ValueList,
+            new PollingOptions { FastIntervalMilliseconds = 50, SlowIntervalMilliseconds = 100, EventIntervalMilliseconds = 100 },
+            new PlcConnectionOptions(),
+            NullLogger<PollingEngine>.Instance);
 
-        await 客户端.异步连接();
-        await 引擎.异步启动();
+        await Client.ConnectAsync();
+        await engine.StartAsync();
 
         // 位 2 置 1 → 采集应发布 true（同字其它位为 0，不能误判成 true）
-        设备.内存.不安全设置保持寄存器(1210, 0b0000_0000_0000_0000);
-        await 异步等待直到(() => 值列表.尝试获取布尔("JogXForward", out var 值) && !值, "位为 0 时发布 false");
+        Device.memory.UnsafeSetHoldingRegister(1210, 0b0000_0000_0000_0000);
+        await WaitUntilAsync(() => ValueList.TryGetBoolean("JogXForward", out var Value) && !Value, "位为 0 时发布 false");
 
-        设备.内存.不安全设置保持寄存器(1210, 0b0000_0000_0000_0100);
-        await 异步等待直到(() => 值列表.尝试获取布尔("JogXForward", out var 值) && 值, "位 2 置 1 时发布 true");
+        Device.memory.UnsafeSetHoldingRegister(1210, 0b0000_0000_0000_0100);
+        await WaitUntilAsync(() => ValueList.TryGetBoolean("JogXForward", out var Value) && Value, "位 2 置 1 时发布 true");
 
         // 位 0 为 1、位 2 为 0：不能因为整字非零就判 true
-        设备.内存.不安全设置保持寄存器(1210, 0b0000_0000_0000_0001);
-        await 异步等待直到(() => 值列表.尝试获取布尔("JogXForward", out var 值) && !值, "只有其它位为 1 时应发布 false");
+        Device.memory.UnsafeSetHoldingRegister(1210, 0b0000_0000_0000_0001);
+        await WaitUntilAsync(() => ValueList.TryGetBoolean("JogXForward", out var Value) && !Value, "只有其它位为 1 时应发布 false");
     }
 
-    private static async Task 异步等待直到(Func<bool> 条件, string 描述, int 超时毫秒 = 8000)
+    private static async Task WaitUntilAsync(Func<bool> condition, string Description, int TimeoutMilliseconds = 8000)
     {
-        var 截止时间 = Environment.TickCount64 + 超时毫秒;
+        var truncateStopTime = Environment.TickCount64 + TimeoutMilliseconds;
 
-        while (Environment.TickCount64 < 截止时间)
+        while (Environment.TickCount64 < truncateStopTime)
         {
-            if (条件())
+            if (condition())
             {
                 return;
             }
@@ -211,6 +211,6 @@ public class 字位寻址测试
             await Task.Delay(25);
         }
 
-        Assert.Fail($"等待超时：{描述}");
+        Assert.Fail($"等待超时：{Description}");
     }
 }

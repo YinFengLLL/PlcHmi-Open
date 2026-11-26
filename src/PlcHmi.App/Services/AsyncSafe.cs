@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace 上位机.应用.服务;
+namespace PlcHmi.App.Services;
 
 /// <summary>
 /// 安全的"即发即忘"调用。
@@ -15,7 +15,7 @@ namespace 上位机.应用.服务;
 ///
 /// <para>本类不改变原有的非阻塞语义：调用方立即返回，操作在后台继续，失败必定被记录。</para>
 /// </summary>
-internal static class 异步安全调用
+internal static class SafeInvokeAsync
 {
     /// <summary>
     /// 执行一个异步操作，失败时记录日志而不是静默丢弃。
@@ -23,28 +23,28 @@ internal static class 异步安全调用
     /// <param name="operation">要执行的异步操作。</param>
     /// <param name="logger">用于记录异常的日志器。</param>
     /// <param name="context">出错时用于定位的场景描述（例如"同步手动使能状态到 PLC"）。</param>
-    public static void 即发即忘(Func<Task> 操作, ILogger 日志, string 上下文)
+    public static void FireAndForget(Func<Task> operateOperation, ILogger Log, string context)
     {
-        ArgumentNullException.ThrowIfNull(操作);
-        ArgumentNullException.ThrowIfNull(日志);
+        ArgumentNullException.ThrowIfNull(operateOperation);
+        ArgumentNullException.ThrowIfNull(Log);
 
-        _ = 异步运行(操作, 日志, 上下文);
+        _ = RunAsync(operateOperation, Log, context);
     }
 
-    private static async Task 异步运行(Func<Task> 操作, ILogger 日志, string 上下文)
+    private static async Task RunAsync(Func<Task> operateOperation, ILogger Log, string context)
     {
         try
         {
-            await 操作().ConfigureAwait(true);
+            await operateOperation().ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
             // 正常取消（退出 / 切页），不算故障
-            日志.LogDebug("后台操作已取消：{Context}", 上下文);
+            Log.LogDebug("后台操作已取消：{Context}", context);
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            日志.LogError(异常, "后台操作失败：{Context}", 上下文);
+            Log.LogError(exception, "后台操作失败：{Context}", context);
         }
     }
 }

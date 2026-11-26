@@ -1,6 +1,6 @@
-using 上位机.业务.配置;
+using PlcHmi.Business.Configuration;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 配置文件原子落盘的测试。
@@ -11,23 +11,23 @@ namespace 上位机.上位机测试;
 ///
 /// <para>测试全部在临时目录里进行，不触碰 <c>config/</c> 下的真实文件。</para>
 /// </summary>
-public class 原子文件测试 : IDisposable
+public class AtomicFileTest : IDisposable
 {
-    private readonly string _目录;
+    private readonly string _dir;
 
-    public 原子文件测试()
+    public AtomicFileTest()
     {
-        _目录 = Path.Combine(Path.GetTempPath(), "plchmi-atomic-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_目录);
+        _dir = Path.Combine(Path.GetTempPath(), "plchmi-atomic-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_dir);
     }
 
     public void Dispose()
     {
         try
         {
-            if (Directory.Exists(_目录))
+            if (Directory.Exists(_dir))
             {
-                Directory.Delete(_目录, recursive: true);
+                Directory.Delete(_dir, recursive: true);
             }
         }
         catch (IOException)
@@ -39,68 +39,68 @@ public class 原子文件测试 : IDisposable
     }
 
     [Fact]
-    public async Task 首次写入应创建文件并写入完整内容()
+    public async Task FirstWriteShouldCreateFileAndWriteCompleteWholeContent()
     {
-        var 文件路径 = Path.Combine(_目录, "recipes.json");
+        var filePath = Path.Combine(_dir, "recipes.json");
 
-        await 原子文件.异步写入全部文本(文件路径, """{"a":1}""");
+        await AtomicFile.WriteAllTextAsync(filePath, """{"a":1}""");
 
-        Assert.True(File.Exists(文件路径));
-        Assert.Equal("""{"a":1}""", await File.ReadAllTextAsync(文件路径));
+        Assert.True(File.Exists(filePath));
+        Assert.Equal("""{"a":1}""", await File.ReadAllTextAsync(filePath));
     }
 
     [Fact]
-    public async Task 覆盖写入后内容应为新值且旧值已备份()
+    public async Task OverwriteWriteAfterContentShouldAsNewValueAndOldValueAlreadyBackup()
     {
-        var 文件路径 = Path.Combine(_目录, "recipes.json");
-        await 原子文件.异步写入全部文本(文件路径, "旧内容");
+        var filePath = Path.Combine(_dir, "recipes.json");
+        await AtomicFile.WriteAllTextAsync(filePath, "旧内容");
 
-        await 原子文件.异步写入全部文本(文件路径, "新内容");
+        await AtomicFile.WriteAllTextAsync(filePath, "新内容");
 
-        Assert.Equal("新内容", await File.ReadAllTextAsync(文件路径));
-        Assert.True(File.Exists(文件路径 + ".bak"), "应留下 .bak 回滚副本");
-        Assert.Equal("旧内容", await File.ReadAllTextAsync(文件路径 + ".bak"));
+        Assert.Equal("新内容", await File.ReadAllTextAsync(filePath));
+        Assert.True(File.Exists(filePath + ".bak"), "应留下 .bak 回滚副本");
+        Assert.Equal("旧内容", await File.ReadAllTextAsync(filePath + ".bak"));
     }
 
     [Fact]
-    public async Task 写入成功后不应残留临时文件()
+    public async Task WriteSuccessAfterShouldNotResidualKeepTemporaryFile()
     {
-        var 文件路径 = Path.Combine(_目录, "users.json");
+        var filePath = Path.Combine(_dir, "users.json");
 
-        await 原子文件.异步写入全部文本(文件路径, "内容一");
-        await 原子文件.异步写入全部文本(文件路径, "内容二");
+        await AtomicFile.WriteAllTextAsync(filePath, "内容一");
+        await AtomicFile.WriteAllTextAsync(filePath, "内容二");
 
-        Assert.False(File.Exists(文件路径 + ".tmp"), "成功后 .tmp 应已被消费掉，不应残留");
+        Assert.False(File.Exists(filePath + ".tmp"), "成功后 .tmp 应已被消费掉，不应残留");
     }
 
     [Fact]
-    public async Task 大内容应完整写入不截断()
+    public async Task LargeContentShouldCompleteWholeWriteNotTruncateDisconnect()
     {
-        var 文件路径 = Path.Combine(_目录, "big.json");
+        var filePath = Path.Combine(_dir, "big.json");
         // 约 400 KB，用于验证写入路径不会截断
-        var 内容 = new string('A', 400_000);
+        var Content = new string('A', 400_000);
 
-        await 原子文件.异步写入全部文本(文件路径, 内容);
+        await AtomicFile.WriteAllTextAsync(filePath, Content);
 
-        var 读取 = await File.ReadAllTextAsync(文件路径);
-        Assert.Equal(内容.Length, 读取.Length);
+        var Read = await File.ReadAllTextAsync(filePath);
+        Assert.Equal(Content.Length, Read.Length);
     }
 
     [Fact]
-    public async Task 目标目录不存在时应自动创建()
+    public async Task TargetDirectoryWhenMissingShouldAutoCreate()
     {
-        var 文件路径 = Path.Combine(_目录, "nested", "deeper", "recipes.json");
+        var filePath = Path.Combine(_dir, "nested", "deeper", "recipes.json");
 
-        await 原子文件.异步写入全部文本(文件路径, "内容");
+        await AtomicFile.WriteAllTextAsync(filePath, "内容");
 
-        Assert.True(File.Exists(文件路径));
+        Assert.True(File.Exists(filePath));
     }
 
     [Fact]
-    public async Task 空路径应抛出参数异常()
+    public async Task EmptyPathShouldThrowParameterException()
     {
         await Assert.ThrowsAnyAsync<ArgumentException>(
-            () => 原子文件.异步写入全部文本(string.Empty, "内容"));
+            () => AtomicFile.WriteAllTextAsync(string.Empty, "内容"));
     }
 
     [Theory]
@@ -108,8 +108,8 @@ public class 原子文件测试 : IDisposable
     [InlineData("recipes.json.bak", true)]
     [InlineData("recipes.json", false)]
     [InlineData("config/tags.json", false)]
-    public void 中间产物识别应只匹配tmp与bak(string 文件路径, bool 期望)
+    public void IntermediateOutputObjectDetectShouldOnlyMatchtmpAndbak(string filePath, bool expected)
     {
-        Assert.Equal(期望, 原子文件.是否中间文件(文件路径));
+        Assert.Equal(expected, AtomicFile.IsIntermediateFile(filePath));
     }
 }

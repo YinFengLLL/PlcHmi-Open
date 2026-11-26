@@ -1,0 +1,310 @@
+<!-- ════════════════════════════════════════════════════════════════
+     PlcHmi 图标库 · WPF Geometry 资源
+     由 tools/gen_all.py 自动生成，请勿手工修改。
+     用法（Path 描边，颜色随绑定）：
+       <Path Data="{StaticResource Icon.Nav.Run}"
+             Style="{StaticResource IconPath}"
+             Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+     用法（实心部件，仅状态类图标有 .Fill）：
+       <Path Data="{StaticResource Icon.Status.Run.Fill}" Fill="{DynamicResource SuccessBrush}"/>
+     ════════════════════════════════════════════════════════════════ -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- ── 基础样式：1.75px 圆头圆角描边，24px 网格内原尺寸绘制 ── -->
+  <Style x:Key="IconPath" TargetType="Path">
+    <Setter Property="Width" Value="24" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="Stretch" Value="None" />
+    <Setter Property="StrokeThickness" Value="1.75" />
+    <Setter Property="StrokeStartLineCap" Value="Round" />
+    <Setter Property="StrokeEndLineCap" Value="Round" />
+    <Setter Property="StrokeLineJoin" Value="Round" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- ── 大尺寸变体：设备工艺图形用 32px 网格，描边略加粗 ── -->
+  <Style x:Key="IconPathLarge" TargetType="Path" BasedOn="{StaticResource IconPath}">
+    <Setter Property="Width" Value="32" />
+    <Setter Property="Height" Value="32" />
+    <Setter Property="StrokeThickness" Value="1.9" />
+  </Style>
+
+  <!-- ══ 导航与功能 ══ -->
+  <!-- nav · 运行首页 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Run">
+          <PathGeometry Figures="M3.34 19a10 10 0 1 1 17.32 0"/>
+          <LineGeometry StartPoint="12,14" EndPoint="16.2,9.8"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Nav.Run.Fill">
+          <EllipseGeometry Center="12,14" RadiusX="1.1" RadiusY="1.1"/>
+        </GeometryGroup>
+  <!-- nav · 参数设置 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Param">
+          <LineGeometry StartPoint="3.6,7" EndPoint="20.4,7"/>
+          <EllipseGeometry Center="9,7" RadiusX="2.3" RadiusY="2.3"/>
+          <LineGeometry StartPoint="3.6,12" EndPoint="20.4,12"/>
+          <EllipseGeometry Center="15,12" RadiusX="2.3" RadiusY="2.3"/>
+          <LineGeometry StartPoint="3.6,17" EndPoint="20.4,17"/>
+          <EllipseGeometry Center="8,17" RadiusX="2.3" RadiusY="2.3"/>
+        </GeometryGroup>
+  <!-- nav · 手动操作 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Manual">
+          <PathGeometry Figures="M8.4 12.6V6.9a1.6 1.6 0 0 1 3.2 0v5.7"/>
+          <PathGeometry Figures="M11.6 12.6V5.7a1.6 1.6 0 0 1 3.2 0v6.9"/>
+          <PathGeometry Figures="M14.8 12.9V7.8a1.6 1.6 0 0 1 3.2 0v8.1a5.6 5.6 0 0 1-5.6 5.6h-1.3a4.6 4.6 0 0 1-3.3-1.4l-3.4-3.6a1.6 1.6 0 0 1 2.2-2.2l2.3 2.2"/>
+        </GeometryGroup>
+  <!-- nav · IO 点位监控 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Io">
+          <RectangleGeometry Rect="6,6,12,12" RadiusX="2" RadiusY="2"/>
+          <RectangleGeometry Rect="9.6,9.6,4.8,4.8" RadiusX="1" RadiusY="1"/>
+          <PathGeometry Figures="M9 6V3.4M15 6V3.4M9 18v2.6M15 18v2.6M6 9H3.4M6 15H3.4M18 9h2.6M18 15h2.6"/>
+        </GeometryGroup>
+  <!-- nav · 报警记录 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Alarm">
+          <PathGeometry Figures="M18.2 9.6a6.2 6.2 0 1 0-12.4 0c0 5.2-2.1 6.5-2.1 6.5h16.6s-2.1-1.3-2.1-6.5"/>
+          <PathGeometry Figures="M13.8 19.6a2.1 2.1 0 0 1-3.6 0"/>
+        </GeometryGroup>
+  <!-- nav · 历史记录 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.History">
+          <RectangleGeometry Rect="3.6,4.2,16.8,15.6" RadiusX="2.4" RadiusY="2.4"/>
+          <LineGeometry StartPoint="7.4,9" EndPoint="16.6,9"/>
+          <LineGeometry StartPoint="7.4,12.4" EndPoint="16.6,12.4"/>
+          <LineGeometry StartPoint="7.4,15.8" EndPoint="11.8,15.8"/>
+          <EllipseGeometry Center="15.6,15.8" RadiusX="1.6" RadiusY="1.6"/>
+        </GeometryGroup>
+  <!-- nav · 配方管理 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Recipe">
+          <PathGeometry Figures="M9.4 3.4h5.2"/>
+          <PathGeometry Figures="M10.4 3.4v6.1l-4.8 8.5a2.1 2.1 0 0 0 1.8 3.1h9.2a2.1 2.1 0 0 0 1.8-3.1l-4.8-8.5V3.4"/>
+          <LineGeometry StartPoint="7.8,14.6" EndPoint="16.2,14.6"/>
+        </GeometryGroup>
+  <!-- nav · 示教点位 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Teach">
+          <EllipseGeometry Center="12,12" RadiusX="6.4" RadiusY="6.4"/>
+          <PathGeometry Figures="M12 2.6v3.4M12 18v3.4M2.6 12h3.4M18 12h3.4"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Nav.Teach.Fill">
+          <EllipseGeometry Center="12,12" RadiusX="1.5" RadiusY="1.5"/>
+        </GeometryGroup>
+  <!-- nav · 系统设置 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Settings">
+          <EllipseGeometry Center="12,12" RadiusX="7.2" RadiusY="7.2"/>
+          <EllipseGeometry Center="12,12" RadiusX="2.9" RadiusY="2.9"/>
+          <PathGeometry Figures="M19.2 12h2.4M12 19.2v2.4M4.8 12H2.4M12 4.8V2.4M17.09 17.09l1.7 1.7M6.91 17.09l-1.7 1.7M6.91 6.91L5.21 5.21M17.09 6.91l1.7-1.7"/>
+        </GeometryGroup>
+  <!-- nav · 用户 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.User">
+          <EllipseGeometry Center="12,8.4" RadiusX="3.9" RadiusY="3.9"/>
+          <PathGeometry Figures="M4.6 20.6a7.4 7.4 0 0 1 14.8 0"/>
+        </GeometryGroup>
+  <!-- nav · 登录 / 权限 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Nav.Lock">
+          <RectangleGeometry Rect="5.4,10.6,13.2,9.6" RadiusX="2" RadiusY="2"/>
+          <PathGeometry Figures="M8.6 10.6V7.7a3.4 3.4 0 0 1 6.8 0v2.9"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Nav.Lock.Fill">
+          <EllipseGeometry Center="12,15.4" RadiusX="1.15" RadiusY="1.15"/>
+        </GeometryGroup>
+
+  <!-- ══ 状态与报警灯 ══ -->
+  <!-- status · 运行中 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.Run">
+          <EllipseGeometry Center="12,12" RadiusX="8.6" RadiusY="8.6"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Status.Run.Fill">
+          <EllipseGeometry Center="12,12" RadiusX="4" RadiusY="4"/>
+        </GeometryGroup>
+  <!-- status · 已停止 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.Stop">
+          <EllipseGeometry Center="12,12" RadiusX="8.6" RadiusY="8.6"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Status.Stop.Fill">
+          <RectangleGeometry Rect="8.6,8.6,6.8,6.8" RadiusX="1.2" RadiusY="1.2"/>
+        </GeometryGroup>
+  <!-- status · 待机 / 暂停 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.Idle">
+          <EllipseGeometry Center="12,12" RadiusX="8.6" RadiusY="8.6"/>
+          <PathGeometry Figures="M10.4 9.2v5.6M13.6 9.2v5.6"/>
+        </GeometryGroup>
+  <!-- status · 报警 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.Alarm">
+          <PathGeometry Figures="M12 4.2a1.5 1.5 0 0 1 1.3.75l8.2 14.2a1.5 1.5 0 0 1-1.3 2.25H3.8a1.5 1.5 0 0 1-1.3-2.25l8.2-14.2a1.5 1.5 0 0 1 1.3-.75z"/>
+          <LineGeometry StartPoint="12,9.6" EndPoint="12,14.2"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Status.Alarm.Fill">
+          <EllipseGeometry Center="12,17.2" RadiusX="1.05" RadiusY="1.05"/>
+        </GeometryGroup>
+  <!-- status · 故障 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.Fault">
+          <PathGeometry Figures="M8.6 3.4h6.8l5.2 5.2v6.8l-5.2 5.2H8.6l-5.2-5.2V8.6z"/>
+          <PathGeometry Figures="M9.4 9.4l5.2 5.2M14.6 9.4l-5.2 5.2"/>
+        </GeometryGroup>
+  <!-- status · 急停 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.Estop">
+          <EllipseGeometry Center="12,11" RadiusX="7.2" RadiusY="7.2"/>
+          <PathGeometry Figures="M12 18.2v2.6"/>
+          <LineGeometry StartPoint="9.4,20.8" EndPoint="14.6,20.8"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Status.Estop.Fill">
+          <EllipseGeometry Center="12,11" RadiusX="4" RadiusY="4"/>
+        </GeometryGroup>
+  <!-- status · 维护 / 检修 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.Maintenance">
+          <PathGeometry Figures="M12 3.4l7.45 4.3v8.6L12 20.6l-7.45-4.3V7.7z"/>
+          <EllipseGeometry Center="12,12" RadiusX="3.6" RadiusY="3.6"/>
+        </GeometryGroup>
+  <!-- status · 通讯正常 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.CommOk">
+          <PathGeometry Figures="M4.6 11.3a10.5 10.5 0 0 1 14.8 0"/>
+          <PathGeometry Figures="M7.6 14.4a6.3 6.3 0 0 1 8.8 0"/>
+          <PathGeometry Figures="M10.5 17.4a2.2 2.2 0 0 1 3 0"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Status.CommOk.Fill">
+          <EllipseGeometry Center="12,20.2" RadiusX="1.35" RadiusY="1.35"/>
+        </GeometryGroup>
+  <!-- status · 通讯断开 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.CommLost">
+          <PathGeometry Figures="M7.6 14.4a6.3 6.3 0 0 1 8.8 0"/>
+          <PathGeometry Figures="M10.5 17.4a2.2 2.2 0 0 1 3 0"/>
+          <PathGeometry Figures="M3.8 3.8l16.4 16.4"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Status.CommLost.Fill">
+          <EllipseGeometry Center="12,20.2" RadiusX="1.35" RadiusY="1.35"/>
+        </GeometryGroup>
+  <!-- status · 离线 / 停机 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Status.Offline">
+          <PathGeometry Figures="M12 3.6v7.6"/>
+          <PathGeometry Figures="M7.5 6.9a7.5 7.5 0 1 0 9 0"/>
+        </GeometryGroup>
+
+  <!-- ══ 操作按钮 ══ -->
+  <!-- action · 启动 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Start">
+          <PathGeometry Figures="M8.2 5.6v12.8l10-6.4z"/>
+        </GeometryGroup>
+  <!-- action · 停止 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Stop">
+          <RectangleGeometry Rect="6.8,6.8,10.4,10.4" RadiusX="1.8" RadiusY="1.8"/>
+        </GeometryGroup>
+  <!-- action · 复位 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Reset">
+          <PathGeometry Figures="M3 12a9 9 0 1 0 3-6.7L3 8"/>
+          <PathGeometry Figures="M3 3v5h5"/>
+        </GeometryGroup>
+  <!-- action · 暂停 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Pause.Fill">
+          <RectangleGeometry Rect="8.2,6,3.1,12" RadiusX="1.5" RadiusY="1.5"/>
+          <RectangleGeometry Rect="12.7,6,3.1,12" RadiusX="1.5" RadiusY="1.5"/>
+        </GeometryGroup>
+  <!-- action · 急停 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Estop">
+          <EllipseGeometry Center="12,10.8" RadiusX="6.6" RadiusY="6.6"/>
+          <PathGeometry Figures="M12 17.4v3.2"/>
+          <LineGeometry StartPoint="9.4,20.6" EndPoint="14.6,20.6"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Action.Estop.Fill">
+          <EllipseGeometry Center="12,10.8" RadiusX="3.8" RadiusY="3.8"/>
+        </GeometryGroup>
+  <!-- action · 自动模式 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Auto">
+          <PathGeometry Figures="M17 3.6l3 3-3 3"/>
+          <PathGeometry Figures="M4 11.6V10a3.4 3.4 0 0 1 3.4-3.4H20"/>
+          <PathGeometry Figures="M7 20.4l-3-3 3-3"/>
+          <PathGeometry Figures="M20 12.4V14a3.4 3.4 0 0 1-3.4 3.4H4"/>
+        </GeometryGroup>
+  <!-- action · 手动模式 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Manual">
+          <PathGeometry Figures="M8.4 12.6V6.9a1.6 1.6 0 0 1 3.2 0v5.7"/>
+          <PathGeometry Figures="M11.6 12.6V5.7a1.6 1.6 0 0 1 3.2 0v6.9"/>
+          <PathGeometry Figures="M14.8 12.9V7.8a1.6 1.6 0 0 1 3.2 0v8.1a5.6 5.6 0 0 1-5.6 5.6h-1.3a4.6 4.6 0 0 1-3.3-1.4l-3.4-3.6a1.6 1.6 0 0 1 2.2-2.2l2.3 2.2"/>
+        </GeometryGroup>
+  <!-- action · 正转 / 前进 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Forward">
+          <PathGeometry Figures="M13.4 5.6L19.4 12l-6 6.4"/>
+          <LineGeometry StartPoint="5,12" EndPoint="19,12"/>
+        </GeometryGroup>
+  <!-- action · 反转 / 后退 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Reverse">
+          <PathGeometry Figures="M10.6 5.6L4.6 12l6 6.4"/>
+          <LineGeometry StartPoint="5,12" EndPoint="19,12"/>
+        </GeometryGroup>
+  <!-- action · 回原点 · 24x24 -->
+        <GeometryGroup x:Key="Icon.Action.Home">
+          <EllipseGeometry Center="12,12" RadiusX="8" RadiusY="8"/>
+          <EllipseGeometry Center="12,12" RadiusX="3.6" RadiusY="3.6"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Action.Home.Fill">
+          <EllipseGeometry Center="12,12" RadiusX="1.15" RadiusY="1.15"/>
+        </GeometryGroup>
+
+  <!-- ══ 设备工艺图形 ══ -->
+  <!-- device · 电机 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Motor">
+          <EllipseGeometry Center="16,16" RadiusX="10" RadiusY="10"/>
+          <PathGeometry Figures="M11.6 20.6V11.4l4.4 6 4.4-6v9.2"/>
+        </GeometryGroup>
+  <!-- device · 气缸 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Cylinder">
+          <RectangleGeometry Rect="5,11.6,14,8.8" RadiusX="1.4" RadiusY="1.4"/>
+          <PathGeometry Figures="M12.4 11.8v8.4"/>
+          <PathGeometry Figures="M19 16h7"/>
+          <PathGeometry Figures="M26 12.4v7.2"/>
+        </GeometryGroup>
+  <!-- device · 阀门 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Valve">
+          <PathGeometry Figures="M7 9.6l9 6.4-9 6.4z"/>
+          <PathGeometry Figures="M25 9.6l-9 6.4 9 6.4z"/>
+          <PathGeometry Figures="M16 16V6.4"/>
+          <LineGeometry StartPoint="11.6,6.4" EndPoint="20.4,6.4"/>
+        </GeometryGroup>
+  <!-- device · 泵 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Pump">
+          <EllipseGeometry Center="16,17" RadiusX="9" RadiusY="9"/>
+          <PathGeometry Figures="M12.6 13.4l6.8 3.6-6.8 3.6z"/>
+          <PathGeometry Figures="M16 8V4"/>
+          <PathGeometry Figures="M25 17h4"/>
+        </GeometryGroup>
+  <!-- device · 风机 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Fan">
+          <EllipseGeometry Center="16,16" RadiusX="11" RadiusY="11"/>
+          <PathGeometry Figures="M16 12.6V6.6M18.94 17.7l5.2 3M13.06 17.7l-5.2 3"/>
+        </GeometryGroup>
+        <GeometryGroup x:Key="Icon.Device.Fan.Fill">
+          <EllipseGeometry Center="16,16" RadiusX="2.2" RadiusY="2.2"/>
+        </GeometryGroup>
+  <!-- device · 传送带 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Conveyor">
+          <EllipseGeometry Center="8.6,17.6" RadiusX="3.4" RadiusY="3.4"/>
+          <EllipseGeometry Center="23.4,17.6" RadiusX="3.4" RadiusY="3.4"/>
+          <PathGeometry Figures="M8.6 14.2h14.8M8.6 21h14.8"/>
+          <RectangleGeometry Rect="13.9,9.6,4.2,4.2" RadiusX="0.9" RadiusY="0.9"/>
+        </GeometryGroup>
+  <!-- device · 光电传感器 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Sensor">
+          <RectangleGeometry Rect="4.6,12.4,7.4,7.2" RadiusX="1.4" RadiusY="1.4"/>
+          <PathGeometry Figures="M12.2 16h9.6"/>
+          <PathGeometry Figures="M24.6 11.6v8.8"/>
+        </GeometryGroup>
+  <!-- device · 加热元件 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Heater">
+          <PathGeometry Figures="M3.4 16H10l2.4-7 3.6 14 3.6-14 2.4 7h6.6"/>
+        </GeometryGroup>
+  <!-- device · 料罐 / 储罐 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Tank">
+          <PathGeometry Figures="M7 9.6c0-1.77 4.03-3.2 9-3.2s9 1.43 9 3.2"/>
+          <PathGeometry Figures="M25 9.6v12.8c0 1.77-4.03 3.2-9 3.2s-9-1.43-9-3.2V9.6"/>
+          <LineGeometry StartPoint="7.6,17.2" EndPoint="24.4,17.2"/>
+        </GeometryGroup>
+  <!-- device · 机械手 / 取放机构 · 32x32 -->
+        <GeometryGroup x:Key="Icon.Device.Robot">
+          <PathGeometry Figures="M4.6 5.4h22.8"/>
+          <RectangleGeometry Rect="13.2,3.2,5.6,4.4" RadiusX="1.0" RadiusY="1.0"/>
+          <PathGeometry Figures="M16 7.6v7.8"/>
+          <PathGeometry Figures="M13.4 15.4h5.2"/>
+          <PathGeometry Figures="M13.4 15.4v4.4M18.6 15.4v4.4"/>
+          <RectangleGeometry Rect="12.2,22.4,7.6,3.2" RadiusX="0.7" RadiusY="0.7"/>
+        </GeometryGroup>
+
+</ResourceDictionary>

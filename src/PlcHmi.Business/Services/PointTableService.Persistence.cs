@@ -1,14 +1,14 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
-using 上位机.通信.Modbus;
-using 上位机.通信.配方;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Communication.Recipe;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
-/// <see cref="点表服务"/> 的「按机种快照装载 / 并入」部分（partial）。
+/// <see cref="PointTableService"/> 的「按机种快照装载 / 并入」部分（partial）。
 ///
 /// <para><b>为什么不再有 point-tables.json：</b>现场口径是"<b>D2500–D3999 整段都是机种区域</b>"。
 /// 点表数据既然整段属于机种，就不该再另存一份全局文件——那会变成两个真相源，
@@ -23,44 +23,44 @@ namespace 上位机.业务.服务;
 /// <b>2026-10-16 修复：</b>此前下发点表只写 PLC 不动快照，于是"下发 → 切页 → 回来"看到的
 /// 还是快照里的旧数据（必须先去机种页点「保存机种」才显形）——现场表现为"下发白做了"。</para>
 /// </summary>
-public sealed partial class 点表服务
+public sealed partial class PointTableService
 {
     /// <summary>用当前机种的区段快照填充一张点表的内存行。</summary>
-    private void 从机种快照填充(点表定义 表项)
+    private void SlaveStationKindSnapshotFill(PointTableDefinition TableEntry)
     {
-        var 快照 = _配方.区段快照(_配方.当前配方号);
-        var 行列表 = _缓存[表项.键];
-        var 映射项 = _映射[表项.键];
+        var Snapshot = _recipe.SectionSnapshot(_recipe.CurrentRecipeNumber);
+        var rowList = _bufferStore[TableEntry.Key];
+        var mapItem = _map[TableEntry.Key];
 
-        foreach (var 行项 in 行列表)
+        foreach (var rowItem in rowList)
         {
-            行项.值.Clear();
+            rowItem.Value.Clear();
         }
 
-        foreach (var 列项 in 表项.列)
+        foreach (var columnItem in TableEntry.Column)
         {
-            if (列项.基址 <= 0)
+            if (columnItem.BaseAddress <= 0)
             {
                 continue;
             }
 
-            var 字缓冲 = new ushort[列项.字每点位];
+            var wordBuffer = new ushort[columnItem.WordPerPointBit];
 
-            for (var 序号 = 0; 序号 < 映射项.点数 && 序号 < 行列表.Count; 序号++)
+            for (var Sequence = 0; Sequence < mapItem.PointCount && Sequence < rowList.Count; Sequence++)
             {
-                for (var 序 = 0; 序 < 列项.字每点位; 序++)
+                for (var ordinal = 0; ordinal < columnItem.WordPerPointBit; ordinal++)
                 {
-                    var 地址 = 列项.基址 + 序号 * 列项.字每点位 + 序;
+                    var Address = columnItem.BaseAddress + Sequence * columnItem.WordPerPointBit + ordinal;
 
                     // 快照是稀疏的：没记录的字就是 0（与 PLC 里的实际读回一致）
-                    字缓冲[序] = 快照.TryGetValue(地址 - 机种区段.起始, out var 值)
-                        ? (ushort)值
+                    wordBuffer[ordinal] = Snapshot.TryGetValue(Address - MachineModelSection.StartAt, out var Value)
+                        ? (ushort)Value
                         : (ushort)0;
                 }
 
-                var 解码值 = 寄存器编解码器.解码(列项.数据类型, 字缓冲, 字顺序.小字节序);
+                var decodeValue = RegisterCodec.Decode(columnItem.DataType, wordBuffer, WordOrder.LittleEndian);
 
-                行列表[序号].设(列项.键, Convert.ToDouble(解码值, CultureInfo.InvariantCulture));
+                rowList[Sequence].setup(columnItem.Key, Convert.ToDouble(decodeValue, CultureInfo.InvariantCulture));
             }
         }
     }
@@ -79,67 +79,67 @@ public sealed partial class 点表服务
     /// 既让"PLC 里刚写下的 = 快照里存着的"，又不动其它区段。</para>
     ///
     /// <para>值 0 也会并入：<c>异步写入机种快照</c> 按稀疏约定丢弃 0，于是被清空的点
-    /// 在快照里也回到"未示教"——与 <see cref="从机种快照填充"/> 读不到即 0 对称。</para>
+    /// 在快照里也回到"未示教"——与 <see cref="SlaveStationKindSnapshotFill"/> 读不到即 0 对称。</para>
     /// </summary>
-    private async Task 异步并入机种快照(
-        点表定义 表项,
-        IReadOnlyList<int> 序号集合,
-        CancellationToken 取消令牌,
-        IReadOnlyList<string>? 仅列键 = null)
+    private async Task AndInMachineModelSnapshotAsync(
+        PointTableDefinition TableEntry,
+        IReadOnlyList<int> indexCollection,
+        CancellationToken cancellationToken,
+        IReadOnlyList<string>? onlyColumnKey = null)
     {
-        var 映射项 = _映射[表项.键];
-        var 号 = _配方.当前配方号;
+        var mapItem = _map[TableEntry.Key];
+        var Number = _recipe.CurrentRecipeNumber;
 
         // 取现有快照的副本再改：整段替换由 异步写入机种快照 负责落盘
-        var 快照 = new Dictionary<int, int>(_配方.区段快照(号));
-        var 并入字数 = 0;
+        var Snapshot = new Dictionary<int, int>(_recipe.SectionSnapshot(Number));
+        var andInWordCount = 0;
 
-        foreach (var 序号 in 序号集合)
+        foreach (var Sequence in indexCollection)
         {
-            if (!映射项.序号合法(序号))
+            if (!mapItem.IndexValid(Sequence))
             {
                 continue;
             }
 
-            var 行项 = _缓存[表项.键][序号];
+            var rowItem = _bufferStore[TableEntry.Key][Sequence];
 
-            foreach (var 列项 in 表项.列)
+            foreach (var columnItem in TableEntry.Column)
             {
-                if (列项.基址 <= 0)
+                if (columnItem.BaseAddress <= 0)
                 {
                     continue;
                 }
 
                 // 只并入指定列（指令码下拉走这条）：其余列可能还是"改了没下发"的内存值
-                if (仅列键 is not null
-                    && !仅列键.Contains(列项.键, StringComparer.OrdinalIgnoreCase))
+                if (onlyColumnKey is not null
+                    && !onlyColumnKey.Contains(columnItem.Key, StringComparer.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                var 寄存器列表 = 寄存器编解码器.编码(
-                    列项.数据类型, 行项.取(列项.键), 字顺序.小字节序);
+                var registerList = RegisterCodec.Encode(
+                    columnItem.DataType, rowItem.Take(columnItem.Key), WordOrder.LittleEndian);
 
-                for (var 序 = 0; 序 < 列项.字每点位 && 序 < 寄存器列表.Length; 序++)
+                for (var ordinal = 0; ordinal < columnItem.WordPerPointBit && ordinal < registerList.Length; ordinal++)
                 {
-                    var 地址 = 列项.基址 + 序号 * 列项.字每点位 + 序;
+                    var Address = columnItem.BaseAddress + Sequence * columnItem.WordPerPointBit + ordinal;
 
                     // 只并入落在机种区段内的字：区段外的列不属于机种（防御性跳过）
-                    if (!机种区段.包含(地址))
+                    if (!MachineModelSection.Contains(Address))
                     {
                         continue;
                     }
 
-                    快照[地址 - 机种区段.起始] = 寄存器列表[序];
-                    并入字数++;
+                    Snapshot[Address - MachineModelSection.StartAt] = registerList[ordinal];
+                    andInWordCount++;
                 }
             }
         }
 
-        await _配方.异步写入机种快照(号, 快照, 取消令牌).ConfigureAwait(false);
+        await _recipe.WriteMachineModelSnapshotAsync(Number, Snapshot, cancellationToken).ConfigureAwait(false);
 
-        _日志.LogInformation(
+        _log.LogInformation(
             "点表 {Table} 的 {Count} 个字已并入机种 {No} 的快照（页面重新进入即可见）",
-            表项.显示名称, 并入字数, 号);
+            TableEntry.DisplayName, andInWordCount, Number);
     }
 }

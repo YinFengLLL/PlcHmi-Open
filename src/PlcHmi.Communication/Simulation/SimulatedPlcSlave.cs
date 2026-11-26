@@ -2,74 +2,74 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
-using 上位机.核心.模型;
+using PlcHmi.Core.Models;
 
-namespace 上位机.通信.仿真;
+namespace PlcHmi.Communication.Simulation;
 
 /// <summary>
-/// 虚拟 PLC 的 Modbus TCP 从站。把 <see cref="虚拟PLC设备"/> 的内存映像按标准 Modbus TCP
+/// 虚拟 PLC 的 Modbus TCP 从站。把 <see cref="VirtualPlcDevice"/> 的内存映像按标准 Modbus TCP
 /// 暴露出来，供 Modbus Poll / Modbus Slave 等外部工具连接，实现<b>不接真机的离线调试</b>。
 ///
 /// <para><b>为什么自研而不复用 FluentModbus 服务端：</b>外部工具与上位机自用的
-/// <see cref="仿真Modbus客户端"/> 必须操作<b>同一份</b>内存。若用库自带的服务端缓冲，
+/// <see cref="SimulationModbusClient"/> 必须操作<b>同一份</b>内存。若用库自带的服务端缓冲，
 /// 就得在"库缓冲 ↔ 虚拟内存"之间来回同步，还要处理读写竞态；直接实现协议帧则一步到位——
 /// 请求进来就地读写虚拟内存，零同步、零拷贝、零错位。</para>
 ///
 /// <para><b>本类只负责"连接与生命周期"</b>（监听端口、管理调试客户端、启停），
-/// 字节级的协议翻译在 <see cref="Modbus从站协议"/>。</para>
+/// 字节级的协议翻译在 <see cref="ModbusSlaveProtocol"/>。</para>
 ///
 /// <para><b>安全边界：</b>默认只监听回环地址，避免把一台可写的虚拟 PLC 暴露到车间网络；
 /// 需要跨机调试时由管理员在系统设置页显式改监听地址。</para>
 /// </summary>
-public sealed class 虚拟PLC从站 : IAsyncDisposable
+public sealed class VirtualPlcSlave : IAsyncDisposable
 {
     /// <summary>MBAP 报文头长度（与协议实现共用同一常量，避免两处各写一个 7）。</summary>
-    private const int 报文头长度 = Modbus从站协议.报文头长度;
+    private const int messageHeadLength = ModbusSlaveProtocol.messageHeadLength;
 
     /// <summary>标准 Modbus TCP 帧长上限。</summary>
-    private const int 最大帧长 = Modbus从站协议.最大帧长;
+    private const int maxFrameLong = ModbusSlaveProtocol.maxFrameLong;
 
-    private static readonly TimeSpan 停止等待 = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan stopWait = TimeSpan.FromSeconds(2);
 
-    private readonly 虚拟PLC设备 _设备;
-    private readonly PLC连接选项 _选项;
-    private readonly ILogger<虚拟PLC从站> _日志;
-    private readonly Modbus从站协议 _协议;
-    private readonly SemaphoreSlim _启停闸锁 = new(1, 1);
+    private readonly VirtualPlcDevice _device;
+    private readonly PlcConnectionOptions _options;
+    private readonly ILogger<VirtualPlcSlave> _log;
+    private readonly ModbusSlaveProtocol _protocol;
+    private readonly SemaphoreSlim _startStopGate = new(1, 1);
 
-    private TcpListener? _监听器;
-    private CancellationTokenSource? _取消令牌源;
-    private Task? _接受任务;
-    private int _客户端数;
-    private int _实际端口;
-    private string _监听地址 = "127.0.0.1";
+    private TcpListener? _listen;
+    private CancellationTokenSource? _cancellationTokenSource;
+    private Task? _acceptTask;
+    private int _clientNumber;
+    private int _actualPort;
+    private string _listenAddress = "127.0.0.1";
 
-    public 虚拟PLC从站(虚拟PLC设备 设备, PLC连接选项 选项, ILogger<虚拟PLC从站> 日志)
+    public VirtualPlcSlave(VirtualPlcDevice Device, PlcConnectionOptions Options, ILogger<VirtualPlcSlave> Log)
     {
-        _设备 = 设备;
-        _选项 = 选项;
-        _日志 = 日志;
-        _协议 = new Modbus从站协议(日志);
+        _device = Device;
+        _options = Options;
+        _log = Log;
+        _protocol = new ModbusSlaveProtocol(Log);
     }
 
     /// <summary>从站是否正在监听。</summary>
-    public bool 是否运行 { get; private set; }
+    public bool IsRun { get; private set; }
 
     /// <summary>实际监听端口（端口配 0 时由系统分配，以实际值为准）。</summary>
-    public int 端口 => 是否运行 ? _实际端口 : _选项.模拟从站端口;
+    public int Port => IsRun ? _actualPort : _options.SimulationSlavePort;
 
     /// <summary>实际监听地址。</summary>
-    public string 监听地址 => 是否运行 ? _监听地址 : _选项.模拟从站监听地址;
+    public string ListenAddress => IsRun ? _listenAddress : _options.SimulationSlaveListenAddress;
 
     /// <summary>当前连接的调试客户端数。</summary>
-    public int 已连接客户端数 => Volatile.Read(ref _客户端数);
+    public int ConnectedClientNumber => Volatile.Read(ref _clientNumber);
 
     /// <summary>监听端点文本，如 <c>127.0.0.1:5020</c>。</summary>
-    public string 端点文本 => $"{监听地址}:{端口}";
+    public string EndpointText => $"{ListenAddress}:{Port}";
 
     /// <summary>给管理员看的从站状态说明。</summary>
-    public string 状态文本 => 是否运行
-        ? $"监听中 · 已连接 {已连接客户端数} 个调试客户端"
+    public string StateText => IsRun
+        ? $"监听中 · 已连接 {ConnectedClientNumber} 个调试客户端"
         : "未启动";
 
     /// <summary>
@@ -80,113 +80,113 @@ public sealed class 虚拟PLC从站 : IAsyncDisposable
     /// 早期的同步 <c>Wait()</c> 版本在"UI 线程发起切换、后台线程正持锁停止"时
     /// 会把 UI 线程同步卡住最多 2 秒，并构成 UI 等后台、后台等 UI 的死锁拓扑（R2）。</para>
     /// </summary>
-    public async Task 启动Async(CancellationToken 取消令牌 = default)
+    public async Task LaunchAsync(CancellationToken cancellationToken = default)
     {
-        await _启停闸锁.WaitAsync(取消令牌).ConfigureAwait(false);
+        await _startStopGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            if (是否运行)
+            if (IsRun)
             {
                 return;
             }
 
-            var 地址值 = 解析监听地址(_选项.模拟从站监听地址);
-            var 监听器 = new TcpListener(地址值, _选项.模拟从站端口);
+            var addressValue = ParseListenAddress(_options.SimulationSlaveListenAddress);
+            var Listen = new TcpListener(addressValue, _options.SimulationSlavePort);
 
             // 先挂到字段：任何异常路径都能经 释放监听器() 统一清理，避免套接字泄漏
-            _监听器 = 监听器;
+            _listen = Listen;
 
             try
             {
-                监听器.Start();
+                Listen.Start();
             }
-            catch (Exception 异常) when (异常 is SocketException or ArgumentOutOfRangeException)
+            catch (Exception exception) when (exception is SocketException or ArgumentOutOfRangeException)
             {
-                释放监听器();
+                ReleaseListen();
                 throw new InvalidOperationException(
-                    $"模拟 PLC 从站无法监听 {地址值}:{_选项.模拟从站端口} —— {异常.Message}。" +
-                    "请在系统设置页改一个空闲端口，或检查该地址是否属于本机。", 异常);
+                    $"模拟 PLC 从站无法监听 {addressValue}:{_options.SimulationSlavePort} —— {exception.Message}。" +
+                    "请在系统设置页改一个空闲端口，或检查该地址是否属于本机。", exception);
             }
 
-            _监听地址 = 地址值.ToString();
-            _实际端口 = ((IPEndPoint)监听器.LocalEndpoint).Port;
-            _取消令牌源 = new CancellationTokenSource();
-            是否运行 = true;
-            _接受任务 = Task.Run(() => 异步接受客户端(监听器, _取消令牌源.Token), CancellationToken.None);
+            _listenAddress = addressValue.ToString();
+            _actualPort = ((IPEndPoint)Listen.LocalEndpoint).Port;
+            _cancellationTokenSource = new CancellationTokenSource();
+            IsRun = true;
+            _acceptTask = Task.Run(() => AcceptClientAsync(Listen, _cancellationTokenSource.Token), CancellationToken.None);
 
-            _日志.LogWarning(
-                "虚拟 PLC Modbus 从站已启动：{Endpoint}（可用 Modbus 工具连接进行离线调试）", 端点文本);
+            _log.LogWarning(
+                "虚拟 PLC Modbus 从站已启动：{Endpoint}（可用 Modbus 工具连接进行离线调试）", EndpointText);
         }
         finally
         {
-            _启停闸锁.Release();
+            _startStopGate.Release();
         }
     }
 
     /// <summary>停止监听并断开全部调试客户端。未运行时幂等返回。</summary>
-    public async Task 异步停止()
+    public async Task StopAsync()
     {
-        await _启停闸锁.WaitAsync().ConfigureAwait(false);
+        await _startStopGate.WaitAsync().ConfigureAwait(false);
 
         try
         {
-            if (!是否运行)
+            if (!IsRun)
             {
                 return;
             }
 
-            是否运行 = false;
+            IsRun = false;
 
-            var 取消令牌源 = _取消令牌源;
-            if (取消令牌源 is not null)
+            var CancellationTokenSource = _cancellationTokenSource;
+            if (CancellationTokenSource is not null)
             {
-                await 取消令牌源.CancelAsync().ConfigureAwait(false);
+                await CancellationTokenSource.CancelAsync().ConfigureAwait(false);
             }
 
-            释放监听器();
+            ReleaseListen();
 
-            if (_接受任务 is not null)
+            if (_acceptTask is not null)
             {
                 try
                 {
-                    await _接受任务.WaitAsync(停止等待).ConfigureAwait(false);
+                    await _acceptTask.WaitAsync(stopWait).ConfigureAwait(false);
                 }
                 catch (TimeoutException)
                 {
                     // 2 秒内没退出 = 接受循环卡住的征兆，不是正常关闭，留痕
-                    _日志.LogWarning("等待虚拟 PLC 从站接受循环退出超时（{Seconds}s），已放弃等待", 停止等待.TotalSeconds);
+                    _log.LogWarning("等待虚拟 PLC 从站接受循环退出超时（{Seconds}s），已放弃等待", stopWait.TotalSeconds);
                 }
-                catch (Exception 异常)
+                catch (Exception exception)
                 {
-                    _日志.LogDebug(异常, "虚拟 PLC 从站接受循环退出时出现异常，已忽略");
+                    _log.LogDebug(exception, "虚拟 PLC 从站接受循环退出时出现异常，已忽略");
                 }
             }
 
-            _接受任务 = null;
-            _取消令牌源?.Dispose();
-            _取消令牌源 = null;
-            Volatile.Write(ref _客户端数, 0);
+            _acceptTask = null;
+            _cancellationTokenSource?.Dispose();
+            _cancellationTokenSource = null;
+            Volatile.Write(ref _clientNumber, 0);
 
-            _日志.LogInformation("虚拟 PLC Modbus 从站已停止");
+            _log.LogInformation("虚拟 PLC Modbus 从站已停止");
         }
         finally
         {
-            _启停闸锁.Release();
+            _startStopGate.Release();
         }
     }
 
     // ── 监听与连接管理 ──────────────────────────────────────────────────
 
-    private async Task 异步接受客户端(TcpListener 监听器, CancellationToken 取消令牌)
+    private async Task AcceptClientAsync(TcpListener Listen, CancellationToken cancellationToken)
     {
-        while (!取消令牌.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                var 客户端 = await 监听器.AcceptTcpClientAsync(取消令牌).ConfigureAwait(false);
-                Interlocked.Increment(ref _客户端数);
-                _ = Task.Run(() => 异步服务客户端(客户端, 取消令牌), CancellationToken.None);
+                var Client = await Listen.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
+                Interlocked.Increment(ref _clientNumber);
+                _ = Task.Run(() => ServiceClientAsync(Client, cancellationToken), CancellationToken.None);
             }
             catch (OperationCanceledException)
             {
@@ -198,50 +198,50 @@ public sealed class 虚拟PLC从站 : IAsyncDisposable
                 // 停止时监听器已释放
                 break;
             }
-            catch (SocketException 异常)
+            catch (SocketException exception)
             {
                 // 瞬时套接字错误只影响这一次 Accept：继续监听，
                 // 否则从站会变成"显示运行中却再也接不上"的僵尸状态。
-                _日志.LogWarning(异常, "虚拟 PLC 从站接受连接时套接字异常，继续监听");
+                _log.LogWarning(exception, "虚拟 PLC 从站接受连接时套接字异常，继续监听");
             }
         }
     }
 
-    private async Task 异步服务客户端(TcpClient 客户端, CancellationToken 取消令牌)
+    private async Task ServiceClientAsync(TcpClient Client, CancellationToken cancellationToken)
     {
         try
         {
-            using (客户端)
+            using (Client)
             {
-                客户端.NoDelay = true;
-                var 流 = 客户端.GetStream();
-                var 报文头 = new byte[报文头长度];
+                Client.NoDelay = true;
+                var stream = Client.GetStream();
+                var messageHead = new byte[messageHeadLength];
 
-                while (!取消令牌.IsCancellationRequested)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    if (!await 异步读满(流, 报文头, 取消令牌).ConfigureAwait(false))
+                    if (!await ReadFullAsync(stream, messageHead, cancellationToken).ConfigureAwait(false))
                     {
                         break;
                     }
 
                     // MBAP 长度字段位于偏移 4–5（长度 = 单元号 1 字节 + PDU 字节数）。
                     // 写到偏移 5 会读到"长度低字节 + 单元号"，帧长必然错乱——这是最容易写错的一处。
-                    var 长度 = BinaryPrimitives.ReadUInt16BigEndian(报文头.AsSpan(4, 2));
+                    var length = BinaryPrimitives.ReadUInt16BigEndian(messageHead.AsSpan(4, 2));
 
                     // 合法长度：单元号(1) + PDU(≥1)，且整帧不超过标准上限
-                    if (长度 < 2 || 长度 > 最大帧长 - 报文头长度)
+                    if (length < 2 || length > maxFrameLong - messageHeadLength)
                     {
                         break;
                     }
 
-                    var 协议数据 = new byte[长度 - 1];
-                    if (!await 异步读满(流, 协议数据, 取消令牌).ConfigureAwait(false))
+                    var protocolData = new byte[length - 1];
+                    if (!await ReadFullAsync(stream, protocolData, cancellationToken).ConfigureAwait(false))
                     {
                         break;
                     }
 
-                    var 响应 = _协议.处理请求(报文头, 协议数据, _设备.内存);
-                    await 流.WriteAsync(响应, 取消令牌).ConfigureAwait(false);
+                    var response = _protocol.ProcessRequest(messageHead, protocolData, _device.memory);
+                    await stream.WriteAsync(response, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -249,77 +249,77 @@ public sealed class 虚拟PLC从站 : IAsyncDisposable
         {
             // 停止
         }
-        catch (Exception 异常) when (异常 is IOException or SocketException or ObjectDisposedException)
+        catch (Exception exception) when (exception is IOException or SocketException or ObjectDisposedException)
         {
             // 调试工具断开属常态，降级为 Debug
-            _日志.LogDebug(异常, "调试客户端连接中断");
+            _log.LogDebug(exception, "调试客户端连接中断");
         }
         finally
         {
-            Interlocked.Decrement(ref _客户端数);
+            Interlocked.Decrement(ref _clientNumber);
         }
     }
 
     /// <summary>读满指定字节数；对端关闭时返回 <c>false</c>。</summary>
-    private static async Task<bool> 异步读满(NetworkStream 流, byte[] 缓冲, CancellationToken 取消令牌)
+    private static async Task<bool> ReadFullAsync(NetworkStream stream, byte[] buffer, CancellationToken cancellationToken)
     {
-        var 已读 = 0;
+        var read = 0;
 
-        while (已读 < 缓冲.Length)
+        while (read < buffer.Length)
         {
-            var 本次 = await 流.ReadAsync(缓冲.AsMemory(已读), 取消令牌).ConfigureAwait(false);
+            var thisTimes = await stream.ReadAsync(buffer.AsMemory(read), cancellationToken).ConfigureAwait(false);
 
-            if (本次 == 0)
+            if (thisTimes == 0)
             {
                 return false;
             }
 
-            已读 += 本次;
+            read += thisTimes;
         }
 
         return true;
     }
 
     /// <summary>停止并释放监听器，幂等。停止/启动失败路径都经它收口，避免套接字泄漏。</summary>
-    private void 释放监听器()
+    private void ReleaseListen()
     {
-        var 监听器 = _监听器;
-        _监听器 = null;
+        var Listen = _listen;
+        _listen = null;
 
-        if (监听器 is null)
+        if (Listen is null)
         {
             return;
         }
 
         try
         {
-            监听器.Stop();
+            Listen.Stop();
         }
-        catch (SocketException 异常)
+        catch (SocketException exception)
         {
             // 关闭监听时套接字已失效属预期（进程退出、端口被抢占等），不值得惊动操作员
-            _日志.LogDebug(异常, "停止模拟从站监听器时出现套接字异常，已忽略");
+            _log.LogDebug(exception, "停止模拟从站监听器时出现套接字异常，已忽略");
         }
     }
 
-    private static IPAddress 解析监听地址(string 文本)
+    private static IPAddress ParseListenAddress(string Text)
     {
-        var 值 = 文本?.Trim();
+        var Value = Text?.Trim();
 
-        if (string.IsNullOrEmpty(值))
+        if (string.IsNullOrEmpty(Value))
         {
             return IPAddress.Loopback;
         }
 
-        return IPAddress.TryParse(值, out var 地址值)
-            ? 地址值
-            : throw new InvalidOperationException($"模拟从站监听地址「{文本}」不是合法的 IP 地址。");
+        return IPAddress.TryParse(Value, out var addressValue)
+            ? addressValue
+            : throw new InvalidOperationException($"模拟从站监听地址「{Text}」不是合法的 IP 地址。");
     }
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        await 异步停止().ConfigureAwait(false);
-        _启停闸锁.Dispose();
+        await StopAsync().ConfigureAwait(false);
+        _startStopGate.Dispose();
     }
 }

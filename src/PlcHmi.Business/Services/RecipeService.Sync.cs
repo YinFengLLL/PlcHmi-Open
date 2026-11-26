@@ -1,18 +1,18 @@
 ﻿using System.Globalization;
 using Microsoft.Extensions.Logging;
-using 上位机.通信.Modbus;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
-/// <see cref="配方服务"/> 的「启动同步」部分（partial）。
+/// <see cref="RecipeService"/> 的「启动同步」部分（partial）。
 ///
 /// <para>机种区段（D2500–D3999）以机种快照为准；区段之外的 D 区与 M 区<b>以 PLC 为准</b>——
 /// 每次开启软件后从 PLC 读回来刷新即可。拆出来是为了守住主文件 400 行规模门禁。</para>
 /// </summary>
-public sealed partial class 配方服务
+public sealed partial class RecipeService
 {
     // ── 启动同步（机种区外的 D 区 / M 区） ──────────────────────────────
 
@@ -27,80 +27,80 @@ public sealed partial class 配方服务
     /// <para><b>单项容错：</b>某一项读数非法（超范围 / 字数不足 / 通信抖断）时只跳过该项并记警告，
     /// 不整体拒绝——PLC 里某个残留字不该把整套参数卡住。</para>
     /// </summary>
-    private async Task<一致性校验报告> 异步从PLC同步参数(CancellationToken 取消令牌)
+    private async Task<ConsistencyValidateReport> FromPlcSyncParameterAsync(CancellationToken cancellationToken)
     {
-        var 刷新项 = new List<string>();
+        var refreshItem = new List<string>();
 
-        if (!_客户端.是否已连接)
+        if (!_client.IsConnected)
         {
-            _日志.LogInformation("PLC 未连接，跳过启动全局参数同步（沿用本地缓存值）");
-            return new 一致性校验报告
+            _log.LogInformation("PLC 未连接，跳过启动全局参数同步（沿用本地缓存值）");
+            return new ConsistencyValidateReport
             {
-                是否一致 = true,
-                配方号 = _当前号,
-                已勾选参数 = 0,
-                已勾选点位 = 0,
-                差异 = 刷新项,
+                IsConsistent = true,
+                RecipeNumber = _currentNumber,
+                AlreadyCheckedParameter = 0,
+                AlreadyCheckedPoint = 0,
+                Difference = refreshItem,
             };
         }
 
-        var 已读取 = 0;
+        var readGet = 0;
 
-        foreach (var 规格项 in _配置.参数)
+        foreach (var specItem in _config.Parameter)
         {
             try
             {
                 // 按配置声明的类型决定读取字数：Float32 占 2 字，只读 1 字会拿半个值，必然解错
-                var 寄存器列表 = await _客户端
-                    .异步读取保持寄存器(规格项.地址, 规格项.寄存器数量, 取消令牌)
+                var registerList = await _client
+                    .ReadHoldingRegisterAsync(specItem.Address, specItem.RegisterCount, cancellationToken)
                     .ConfigureAwait(false);
 
                 // 字数不足说明从站行为异常，跳过这一项而不是崩溃
-                if (寄存器列表.Length < 规格项.寄存器数量)
+                if (registerList.Length < specItem.RegisterCount)
                 {
-                    _日志.LogWarning(
+                    _log.LogWarning(
                         "读取 {Name} 时 PLC 只返回 {Got} 个字（D{Address} 需要 {Need} 个），跳过该项",
-                        规格项.显示名称, 寄存器列表.Length, 规格项.地址, 规格项.寄存器数量);
+                        specItem.DisplayName, registerList.Length, specItem.Address, specItem.RegisterCount);
                     continue;
                 }
 
-                var 已解码 = 寄存器编解码器.解码(规格项.数据类型, 寄存器列表, 字顺序.小字节序);
-                var PLC值 = Convert.ToDouble(已解码, CultureInfo.InvariantCulture);
+                var decoded = RegisterCodec.Decode(specItem.DataType, registerList, WordOrder.LittleEndian);
+                var plcValue = Convert.ToDouble(decoded, CultureInfo.InvariantCulture);
 
                 // PLC 里被手工改成超范围值时，宁可保留本地值也不要让轴带着天文数字跑
-                if (!规格项.是否在范围内(PLC值))
+                if (!specItem.IsInRange(plcValue))
                 {
-                    _日志.LogWarning(
+                    _log.LogWarning(
                         "{Name} 的 PLC 值 {Value:0.###} 超出范围 {Range}，保留本地值 {Local:0.###}",
-                        规格项.显示名称, PLC值, 规格项.范围文本,
-                        _参数库.参数.TryGetValue(规格项.键, out var 保留值) ? 保留值 : 规格项.默认);
+                        specItem.DisplayName, plcValue, specItem.RangeText,
+                        _parameterRepository.Parameter.TryGetValue(specItem.Key, out var retainValue) ? retainValue : specItem.Default);
                     continue;
                 }
 
-                var 本地值 = _参数库.参数.TryGetValue(规格项.键, out var 原值) ? 原值 : 规格项.默认;
+                var thisGroundValue = _parameterRepository.Parameter.TryGetValue(specItem.Key, out var OriginValue) ? OriginValue : specItem.Default;
 
-                已读取++;
+                readGet++;
 
-                if (Math.Abs(PLC值 - 本地值) > 参数容差)
+                if (Math.Abs(plcValue - thisGroundValue) > parameterTolerance)
                 {
-                    刷新项.Add($"{规格项.显示名称}：{本地值:0.###} → {PLC值:0.###}");
+                    refreshItem.Add($"{specItem.DisplayName}：{thisGroundValue:0.###} → {plcValue:0.###}");
                 }
 
-                _参数库.参数[规格项.键] = PLC值;
+                _parameterRepository.Parameter[specItem.Key] = plcValue;
             }
-            catch (Exception 异常)
+            catch (Exception exception)
             {
-                _日志.LogWarning(异常, "读取参数 {Key} 失败，跳过该项同步", 规格项.键);
+                _log.LogWarning(exception, "读取参数 {Key} 失败，跳过该项同步", specItem.Key);
             }
         }
 
-        return new 一致性校验报告
+        return new ConsistencyValidateReport
         {
-            是否一致 = 刷新项.Count == 0,
-            配方号 = _当前号,
-            已勾选参数 = 已读取,
-            已勾选点位 = 0,
-            差异 = 刷新项,
+            IsConsistent = refreshItem.Count == 0,
+            RecipeNumber = _currentNumber,
+            AlreadyCheckedParameter = readGet,
+            AlreadyCheckedPoint = 0,
+            Difference = refreshItem,
         };
     }
 

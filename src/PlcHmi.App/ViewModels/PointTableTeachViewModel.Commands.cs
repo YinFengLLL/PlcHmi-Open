@@ -1,17 +1,17 @@
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using 上位机.应用.服务;
-using 上位机.核心.模型;
+using PlcHmi.App.Services;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>
-/// <see cref="点表示教视图模型"/> 的示教 / 下发 / 动作 / 地址编辑命令（partial）。
+/// <see cref="PointTableTeachViewModel"/> 的示教 / 下发 / 动作 / 地址编辑命令（partial）。
 ///
 /// <para>从主文件拆出：主文件逼近 400 行规模门禁；这里全是"用户主动点击、
-/// 必须给出反馈"的命令，统一走 <see cref="界面命令.异步执行"/> 收口失败语义。</para>
+/// 必须给出反馈"的命令，统一走 <see cref="UiCommand.ExecuteAsync"/> 收口失败语义。</para>
 /// </summary>
-public abstract partial class 点表示教视图模型
+public abstract partial class PointTableTeachViewModel
 {
     /// <summary>
     /// 保存坐标点：读取当前各轴位置，写入点列表中选中的点。
@@ -19,24 +19,24 @@ public abstract partial class 点表示教视图模型
     /// 点胶页写 X/Y/Z（指令码本就无位置标签，不受影响）。</para>
     /// </summary>
     [RelayCommand]
-    private async Task 异步保存坐标点()
+    private async Task SaveCoordinatePointAsync()
     {
-        是否忙碌 = true;
+        IsBusy = true;
 
         try
         {
-            if (await 界面命令
-                    .异步执行(_日志, _对话框, "保存坐标点", () => 点表服务.异步示教当前位置(表键, 选中序号))
+            if (await UiCommand
+                    .ExecuteAsync(_log, _dialog, "保存坐标点", () => PointTableService.TeachCurrentPositionAsync(TableKey, SelectedIndex))
                     .ConfigureAwait(true))
             {
-                在界面线程执行(刷新行);
-                _对话框.提示("已保存坐标点",
-                    $"已将当前各轴位置写入第 {选中序号 + 1} 点，并保存到当前机种。");
+                AtUiThreadExecute(RefreshRow);
+                _dialog.Hint("已保存坐标点",
+                    $"已将当前各轴位置写入第 {SelectedIndex + 1} 点，并保存到当前机种。");
             }
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
@@ -48,38 +48,38 @@ public abstract partial class 点表示教视图模型
     /// 都落在机种区段里。此前"下发点表 + 回机种页保存机种"两步走，现场经常漏第二步。</para>
     /// </summary>
     [RelayCommand]
-    private async Task 异步参数写入()
+    private async Task ParameterWriteAsync()
     {
-        if (!_对话框.确认("参数写入",
-                $"确认把上位机当前的 D{机种区段.起始}–D{机种区段.结束} 参数整段写入 PLC，"
+        if (!_dialog.Confirm("参数写入",
+                $"确认把上位机当前的 D{MachineModelSection.StartAt}–D{MachineModelSection.end} 参数整段写入 PLC，"
                 + "并保存为当前机种？\n\n"
                 + "整段写入会先清零再写入：点表坐标、指令码、单点工艺参数、标定等"
                 + "全部以当前机种快照（含本页尚未下发的坐标修改）为准。",
-                视图.确认等级.警告, "写入",
+                Views.ConfirmLevel.Warning, "写入",
                 "PLC 将立即按新参数运行，确认现场无人员处于设备动作范围。"))
         {
             return;
         }
 
-        是否忙碌 = true;
+        IsBusy = true;
 
         try
         {
-            if (await 界面命令
-                    .异步执行(_日志, _对话框, "参数写入", () => 点表服务.异步参数写入(表键))
+            if (await UiCommand
+                    .ExecuteAsync(_log, _dialog, "参数写入", () => PointTableService.ParameterWriteAsync(TableKey))
                     .ConfigureAwait(true))
             {
-                刷新行();
+                RefreshRow();
 
-                _对话框.提示("参数写入完成",
-                    $"① 上位机当前机种（含本页刚改的点位）已整段写入 PLC 的 D{机种区段.起始}–D{机种区段.结束}；\n"
+                _dialog.Hint("参数写入完成",
+                    $"① 上位机当前机种（含本页刚改的点位）已整段写入 PLC 的 D{MachineModelSection.StartAt}–D{MachineModelSection.end}；\n"
                     + "② 已把 PLC 里刚写下的整段读回来，保存为当前机种——"
                     + "切换页面、切换机种或重启后仍是这份数据。");
             }
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
@@ -93,41 +93,41 @@ public abstract partial class 点表示教视图模型
     /// 所以提示里明确告诉操作员"还没保存到机种"。</para>
     /// </summary>
     [RelayCommand]
-    private async Task 异步读取点表()
+    private async Task ReadPointTableAsync()
     {
-        是否忙碌 = true;
+        IsBusy = true;
 
         try
         {
-            if (await 界面命令
-                    .异步执行(_日志, _对话框, "读取点表", () => 点表服务.异步读取点表(表键))
+            if (await UiCommand
+                    .ExecuteAsync(_log, _dialog, "读取点表", () => PointTableService.ReadPointTableAsync(TableKey))
                     .ConfigureAwait(true))
             {
-                刷新行();
+                RefreshRow();
 
-                _对话框.提示("已读取 PLC 当前值",
-                    $"已读取「{表定义.显示名称}」的 {表定义.点数} 个点。\n\n"
+                _dialog.Hint("已读取 PLC 当前值",
+                    $"已读取「{TableDefinition.DisplayName}」的 {TableDefinition.PointCount} 个点。\n\n"
                     + "界面现在显示的是 PLC 里的实时值，尚未写入当前机种快照；"
                     + "如需永久保存，请到「机种管理」页点「保存机种」。");
             }
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
     /// <summary>清空当前点。</summary>
     [RelayCommand]
-    private void 清空点()
+    private void ClearEmptyPoint()
     {
-        if (!_对话框.确认("清空当前点", $"确认清空第 {选中序号 + 1} 点的坐标？"))
+        if (!_dialog.Confirm("清空当前点", $"确认清空第 {SelectedIndex + 1} 点的坐标？"))
         {
             return;
         }
 
-        点表服务.清空点(表键, 选中序号);
-        刷新行();
+        PointTableService.ClearEmptyPoint(TableKey, SelectedIndex);
+        RefreshRow();
     }
 
     // ── 动作按钮 ────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ public abstract partial class 点表示教视图模型
     /// <para>周期回读在读之前取一份，读完发现被改过就丢弃这批快照——
     /// 否则"读在按之前、写在按之后"的时序会把刚点亮的按钮又翻回未激活。</para>
     /// </summary>
-    private int _动作写入版本;
+    private int _actionWriteVersion;
 
     /// <summary>
     /// 切换一个动作按钮：首次按下<b>置位</b>（激活），再次按下<b>复位</b>（取消激活）。
@@ -148,36 +148,36 @@ public abstract partial class 点表示教视图模型
     /// 激活状态改为直接显示在按钮本身（高亮 + 悬停提示），比弹窗更直观也更难漏看。</para>
     /// </summary>
     [RelayCommand]
-    private async Task 异步触发动作(动作按钮视图模型? 按钮项)
+    private async Task TriggerActionAsync(ActionButtonViewModel? ButtonItem)
     {
-        if (按钮项 is null)
+        if (ButtonItem is null)
         {
             return;
         }
 
         // 目标状态 = 取反：按一次切换一次
-        var 目标激活 = !按钮项.已激活;
+        var targetActive = !ButtonItem.Activated;
 
-        是否忙碌 = true;
+        IsBusy = true;
 
         try
         {
-            if (await 界面命令
-                    .异步执行(
-                        _日志,
-                        _对话框,
-                        目标激活 ? $"激活「{按钮项.名称}」" : $"取消激活「{按钮项.名称}」",
-                        () => _手动.异步写入线圈(按钮项.定义.地址, 目标激活))
+            if (await UiCommand
+                    .ExecuteAsync(
+                        _log,
+                        _dialog,
+                        targetActive ? $"激活「{ButtonItem.Name}」" : $"取消激活「{ButtonItem.Name}」",
+                        () => _manual.WriteCoilAsync(ButtonItem.Definition.Address, targetActive))
                     .ConfigureAwait(true))
             {
                 // 写入成功才改按钮状态：失败时按钮不该假装已激活
-                按钮项.已激活 = 目标激活;
-                _动作写入版本++;
+                ButtonItem.Activated = targetActive;
+                _actionWriteVersion++;
             }
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
@@ -188,110 +188,110 @@ public abstract partial class 点表示教视图模型
     /// 按钮若还显示"未激活"就是误导。单项容错——某个地址读不到只跳过它，
     /// 不影响其它按钮，也不该拦住整页初始化（通信抖动在示教现场是常态）。</para>
     ///
-    /// <para>进入页面调一次（<see cref="异步初始化"/>），页面停留期间由
-    /// <see cref="主视图模型"/> 周期调一次（见 <see cref="动作按钮页接口"/>）。</para>
+    /// <para>进入页面调一次（<see cref="InitializeAsync"/>），页面停留期间由
+    /// <see cref="MasterViewModel"/> 周期调一次（见 <see cref="IActionButtonPage"/>）。</para>
     /// </summary>
-    private async Task 异步同步动作按钮状态()
+    private async Task SyncActionButtonStateAsync()
     {
-        var 版本 = _动作写入版本;
-        var 快照 = new List<(动作按钮视图模型 按钮, bool 激活)>();
+        var version = _actionWriteVersion;
+        var Snapshot = new List<(ActionButtonViewModel Button, bool Activate)>();
 
         // 2026-11-19 性能改造：一页十几个按钮原逐个读线圈（连发独占串口闸锁），
         // 改为一次批量读（连续 M 区地址合并），读不到的按钮只跳过，语义不变。
-        IReadOnlyList<bool?> 状态列表;
+        IReadOnlyList<bool?> stateList;
 
         try
         {
-            状态列表 = await _手动
-                .异步批量读取线圈(动作按钮集合.Select(按钮 => 按钮.定义.地址).ToList())
+            stateList = await _manual
+                .BatchReadCoilAsync(ActionButtonCollection.Select(Button => Button.Definition.Address).ToList())
                 .ConfigureAwait(false);
         }
-        catch (InvalidOperationException 异常)
+        catch (InvalidOperationException exception)
         {
-            _日志.LogWarning(异常, "批量回读动作按钮状态失败，本轮跳过");
+            _log.LogWarning(exception, "批量回读动作按钮状态失败，本轮跳过");
             return;
         }
-        catch (System.IO.IOException 异常)
+        catch (System.IO.IOException exception)
         {
-            _日志.LogWarning(异常, "批量回读动作按钮状态失败，本轮跳过");
+            _log.LogWarning(exception, "批量回读动作按钮状态失败，本轮跳过");
             return;
         }
-        catch (System.Net.Sockets.SocketException 异常)
+        catch (System.Net.Sockets.SocketException exception)
         {
-            _日志.LogWarning(异常, "批量回读动作按钮状态失败，本轮跳过");
+            _log.LogWarning(exception, "批量回读动作按钮状态失败，本轮跳过");
             return;
         }
 
-        for (var 序号 = 0; 序号 < 动作按钮集合.Count && 序号 < 状态列表.Count; 序号++)
+        for (var Sequence = 0; Sequence < ActionButtonCollection.Count && Sequence < stateList.Count; Sequence++)
         {
-            if (状态列表[序号] is { } 激活)
+            if (stateList[Sequence] is { } Activate)
             {
-                快照.Add((动作按钮集合[序号], 激活));
+                Snapshot.Add((ActionButtonCollection[Sequence], Activate));
             }
         }
 
-        if (快照.Count == 0)
+        if (Snapshot.Count == 0)
         {
             return;
         }
 
         // 读的途中操作员按过按钮：这批快照是"按之前"的旧值，应用它会把刚点亮的按钮又翻回去
-        if (版本 != _动作写入版本)
+        if (version != _actionWriteVersion)
         {
             return;
         }
 
-        在界面线程执行(() =>
+        AtUiThreadExecute(() =>
         {
-            foreach (var (按钮, 激活) in 快照)
+            foreach (var (Button, Activate) in Snapshot)
             {
-                按钮.已激活 = 激活;
+                Button.Activated = Activate;
             }
         });
     }
 
     /// <inheritdoc />
-    public Task 异步刷新动作按钮状态() => 异步同步动作按钮状态();
+    public Task RefreshActionButtonStateAsync() => SyncActionButtonStateAsync();
 
     /// <summary>
-    /// 辅助地址的周期回读（<see cref="动作按钮页接口"/>，主视图模型每 3s 调一次）。
+    /// 辅助地址的周期回读（<see cref="IActionButtonPage"/>，主视图模型每 3s 调一次）。
     /// <para>与动作按钮分开跑：辅助地址一页十几行，混进按钮回读会把"PLC 复位后按钮两秒内跟上"
     /// 的时间预算吃掉（2026-11-18 现场自检就卡在这条上）。</para>
     /// </summary>
-    public Task 异步刷新辅助地址状态() => 异步刷新辅助地址值();
+    public Task RefreshAuxAddressStateAsync() => RefreshAuxAddressValueAsync();
 
     /// <summary>
     /// 本页点码写入的寄存器（锁附示教 <c>D651</c> / 点胶示教 <c>D652</c>，
-    /// 见 <see cref="页面上下文寄存器"/>）。
+    /// 见 <see cref="PageContextRegister"/>）。
     /// <para>两张点表互相独立，由具体页在构造时传入各自的寄存器——
     /// 不在基类里按表键猜，少一处静默写错字的可能。</para>
     /// </summary>
-    protected int 点码寄存器 { get; }
+    protected int PointCodeRegister { get; }
 
     /// <summary>
     /// 把当前点码同步到 PLC（本页自己的寄存器，0 基：第一个点 = 0）。
     /// <para>进入点表页时调用一次——选中序号没变化不会触发 <c>On选中序号Changed</c>，
     /// 但 PLC 侧需要知道"操作员现在回到点表了"。</para>
     /// </summary>
-    private Task 异步同步当前点号() => _页面上下文.异步写入点号(点码寄存器, 选中序号);
+    private Task SyncCurrentPointNumberAsync() => _pageContext.WritePointNumberAsync(PointCodeRegister, SelectedIndex);
 
     // ── 辅助地址 ────────────────────────────────────────────────────────
 
     /// <summary>读取全部辅助地址。</summary>
     [RelayCommand]
-    private async Task 异步读取辅助地址值()
+    private async Task ReadAuxAddressValueAsync()
     {
-        是否忙碌 = true;
+        IsBusy = true;
 
         try
         {
-            await 界面命令
-                .异步执行(_日志, _对话框, "读取辅助地址", 异步读取辅助地址)
+            await UiCommand
+                .ExecuteAsync(_log, _dialog, "读取辅助地址", ReadAuxAddressAsync)
                 .ConfigureAwait(true);
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 
@@ -303,58 +303,58 @@ public abstract partial class 点表示教视图模型
     /// 编辑本页所有与 PLC 交互的元件地址（点表列 / 辅助地址 / 动作按钮 / 点动 / 回零）。
     /// </summary>
     [RelayCommand]
-    private void 异步编辑地址()
+    private void EditAddressAsync()
     {
-        if (!可编辑地址)
+        if (!EditableAddress)
         {
-            _对话框.提示("权限不足", "仅管理员可编辑地址，请联系设备管理员。");
+            _dialog.Hint("权限不足", "仅管理员可编辑地址，请联系设备管理员。");
             return;
         }
 
-        异步安全调用.即发即忘(异步编辑地址核心, _日志, "编辑页面地址");
+        SafeInvokeAsync.FireAndForget(EditAddressCoreAsync, _log, "编辑页面地址");
     }
 
-    private async Task 异步编辑地址核心()
+    private async Task EditAddressCoreAsync()
     {
-        var 请求 = new 地址编辑请求
+        var Request = new AddressEditRequest
         {
-            标题 = 表定义.显示名称,
-            默认分组 = 分组,
-            项集合 = 页面地址服务.收集点表页(表键).ToList(),
+            Title = TableDefinition.DisplayName,
+            DefaultGroup = Group,
+            ItemCollection = PageAddressService.CollectSetPointTablePage(TableKey).ToList(),
         };
 
-        if (!_对话框.编辑页面地址(请求))
+        if (!_dialog.EditPageAddress(Request))
         {
             return;
         }
 
-        是否忙碌 = true;
+        IsBusy = true;
 
         try
         {
-            if (await 界面命令
-                    .异步执行(_日志, _对话框, "保存", () => 页面地址服务.异步保存点表页(表键, 请求))
+            if (await UiCommand
+                    .ExecuteAsync(_log, _dialog, "保存", () => PageAddressService.SavePointTablePageAsync(TableKey, Request))
                     .ConfigureAwait(true))
             {
-                在界面线程执行(() =>
+                AtUiThreadExecute(() =>
                 {
-                    重建辅助地址();
-                    重建动作按钮();
-                    同步指令码下拉();   // 指令码列基址可能刚被改过：地址提示跟着更新
-                    _对话框.提示("已保存", "页面元件地址已保存并立即生效。");
+                    RebuildAuxAddress();
+                    RebuildActionButton();
+                    SyncInstructionCodeDownPull();   // 指令码列基址可能刚被改过：地址提示跟着更新
+                    _dialog.Hint("已保存", "页面元件地址已保存并立即生效。");
                 });
 
                 // 状态灯地址可能刚被改过：立刻按新地址回读一次，改完即见效果（不必离开页面或重启）
-                异步安全调用.即发即忘(异步刷新状态灯, _日志, "按新地址刷新回原状态灯");
+                SafeInvokeAsync.FireAndForget(RefreshStatusLampAsync, _log, "按新地址刷新回原状态灯");
 
                 // 动作按钮（含固定「参数模式」）刚被重建、状态都复位成未激活：
                 // 立即回读一次，避免最长 2 秒内按钮显示"默认参数"而 PLC 其实是"独立参数"
-                异步安全调用.即发即忘(异步刷新动作按钮状态, _日志, "按新地址回读动作按钮状态");
+                SafeInvokeAsync.FireAndForget(RefreshActionButtonStateAsync, _log, "按新地址回读动作按钮状态");
             }
         }
         finally
         {
-            是否忙碌 = false;
+            IsBusy = false;
         }
     }
 }

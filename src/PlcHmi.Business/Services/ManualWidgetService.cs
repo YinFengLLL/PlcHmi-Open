@@ -1,11 +1,11 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 手动页元件服务。加载与保存 <c>config/manual-widgets.json</c>。
@@ -14,24 +14,24 @@ namespace 上位机.业务.服务;
 /// 上位机只置位内部继电器，由 PLC 程序决定何时驱动 Y 输出——
 /// 避免绕过 PLC 的联锁逻辑。绑定 Y 点的配置会在校验阶段被拒绝。</para>
 /// </summary>
-public sealed class 手动元件服务 : 手动元件服务接口
+public sealed class ManualComponentService : IManualComponentService
 {
-    private readonly 地址解析器接口 _解析器;
-    private readonly ILogger<手动元件服务> _日志;
-    private readonly 配置健康接口? _健康;
-    private readonly 权限守卫接口 _权限;
-    private readonly 变量表服务接口? _变量表;
-    private readonly List<手动元件定义> _元件 = new();
+    private readonly IAddressParser _parser;
+    private readonly ILogger<ManualComponentService> _log;
+    private readonly IConfigHealth? _health;
+    private readonly IPermissionGuard _permission;
+    private readonly IVariableTableService? _variableTable;
+    private readonly List<ManualComponentDefinition> _component = new();
 
-    public 手动元件服务(
-        地址解析器接口 解析器, ILogger<手动元件服务> 日志,
-        权限守卫接口 权限, 配置健康接口? 健康 = null, 变量表服务接口? 变量表 = null)
+    public ManualComponentService(
+        IAddressParser Parser, ILogger<ManualComponentService> Log,
+        IPermissionGuard Permission, IConfigHealth? Health = null, IVariableTableService? VariableTable = null)
     {
-        _解析器 = 解析器;
-        _日志 = 日志;
-        _权限 = 权限;
-        _健康 = 健康;
-        _变量表 = 变量表;
+        _parser = Parser;
+        _log = Log;
+        _permission = Permission;
+        _health = Health;
+        _variableTable = VariableTable;
     }
 
     /// <inheritdoc />
@@ -40,267 +40,267 @@ public sealed class 手动元件服务 : 手动元件服务接口
     /// 调用方可以直接 Add 后调保存绕过权限校验，也会在枚举时
     /// 撞上别处的增删（Collection was modified）。
     /// </remarks>
-    public IReadOnlyList<手动元件定义> 元件集合 => _元件.ToArray();
+    public IReadOnlyList<ManualComponentDefinition> ComponentCollection => _component.ToArray();
 
     /// <inheritdoc />
-    public event EventHandler? 元件已变更;
+    public event EventHandler? componentChanged;
 
     /// <inheritdoc />
-    public async Task 异步初始化(CancellationToken 取消令牌 = default)
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var 文件路径 = 配置路径.手动元件;
+        var filePath = ConfigPath.ManualComponent;
 
-        var 结果值 = await 配置文件加载器
-            .异步加载JSON<手动元件配置>(文件路径, JSON配置.读取, _日志, 取消令牌)
+        var resultValue = await ConfigFileLoader
+            .LoadJsonAsync<ManualComponentConfig>(filePath, JsonConfig.Read, _log, cancellationToken)
             .ConfigureAwait(false);
 
-        _健康.上报("手动页元件配置", 结果值);
+        _health.Report("手动页元件配置", resultValue);
 
-        if (结果值.加载结果 is 加载结果分类.缺失)
+        if (resultValue.loadResult is LoadResultSplitCategory.Missing)
         {
-            _日志.LogInformation("未找到手动页元件配置，写入一份默认配置：{Path}", 文件路径);
+            _log.LogInformation("未找到手动页元件配置，写入一份默认配置：{Path}", filePath);
 
-            _元件.Clear();
-            _元件.AddRange(创建默认值());
-            排序();
+            _component.Clear();
+            _component.AddRange(CreateDefaultValue());
+            Sort();
 
             // 首次运行写默认配置：启动阶段尚无登录身份，走核心保存
-            await 异步保存核心(取消令牌).ConfigureAwait(false);
+            await SaveCoreAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        _元件.Clear();
-        _元件.AddRange(结果值.值?.元件集合 ?? new List<手动元件定义>());
-        排序();
-        应用变量绑定();
+        _component.Clear();
+        _component.AddRange(resultValue.Value?.ComponentCollection ?? new List<ManualComponentDefinition>());
+        Sort();
+        ApplyVariableBinding();
 
-        if (结果值.加载结果 is 加载结果分类.已加载)
+        if (resultValue.loadResult is LoadResultSplitCategory.Loaded)
         {
-            _日志.LogInformation("已加载 {Count} 个手动页元件", _元件.Count);
+            _log.LogInformation("已加载 {Count} 个手动页元件", _component.Count);
         }
 
-        元件已变更?.Invoke(this, EventArgs.Empty);
+        componentChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
     /// 变量绑定回填：绑定了变量的元件用变量表中的软元件地址刷新地址字段。
     /// <para>变量失效时保留原地址并登记健康警告——禁止无声降级。</para>
     /// </summary>
-    private void 应用变量绑定()
+    private void ApplyVariableBinding()
     {
-        foreach (var 元件项 in _元件)
+        foreach (var ComponentItem in _component)
         {
-            元件项.地址 = 变量绑定回填.解析地址(元件项.变量, _变量表, _解析器, 元件项.地址, out var 错误);
+            ComponentItem.Address = VariableBindingBackfill.ParseAddress(ComponentItem.Variable, _variableTable, _parser, ComponentItem.Address, out var error);
 
-            if (错误.Length > 0)
+            if (error.Length > 0)
             {
-                _健康?.上报回退($"手动元件「{元件项.名称}」", 错误);
+                _health?.ReportFallback($"手动元件「{ComponentItem.Name}」", error);
             }
 
-            元件项.状态地址 = 变量绑定回填.解析地址(
-                元件项.状态值变量, _变量表, _解析器, 元件项.状态地址, out 错误);
+            ComponentItem.StateAddress = VariableBindingBackfill.ParseAddress(
+                ComponentItem.StateValueVariable, _variableTable, _parser, ComponentItem.StateAddress, out error);
 
-            if (错误.Length > 0)
+            if (error.Length > 0)
             {
-                _健康?.上报回退($"手动元件「{元件项.名称}」", 错误);
+                _health?.ReportFallback($"手动元件「{ComponentItem.Name}」", error);
             }
         }
     }
 
     /// <inheritdoc />
-    public async Task 异步保存(CancellationToken 取消令牌 = default)
+    public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
         // 保存即"把当前元件整体落盘"，与增删改同权限（管理员）：
         // 否则直接改内部列表再调保存就能绕过校验（R5）
-        _权限.要求(权限.编辑手动元件);
+        _permission.WantRequire(Permission.EditManualComponent);
 
-        await 异步保存核心(取消令牌).ConfigureAwait(false);
-        元件已变更?.Invoke(this, EventArgs.Empty);
+        await SaveCoreAsync(cancellationToken).ConfigureAwait(false);
+        componentChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>落盘但不通知界面（初始化 / 已有校验的写路径内部使用）。</summary>
-    private async Task 异步保存核心(CancellationToken 取消令牌)
+    private async Task SaveCoreAsync(CancellationToken cancellationToken)
     {
-        排序();
+        Sort();
 
-        var 配置对象 = new 手动元件配置 { 元件集合 = _元件.Select(元件条目 => 元件条目.克隆()).ToList() };
-        var JSON文本 = JsonSerializer.Serialize(配置对象, JSON配置.写入);
+        var configPairObject = new ManualComponentConfig { ComponentCollection = _component.Select(componentEntry => componentEntry.Clone()).ToList() };
+        var jsonText = JsonSerializer.Serialize(configPairObject, JsonConfig.Write);
 
         try
         {
-            await 原子文件.异步写入全部文本(配置路径.手动元件, JSON文本, 取消令牌)
+            await AtomicFile.WriteAllTextAsync(ConfigPath.ManualComponent, jsonText, cancellationToken)
                 .ConfigureAwait(false);
 
-            _日志.LogInformation("手动页元件已保存（{Count} 个）：{Path}", _元件.Count, 配置路径.手动元件);
+            _log.LogInformation("手动页元件已保存（{Count} 个）：{Path}", _component.Count, ConfigPath.ManualComponent);
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "保存手动页元件失败：{Path}", 配置路径.手动元件);
+            _log.LogError(exception, "保存手动页元件失败：{Path}", ConfigPath.ManualComponent);
             throw;
         }
     }
 
     /// <inheritdoc />
-    public 手动元件校验 校验(手动元件定义 元件项)
+    public ManualComponentValidate Validate(ManualComponentDefinition ComponentItem)
     {
-        var 错误列表 = new List<string>();
+        var errorList = new List<string>();
 
-        if (string.IsNullOrWhiteSpace(元件项.名称))
+        if (string.IsNullOrWhiteSpace(ComponentItem.Name))
         {
-            错误列表.Add("元件名称不能为空。");
+            errorList.Add("元件名称不能为空。");
         }
 
-        switch (元件项.类型)
+        switch (ComponentItem.Kind)
         {
-            case 手动元件类型.气缸:
+            case ManualComponentType.Cylinder:
                 // 单线圈气缸：一个地址，置位伸出、复位缩回
-                校验中继(元件项.地址, "控制地址", required: true, 错误列表);
+                ValidateContinue(ComponentItem.Address, "控制地址", required: true, errorList);
                 break;
 
-            case 手动元件类型.按钮:
-                校验中继(元件项.地址, "触发地址", required: true, 错误列表);
+            case ManualComponentType.Button:
+                ValidateContinue(ComponentItem.Address, "触发地址", required: true, errorList);
                 break;
 
-            case 手动元件类型.指示灯:
-                校验中继(元件项.状态地址, "监测地址", required: true, 错误列表);
+            case ManualComponentType.Indicator:
+                ValidateContinue(ComponentItem.StateAddress, "监测地址", required: true, errorList);
                 break;
         }
 
-        return new 手动元件校验 { 是否有效 = 错误列表.Count == 0, 错误集合 = 错误列表 };
+        return new ManualComponentValidate { IsValid = errorList.Count == 0, ErrorCollection = errorList };
     }
 
     /// <inheritdoc />
-    public void 添加(手动元件定义 元件项)
+    public void Add(ManualComponentDefinition ComponentItem)
     {
-        ArgumentNullException.ThrowIfNull(元件项);
+        ArgumentNullException.ThrowIfNull(ComponentItem);
 
         // 增删元件是管理员专有：元件定义决定"手动页上有什么按钮、按下去动哪个 M 点"，
         // 改错了等于给操作员一个会误动作的界面。
-        _权限.要求(权限.编辑手动元件);
+        _permission.WantRequire(Permission.EditManualComponent);
 
-        if (string.IsNullOrWhiteSpace(元件项.标识))
+        if (string.IsNullOrWhiteSpace(ComponentItem.Id))
         {
-            元件项.标识 = 新标识(元件项.类型);
+            ComponentItem.Id = NewId(ComponentItem.Kind);
         }
 
-        if (元件项.顺序 <= 0)
+        if (ComponentItem.Order <= 0)
         {
-            元件项.顺序 = _元件.Count == 0 ? 1 : _元件.Max(已有项 => 已有项.顺序) + 1;
+            ComponentItem.Order = _component.Count == 0 ? 1 : _component.Max(alreadyHasItem => alreadyHasItem.Order) + 1;
         }
 
-        _元件.Add(元件项.克隆());
-        排序();
+        _component.Add(ComponentItem.Clone());
+        Sort();
 
-        _日志.LogInformation("已新增手动页元件：{Name}", 元件项.名称);
-        元件已变更?.Invoke(this, EventArgs.Empty);
+        _log.LogInformation("已新增手动页元件：{Name}", ComponentItem.Name);
+        componentChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc />
-    public void 更新(手动元件定义 元件项)
+    public void Update(ManualComponentDefinition ComponentItem)
     {
-        ArgumentNullException.ThrowIfNull(元件项);
+        ArgumentNullException.ThrowIfNull(ComponentItem);
 
-        _权限.要求(权限.编辑手动元件);
+        _permission.WantRequire(Permission.EditManualComponent);
 
-        var 序号 = _元件.FindIndex(待更新项 => string.Equals(待更新项.标识, 元件项.标识, StringComparison.OrdinalIgnoreCase));
+        var Sequence = _component.FindIndex(pendingUpdateItem => string.Equals(pendingUpdateItem.Id, ComponentItem.Id, StringComparison.OrdinalIgnoreCase));
 
-        if (序号 < 0)
+        if (Sequence < 0)
         {
-            throw new InvalidOperationException($"找不到 Id 为「{元件项.标识}」的元件。");
+            throw new InvalidOperationException($"找不到 Id 为「{ComponentItem.Id}」的元件。");
         }
 
-        _元件[序号] = 元件项.克隆();
-        排序();
+        _component[Sequence] = ComponentItem.Clone();
+        Sort();
 
-        _日志.LogInformation("已更新手动页元件：{Name}", 元件项.名称);
-        元件已变更?.Invoke(this, EventArgs.Empty);
+        _log.LogInformation("已更新手动页元件：{Name}", ComponentItem.Name);
+        componentChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc />
-    public void 移除(string 标识)
+    public void Remove(string Id)
     {
-        _权限.要求(权限.编辑手动元件);
+        _permission.WantRequire(Permission.EditManualComponent);
 
-        var 已移除 = _元件.RemoveAll(元件条目 => string.Equals(元件条目.标识, 标识, StringComparison.OrdinalIgnoreCase));
+        var alreadyRemove = _component.RemoveAll(componentEntry => string.Equals(componentEntry.Id, Id, StringComparison.OrdinalIgnoreCase));
 
-        if (已移除 > 0)
+        if (alreadyRemove > 0)
         {
-            _日志.LogInformation("已删除手动页元件：{Id}", 标识);
-            元件已变更?.Invoke(this, EventArgs.Empty);
+            _log.LogInformation("已删除手动页元件：{Id}", Id);
+            componentChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
     /// <inheritdoc />
-    public string 新标识(手动元件类型 type)
+    public string NewId(ManualComponentType type)
     {
-        var 前缀 = type switch
+        var prefix = type switch
         {
-            手动元件类型.气缸 => "cyl",
-            手动元件类型.按钮 => "btn",
+            ManualComponentType.Cylinder => "cyl",
+            ManualComponentType.Button => "btn",
             _ => "lamp",
         };
 
         // 保证不与现有 Id 冲突
-        for (var 条目 = 1; 条目 < 1000; 条目++)
+        for (var Entry = 1; Entry < 1000; Entry++)
         {
-            var 候选 = $"{前缀}-{条目}";
+            var candidate = $"{prefix}-{Entry}";
 
-            if (_元件.All(元件条目 => !string.Equals(元件条目.标识, 候选, StringComparison.OrdinalIgnoreCase)))
+            if (_component.All(componentEntry => !string.Equals(componentEntry.Id, candidate, StringComparison.OrdinalIgnoreCase)))
             {
-                return 候选;
+                return candidate;
             }
         }
 
-        return $"{前缀}-{Guid.NewGuid():N}"[..12];
+        return $"{prefix}-{Guid.NewGuid():N}"[..12];
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────
 
     /// <summary>校验一个地址是否为 M 区。</summary>
-    private void 校验中继(string 地址值, string 标签名, bool required, List<string> 错误列表)
+    private void ValidateContinue(string addressValue, string TagName, bool required, List<string> errorList)
     {
-        if (string.IsNullOrWhiteSpace(地址值))
+        if (string.IsNullOrWhiteSpace(addressValue))
         {
             if (required)
             {
-                错误列表.Add($"{标签名}不能为空。");
+                errorList.Add($"{TagName}不能为空。");
             }
 
             return;
         }
 
-        if (!_解析器.尝试解析(地址值, out var PLC地址) || PLC地址 is null)
+        if (!_parser.TryParse(addressValue, out var PlcAddress) || PlcAddress is null)
         {
-            错误列表.Add($"{标签名}「{地址值}」不是有效的软元件地址。");
+            errorList.Add($"{TagName}「{addressValue}」不是有效的软元件地址。");
             return;
         }
 
-        if (PLC地址.元素 != 软元素.M)
+        if (PlcAddress.ElementItem != SoftElement.M)
         {
-            错误列表.Add($"{标签名}「{地址值}」必须是 M 区地址（当前解析为 {PLC地址.元素} 区）。"
+            errorList.Add($"{TagName}「{addressValue}」必须是 M 区地址（当前解析为 {PlcAddress.ElementItem} 区）。"
                        + "上位机只允许操作内部继电器，由 PLC 程序决定何时驱动 Y 输出。");
         }
     }
 
-    private void 排序() => _元件.Sort((甲, 乙) => 甲.顺序.CompareTo(乙.顺序));
+    private void Sort() => _component.Sort((item, item2) => item.Order.CompareTo(item2.Order));
 
     /// <summary>首次运行时的默认元件（单线圈气缸，顺序与旧版硬编码一致）。</summary>
-    private static IEnumerable<手动元件定义> 创建默认值() =>
+    private static IEnumerable<ManualComponentDefinition> CreateDefaultValue() =>
     [
         new()
         {
-            标识 = "cyl-1", 类型 = 手动元件类型.气缸, 名称 = "上料气缸", 顺序 = 1,
-            地址 = "M220",
+            Id = "cyl-1", Kind = ManualComponentType.Cylinder, Name = "上料气缸", Order = 1,
+            Address = "M220",
         },
         new()
         {
-            标识 = "cyl-2", 类型 = 手动元件类型.气缸, 名称 = "压装气缸", 顺序 = 2,
-            地址 = "M221",
+            Id = "cyl-2", Kind = ManualComponentType.Cylinder, Name = "压装气缸", Order = 2,
+            Address = "M221",
         },
         new()
         {
-            标识 = "cyl-3", 类型 = 手动元件类型.气缸, 名称 = "顶升气缸", 顺序 = 3,
-            地址 = "M222",
+            Id = "cyl-3", Kind = ManualComponentType.Cylinder, Name = "顶升气缸", Order = 3,
+            Address = "M222",
         },
     ];
 }

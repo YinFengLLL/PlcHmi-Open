@@ -1,9 +1,9 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 参数表格服务的「条目校验」部分。
@@ -12,7 +12,7 @@ namespace 上位机.业务.服务;
 /// 而校验是一整块纯规则代码（无副作用、可单独阅读），
 /// 抽出来后主文件只留加载 / 保存 / 增删改。</para>
 /// </summary>
-public sealed partial class 参数表格服务
+public sealed partial class ParameterTableService
 {
     /// <summary>
     /// 启动期检查延时地址是否互相重叠，重叠即登记配置健康告警（界面常驻横幅）。
@@ -23,122 +23,122 @@ public sealed partial class 参数表格服务
     /// 高位字（表现为"某条延时偶尔变成几万秒"）。不下发/编辑时不会报错，
     /// 等到现场发现时可能已经跑错了几批工件，所以在启动期就摆到明面上。</para>
     /// </summary>
-    private void 检查延时地址重叠()
+    private void CheckDelayAddressOverlap()
     {
-        var 重叠 = new List<string>();
+        var overlap = new List<string>();
 
-        for (var 甲 = 0; 甲 < _延迟.Count; 甲++)
+        for (var item = 0; item < _delay.Count; item++)
         {
-            if (!_解析器.尝试解析(_延迟[甲].地址, out var 甲地址) || 甲地址 is null)
+            if (!_parser.TryParse(_delay[item].Address, out var addressA) || addressA is null)
             {
                 continue;
             }
 
-            for (var 乙 = 甲 + 1; 乙 < _延迟.Count; 乙++)
+            for (var item2 = item + 1; item2 < _delay.Count; item2++)
             {
-                if (!_解析器.尝试解析(_延迟[乙].地址, out var 乙地址) || 乙地址 is null)
+                if (!_parser.TryParse(_delay[item2].Address, out var addressB) || addressB is null)
                 {
                     continue;
                 }
 
-                if (Math.Abs(甲地址.Modbus地址 - 乙地址.Modbus地址) < 参数条目定义.延时占字数)
+                if (Math.Abs(addressA.ModbusAddress - addressB.ModbusAddress) < ParameterEntryDefinition.delayOccupyWordCount)
                 {
-                    重叠.Add($"「{_延迟[甲].名称}」({_延迟[甲].地址}) 与 「{_延迟[乙].名称}」({_延迟[乙].地址})");
+                    overlap.Add($"「{_delay[item].Name}」({_delay[item].Address}) 与 「{_delay[item2].Name}」({_delay[item2].Address})");
                 }
             }
         }
 
-        if (重叠.Count == 0)
+        if (overlap.Count == 0)
         {
             return;
         }
 
-        _日志.LogWarning("参数表（延时）存在 {Count} 处地址重叠：{Detail}", 重叠.Count, string.Join("；", 重叠));
+        _log.LogWarning("参数表（延时）存在 {Count} 处地址重叠：{Detail}", overlap.Count, string.Join("；", overlap));
 
-        _健康.上报回退("参数表（延时）",
-            $"延时按 32 位整数（DINT）存毫秒、每条占 {参数条目定义.延时占字数} 个字，"
-            + $"以下条目地址重叠会互相覆盖高位字：{string.Join("；", 重叠)}。"
+        _health.ReportFallback("参数表（延时）",
+            $"延时按 32 位整数（DINT）存毫秒、每条占 {ParameterEntryDefinition.delayOccupyWordCount} 个字，"
+            + $"以下条目地址重叠会互相覆盖高位字：{string.Join("；", overlap)}。"
             + "请在参数页「编辑延时」里改成间隔 2 的地址（如 D1000 / D1002 / D1004 …）。");
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// <b>占用检查为什么不能靠引用排除自身：</b>编辑对话框操作的是 <see cref="参数条目定义.克隆"/> 副本，
+    /// <b>占用检查为什么不能靠引用排除自身：</b>编辑对话框操作的是 <see cref="ParameterEntryDefinition.Clone"/> 副本，
     /// <c>ReferenceEquals(x, item)</c> 对副本永远不成立——旧实现因此把「正在编辑的那条」也当成冲突来源，
     /// 管理员改个名字就会弹「已被占用」（2026-09-11 需求方反馈）。
-    /// 现按 <paramref name="是否更新"/> 区分：编辑时同 Id 的条目就是自身，直接跳过。
+    /// 现按 <paramref name="isUpdate"/> 区分：编辑时同 Id 的条目就是自身，直接跳过。
     /// </remarks>
-    public 参数条目校验 校验(参数表格类别 类别, 参数条目定义 条目, bool 是否更新 = false)
+    public ParameterEntryValidate Validate(ParameterTableCategory Category, ParameterEntryDefinition Entry, bool isUpdate = false)
     {
-        var 错误列表 = new List<string>();
+        var errorList = new List<string>();
 
-        if (string.IsNullOrWhiteSpace(条目.名称))
+        if (string.IsNullOrWhiteSpace(Entry.Name))
         {
-            错误列表.Add("名称不能为空。");
+            errorList.Add("名称不能为空。");
         }
 
-        var 列表 = 获取(类别);
+        var list = Get(Category);
 
-        if (!是否更新 && 列表.Any(坐标X =>
-                string.Equals(坐标X.标识, 条目.标识, StringComparison.OrdinalIgnoreCase)))
+        if (!isUpdate && list.Any(coordinateX =>
+                string.Equals(coordinateX.Id, Entry.Id, StringComparison.OrdinalIgnoreCase)))
         {
-            错误列表.Add($"编号「{条目.标识}」已被占用。");
+            errorList.Add($"编号「{Entry.Id}」已被占用。");
         }
 
         // 地址校验：延时必须 D 区、按钮必须 M 区
-        var 允许 = 类别 == 参数表格类别.延迟 ? 延迟元素 : 按钮元素;
-        var 期望 = 类别 == 参数表格类别.延迟 ? "D 区" : "M 区";
+        var allow = Category == ParameterTableCategory.Delay ? delayElement : buttonElement;
+        var expected = Category == ParameterTableCategory.Delay ? "D 区" : "M 区";
 
-        if (string.IsNullOrWhiteSpace(条目.地址))
+        if (string.IsNullOrWhiteSpace(Entry.Address))
         {
-            错误列表.Add("地址不能为空。");
+            errorList.Add("地址不能为空。");
         }
-        else if (!_解析器.尝试解析(条目.地址, out var PLC地址) || PLC地址 is null)
+        else if (!_parser.TryParse(Entry.Address, out var PlcAddress) || PlcAddress is null)
         {
-            错误列表.Add($"「{条目.地址}」不是有效的软元件地址。");
+            errorList.Add($"「{Entry.Address}」不是有效的软元件地址。");
         }
-        else if (!允许.Contains(PLC地址.元素))
+        else if (!allow.Contains(PlcAddress.ElementItem))
         {
-            错误列表.Add($"{期望}地址要求：当前填的是 {PLC地址.元素} 区。"
-                       + (类别 == 参数表格类别.按钮
+            errorList.Add($"{expected}地址要求：当前填的是 {PlcAddress.ElementItem} 区。"
+                       + (Category == ParameterTableCategory.Button
                            ? "按钮只操作内部继电器，由 PLC 决定何时驱动输出。"
                            : string.Empty));
         }
-        else if (类别 == 参数表格类别.按钮 &&
-                 (PLC地址.Modbus地址 < 按钮地址最小 || PLC地址.Modbus地址 > 按钮地址最大))
+        else if (Category == ParameterTableCategory.Button &&
+                 (PlcAddress.ModbusAddress < buttonAddressMin || PlcAddress.ModbusAddress > buttonAddressMax))
         {
-            错误列表.Add(
-                $"按钮地址必须在 M{按钮地址最小}–M{按钮地址最大} 范围内（当前 {条目.地址}）。"
+            errorList.Add(
+                $"按钮地址必须在 M{buttonAddressMin}–M{buttonAddressMax} 范围内（当前 {Entry.Address}）。"
                 + "M5000 以下是系统保留段：运行命令、手动使能、气缸与点动、报警位都在那里，"
                 + "自定义开关放过去会撞掉某个功能。");
         }
-        else if (类别 == 参数表格类别.延迟 &&
-                 (PLC地址.Modbus地址 < 延迟地址最小 || PLC地址.Modbus地址 > 延迟地址最大))
+        else if (Category == ParameterTableCategory.Delay &&
+                 (PlcAddress.ModbusAddress < delayAddressMin || PlcAddress.ModbusAddress > delayAddressMax))
         {
-            错误列表.Add(
-                $"延时地址必须在 D{延迟地址最小}–D{延迟地址最大} 范围内（当前 {条目.地址}）。"
+            errorList.Add(
+                $"延时地址必须在 D{delayAddressMin}–D{delayAddressMax} 范围内（当前 {Entry.Address}）。"
                 + "D1000–D1099 是延时表专属区（每个延时占 2 字），D1100–D1199 为上位机预留段，"
                 + "D1200–D1799 是轴参数区，放过去会与预留规划冲突。");
         }
-        else if (类别 == 参数表格类别.延迟)
+        else if (Category == ParameterTableCategory.Delay)
         {
-            校验延时地址不重叠(条目, PLC地址, 是否更新, 错误列表);
+            ValidateDelayAddressNotOverlap(Entry, PlcAddress, isUpdate, errorList);
         }
 
         // 延时才校验数值范围
-        if (类别 == 参数表格类别.延迟)
+        if (Category == ParameterTableCategory.Delay)
         {
-            if (条目.最大 <= 条目.最小)
+            if (Entry.Max <= Entry.Min)
             {
-                错误列表.Add($"取值范围无效：上限 {条目.最大:0.###} 必须大于下限 {条目.最小:0.###}。");
+                errorList.Add($"取值范围无效：上限 {Entry.Max:0.###} 必须大于下限 {Entry.Min:0.###}。");
             }
-            else if (条目.值 < 条目.最小 || 条目.值 > 条目.最大)
+            else if (Entry.Value < Entry.Min || Entry.Value > Entry.Max)
             {
-                错误列表.Add($"当前值 {条目.值:0.###} 超出范围 {条目.最小:0.###} – {条目.最大:0.###}。");
+                errorList.Add($"当前值 {Entry.Value:0.###} 超出范围 {Entry.Min:0.###} – {Entry.Max:0.###}。");
             }
         }
 
-        return new 参数条目校验 { 是否有效 = 错误列表.Count == 0, 错误集合 = 错误列表 };
+        return new ParameterEntryValidate { IsValid = errorList.Count == 0, ErrorCollection = errorList };
     }
 
     /// <summary>
@@ -152,36 +152,36 @@ public sealed partial class 参数表格服务
     /// <para>与所有其它延时条目比较（含停用项）：停用项仍占着规划里的地址，
     /// 只比启用的会让"重新启用即冲突"埋成定时炸弹。</para>
     /// </summary>
-    private void 校验延时地址不重叠(
-        参数条目定义 条目, PLC地址 地址值, bool 是否更新, List<string> 错误列表)
+    private void ValidateDelayAddressNotOverlap(
+        ParameterEntryDefinition Entry, PlcAddress addressValue, bool isUpdate, List<string> errorList)
     {
         // DINT 跨 2 字：占用 [起始, 起始 + 1]
-        var 本次起点 = 地址值.Modbus地址;
-        var 本次终点 = 本次起点 + 参数条目定义.延时占字数 - 1;
+        var thisTimesStartPoint = addressValue.ModbusAddress;
+        var thisTimesEndPoint = thisTimesStartPoint + ParameterEntryDefinition.delayOccupyWordCount - 1;
 
-        foreach (var 其它项 in _延迟)
+        foreach (var otherItem in _delay)
         {
             // 编辑自身时跳过同 Id 的那条（对话框传的是克隆副本，比不了引用）
-            if (是否更新 && string.Equals(其它项.标识, 条目.标识, StringComparison.OrdinalIgnoreCase))
+            if (isUpdate && string.Equals(otherItem.Id, Entry.Id, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            if (!_解析器.尝试解析(其它项.地址, out var 其它地址) || 其它地址 is null)
+            if (!_parser.TryParse(otherItem.Address, out var otherAddress) || otherAddress is null)
             {
                 continue;   // 对方地址本身无效：由它自己的校验报错，这里不重复报
             }
 
-            var 对方起点 = 其它地址.Modbus地址;
-            var 对方终点 = 对方起点 + 参数条目定义.延时占字数 - 1;
+            var pairSideStartPoint = otherAddress.ModbusAddress;
+            var pairSideEndPoint = pairSideStartPoint + ParameterEntryDefinition.delayOccupyWordCount - 1;
 
-            if (本次起点 <= 对方终点 && 对方起点 <= 本次终点)
+            if (thisTimesStartPoint <= pairSideEndPoint && pairSideStartPoint <= thisTimesEndPoint)
             {
-                错误列表.Add(
-                    $"地址与「{其它项.名称}」({其它项.地址}) 重叠：延时按 32 位整数（DINT）存毫秒、"
-                    + $"每条占 {参数条目定义.延时占字数} 个字（{条目.地址} 占用 "
-                    + $"D{本次起点.ToString(CultureInfo.InvariantCulture)}–"
-                    + $"D{本次终点.ToString(CultureInfo.InvariantCulture)}）。"
+                errorList.Add(
+                    $"地址与「{otherItem.Name}」({otherItem.Address}) 重叠：延时按 32 位整数（DINT）存毫秒、"
+                    + $"每条占 {ParameterEntryDefinition.delayOccupyWordCount} 个字（{Entry.Address} 占用 "
+                    + $"D{thisTimesStartPoint.ToString(CultureInfo.InvariantCulture)}–"
+                    + $"D{thisTimesEndPoint.ToString(CultureInfo.InvariantCulture)}）。"
                     + "请改成间隔 2 的地址（如 D1000 / D1002 / D1004 …）。");
                 return;
             }

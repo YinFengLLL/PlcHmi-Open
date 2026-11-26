@@ -1,8 +1,8 @@
-<Application x:Class="上位机.应用.应用"
+<Application x:Class="PlcHmi.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:上位机.应用.视图模型"
-             xmlns:views="clr-namespace:上位机.应用.视图">
+             xmlns:vm="clr-namespace:PlcHmi.App.ViewModels"
+             xmlns:views="clr-namespace:PlcHmi.App.Views">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -24,48 +24,48 @@
                  内容区用 ContentControl 呈现 CurrentPage，
                  WPF 依据运行时类型自动挑选对应模板，导航代码无需引用任何 View。 -->
 
-            <DataTemplate DataType="{x:Type vm:运行视图模型}">
-                <views:运行视图 />
+            <DataTemplate DataType="{x:Type vm:RunViewModel}">
+                <views:RunView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:参数视图模型}">
-                <views:参数视图 />
+            <DataTemplate DataType="{x:Type vm:ParameterViewModel}">
+                <views:ParameterView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:锁附示教视图模型}">
-                <views:锁附示教视图 />
+            <DataTemplate DataType="{x:Type vm:ScrewTeachViewModel}">
+                <views:ScrewTeachView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:点胶示教视图模型}">
-                <views:点胶示教视图 />
+            <DataTemplate DataType="{x:Type vm:DispenseTeachViewModel}">
+                <views:DispenseTeachView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:标定视图模型}">
-                <views:标定视图 />
+            <DataTemplate DataType="{x:Type vm:CalibrationViewModel}">
+                <views:CalibrationView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:配方视图模型}">
-                <views:配方视图 />
+            <DataTemplate DataType="{x:Type vm:RecipeViewModel}">
+                <views:RecipeView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:手动视图模型}">
-                <views:手动视图 />
+            <DataTemplate DataType="{x:Type vm:ManualViewModel}">
+                <views:ManualView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:IO视图模型}">
-                <views:IO视图 />
+            <DataTemplate DataType="{x:Type vm:IoViewModel}">
+                <views:IoView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:报警视图模型}">
-                <views:报警视图 />
+            <DataTemplate DataType="{x:Type vm:AlarmViewModel}">
+                <views:AlarmView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:历史记录视图模型}">
-                <views:历史记录视图 />
+            <DataTemplate DataType="{x:Type vm:HistoryRecordViewModel}">
+                <views:HistoryRecordView />
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type vm:设置视图模型}">
-                <views:设置视图 />
+            <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                <views:SettingsView />
             </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>

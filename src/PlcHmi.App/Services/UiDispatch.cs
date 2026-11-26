@@ -1,4 +1,4 @@
-namespace 上位机.应用.服务;
+namespace PlcHmi.App.Services;
 
 /// <summary>
 /// UI 线程调度统一入口。
@@ -7,7 +7,7 @@ namespace 上位机.应用.服务;
 /// 本类是全站唯一的切线程入口：<see cref="视图模型基址"/> 与 <c>MainViewModel</c> 都走这里，
 /// 避免各写一份导致行为不一致（曾出现过主窗口那份误用 <c>Invoke</c>）。</para>
 /// </summary>
-internal static class 界面派发
+internal static class UiDispatch
 {
     /// <summary>
     /// 切到 UI 线程执行。
@@ -18,30 +18,30 @@ internal static class 界面派发
     ///
     /// <para>代价是刷新任务会排队；因为数据源本身"值变化才推送"，队列长度有限，可接受。</para>
     /// </summary>
-    public static void 投递(Action 动作)
+    public static void Post(Action action)
     {
-        var 调度器 = System.Windows.Application.Current?.Dispatcher;
+        var scheduler = System.Windows.Application.Current?.Dispatcher;
 
-        if (调度器 is null)
+        if (scheduler is null)
         {
             return;   // 应用已退出，丢弃这次刷新
         }
 
-        if (调度器.CheckAccess())
+        if (scheduler.CheckAccess())
         {
-            动作();
+            action();
             return;
         }
 
         // 关闭过程中排队会抛异常，直接丢弃
-        if (调度器.HasShutdownStarted || 调度器.HasShutdownFinished)
+        if (scheduler.HasShutdownStarted || scheduler.HasShutdownFinished)
         {
             return;
         }
 
         try
         {
-            调度器.BeginInvoke(动作);
+            scheduler.BeginInvoke(action);
         }
         catch (TaskCanceledException)
         {

@@ -1,12 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.服务;
-using 上位机.通信.汇川;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Inovance;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 下相机标定地址的回归（2026-10-21 现场报障）。
@@ -18,25 +18,25 @@ namespace 上位机.上位机测试;
 /// <para>修法：加载时按出厂定义补齐；编辑器即使配置缺字段也照样给出 X / Z 两行，
 /// 保存时把字段补建进配置。</para>
 /// </summary>
-public class 下相机标定地址测试
+public class BottomCameraCalibrationAddressTest
 {
     [Fact]
-    public void 老配置缺下相机字段应补齐X与Z()
+    public void LegacyConfigMissingBottomCameraFieldShouldFillXAndZ()
     {
-        var 配置对象 = new 配方配置();   // 复刻现场：没有 calibration.下相机中心点
+        var configPairObject = new RecipeConfig();   // 复刻现场：没有 calibration.下相机中心点
 
-        Assert.Empty(配置对象.标定.下相机中心点);
+        Assert.Empty(configPairObject.Calibration.BottomCameraCenter);
 
-        var 补齐 = 配置对象.标定.补齐下相机();
+        var fill = configPairObject.Calibration.FillBottomCamera();
 
-        Assert.Equal(2, 补齐);   // X + Z（下相机没有 Y）
-        Assert.Equal(标定配置.下相机X缺省基址, 配置对象.标定.查找下相机("X")!.基址);
-        Assert.Equal(标定配置.下相机Z缺省基址, 配置对象.标定.查找下相机("Z")!.基址);
-        Assert.Null(配置对象.标定.查找下相机("Y"));
+        Assert.Equal(2, fill);   // X + Z（下相机没有 Y）
+        Assert.Equal(CalibrationConfig.bottomCameraXDefaultBaseAddress, configPairObject.Calibration.FindBottomCamera("X")!.BaseAddress);
+        Assert.Equal(CalibrationConfig.bottomCameraZDefaultBaseAddress, configPairObject.Calibration.FindBottomCamera("Z")!.BaseAddress);
+        Assert.Null(configPairObject.Calibration.FindBottomCamera("Y"));
 
         // 幂等：再补一次不重复添加
-        Assert.Equal(0, 配置对象.标定.补齐下相机());
-        Assert.Equal(2, 配置对象.标定.下相机中心点.Count);
+        Assert.Equal(0, configPairObject.Calibration.FillBottomCamera());
+        Assert.Equal(2, configPairObject.Calibration.BottomCameraCenter.Count);
     }
 
     /// <summary>
@@ -44,14 +44,14 @@ public class 下相机标定地址测试
     /// 会与单点工艺参数互相覆盖——加载时必须纠正到 3744。
     /// </summary>
     [Fact]
-    public void 下相机偏移落在保留区应纠正为出厂地址()
+    public void BottomCameraOffsetInReservedAreaShouldCorrectAsFactoryAddress()
     {
-        var 配置对象 = new 配方配置();
-        配置对象.标定.下相机每点偏移.基址 = 3612;
+        var configPairObject = new RecipeConfig();
+        configPairObject.Calibration.BottomCameraPerPointOffset.BaseAddress = 3612;
 
-        配置对象.标定.补齐下相机();
+        configPairObject.Calibration.FillBottomCamera();
 
-        Assert.Equal(标定配置.下相机偏移缺省基址, 配置对象.标定.下相机每点偏移.基址);
+        Assert.Equal(CalibrationConfig.bottomCameraOffsetDefaultBaseAddress, configPairObject.Calibration.BottomCameraPerPointOffset.BaseAddress);
     }
 
     /// <summary>
@@ -59,27 +59,27 @@ public class 下相机标定地址测试
     /// 否则现场连"补地址"的入口都没有。
     /// </summary>
     [Fact]
-    public async Task 配置缺下相机字段时编辑器仍应给出下相机地址行()
+    public async Task ConfigMissingBottomCameraFieldWhenEditorShouldStillGiveBottomCameraAddressRow()
     {
-        var 配置对象 = new 配方配置();   // 故意不跑补齐：验证编辑器自身的兜底
+        var configPairObject = new RecipeConfig();   // 故意不跑补齐：验证编辑器自身的兜底
 
-        await using var 客户端 = new 替身Modbus客户端();
-        var 服务实例 = new 页面地址服务(
-            客户端,
-            new 标签写入器(客户端, new 标签仓储(NullLogger<标签仓储>.Instance),
-                new 汇川地址解析器(PLC系列.小型PLC), NullLogger<标签写入器>.Instance),
-            配置对象,
-            new 允许全部权限守卫(),
-            NullLogger<页面地址服务>.Instance);
+        await using var Client = new FakeModbusClient();
+        var serviceInstance = new PageAddressService(
+            Client,
+            new TagWriter(Client, new TagRepository(NullLogger<TagRepository>.Instance),
+                new InovanceAddressParser(PlcSeries.SmallPlc), NullLogger<TagWriter>.Instance),
+            configPairObject,
+            new AllowAllPermissionGuard(),
+            NullLogger<PageAddressService>.Instance);
 
-        var 列表 = 服务实例.收集标定页();
+        var list = serviceInstance.CollectSetCalibrationPage();
 
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "下相机X"
-            && 项.地址文本 == $"D{标定配置.下相机X缺省基址}");
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "下相机Z"
-            && 项.地址文本 == $"D{标定配置.下相机Z缺省基址}");
-        Assert.Contains(列表, 项 => 项.类别 == "标定字段" && 项.键 == "下相机偏移量"
-            && 项.地址文本 == $"D{标定配置.下相机偏移缺省基址}");
-        Assert.Contains(列表, 项 => 项.类别 == "标定按钮" && 项.键 == "下相机启动");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "下相机X"
+            && Item.AddressText == $"D{CalibrationConfig.bottomCameraXDefaultBaseAddress}");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "下相机Z"
+            && Item.AddressText == $"D{CalibrationConfig.bottomCameraZDefaultBaseAddress}");
+        Assert.Contains(list, Item => Item.Category == "标定字段" && Item.Key == "下相机偏移量"
+            && Item.AddressText == $"D{CalibrationConfig.bottomCameraOffsetDefaultBaseAddress}");
+        Assert.Contains(list, Item => Item.Category == "标定按钮" && Item.Key == "下相机启动");
     }
 }

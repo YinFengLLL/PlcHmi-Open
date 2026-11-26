@@ -1,196 +1,196 @@
 using Microsoft.Extensions.Logging;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
-/// 运行监控页元件地址管理。详见 <see cref="运行监控地址服务接口"/>。
+/// 运行监控页元件地址管理。详见 <see cref="IRunMonitorAddressService"/>。
 ///
 /// <para>地址的唯一真相是 tags.json 的同名点位：构造时从点位仓储取当前地址，
-/// 保存时写回仓储并落盘、重建采集计划。<see cref="运行监控元件.默认地址"/>
+/// 保存时写回仓储并落盘、重建采集计划。<see cref="RunMonitorComponent.DefaultAddress"/>
 /// 只作恢复默认的参照，不参与运行。</para>
 /// </summary>
-public sealed class 运行监控地址服务 : 运行监控地址服务接口
+public sealed class RunMonitorAddressService : IRunMonitorAddressService
 {
     /// <summary>运行页元件的出厂定义（显示名 / 标签名 / 默认地址 / 区类型固定）。</summary>
-    private static readonly 运行监控元件[] 出厂定义列表 =
+    private static readonly RunMonitorComponent[] factoryDefinitionList =
     [
-        new() { 显示名称 = "当前设备状态", 标签名 = "RunStatus", 默认地址 = "D6",
-            是命令 = false, 数据类型 = 标签数据类型.UInt16, 分组 = 标签分组.快,
-            说明 = "0=空闲中 1=运行中 2=待机中 3=复位中 4=报警中（UInt16，占 1 字）" },
-        new() { 显示名称 = "当前节拍", 标签名 = "CycleTime", 默认地址 = "D1100",
-            是命令 = false, 数据类型 = 标签数据类型.UInt32, 分组 = 标签分组.快,
-            说明 = "UInt32，缩放 0.001，单位秒，占 2 字" },
-        new() { 显示名称 = "当前产量", 标签名 = "OutputCount", 默认地址 = "D1102",
-            是命令 = false, 数据类型 = 标签数据类型.UInt32, 分组 = 标签分组.慢, 说明 = "UInt32，占 2 字" },
-        new() { 显示名称 = "目标产量", 标签名 = "TargetCount", 默认地址 = "D1104",
-            是命令 = false, 数据类型 = 标签数据类型.UInt32, 分组 = 标签分组.慢,
-            说明 = "UInt32，占 2 字；达成率 = 当前产量 ÷ 目标产量" },
-        new() { 显示名称 = "良品数量", 标签名 = "GoodCount", 默认地址 = "D1106",
-            是命令 = false, 数据类型 = 标签数据类型.UInt32, 分组 = 标签分组.慢, 说明 = "UInt32，占 2 字" },
-        new() { 显示名称 = "不良品数量", 标签名 = "BadCount", 默认地址 = "D1108",
-            是命令 = false, 数据类型 = 标签数据类型.UInt32, 分组 = 标签分组.慢, 说明 = "UInt32，占 2 字" },
+        new() { DisplayName = "当前设备状态", TagName = "RunStatus", DefaultAddress = "D6",
+            IsCommand = false, DataType = TagDataType.UInt16, Group = TagGroup.Fast,
+            Remark = "0=空闲中 1=运行中 2=待机中 3=复位中 4=报警中（UInt16，占 1 字）" },
+        new() { DisplayName = "当前节拍", TagName = "CycleTime", DefaultAddress = "D1100",
+            IsCommand = false, DataType = TagDataType.UInt32, Group = TagGroup.Fast,
+            Remark = "UInt32，缩放 0.001，单位秒，占 2 字" },
+        new() { DisplayName = "当前产量", TagName = "OutputCount", DefaultAddress = "D1102",
+            IsCommand = false, DataType = TagDataType.UInt32, Group = TagGroup.Slow, Remark = "UInt32，占 2 字" },
+        new() { DisplayName = "目标产量", TagName = "TargetCount", DefaultAddress = "D1104",
+            IsCommand = false, DataType = TagDataType.UInt32, Group = TagGroup.Slow,
+            Remark = "UInt32，占 2 字；达成率 = 当前产量 ÷ 目标产量" },
+        new() { DisplayName = "良品数量", TagName = "GoodCount", DefaultAddress = "D1106",
+            IsCommand = false, DataType = TagDataType.UInt32, Group = TagGroup.Slow, Remark = "UInt32，占 2 字" },
+        new() { DisplayName = "不良品数量", TagName = "BadCount", DefaultAddress = "D1108",
+            IsCommand = false, DataType = TagDataType.UInt32, Group = TagGroup.Slow, Remark = "UInt32，占 2 字" },
 
         // 主页面左下角三盏状态灯与「已锁附颗数」（2026-10-16 现场要求）：
         // 三个完成标志是 M 区<b>位</b>（0=未完成 / 1=完成，FC01 读线圈，只读不写）；
         // 颗数是 D 区 INT（16 位有符号，占 1 字），只显示不参与统计。
-        new() { 显示名称 = "锁附完成", 标签名 = "ScrewDone", 默认地址 = "M490",
-            是命令 = false, 是位元件 = true, 数据类型 = 标签数据类型.布尔, 分组 = 标签分组.快,
-            说明 = "M 区位：0=未完成 1=完成（FC01 读线圈）" },
-        new() { 显示名称 = "点胶完成", 标签名 = "GlueDone", 默认地址 = "M491",
-            是命令 = false, 是位元件 = true, 数据类型 = 标签数据类型.布尔, 分组 = 标签分组.快,
-            说明 = "M 区位：0=未完成 1=完成（FC01 读线圈）" },
-        new() { 显示名称 = "加工完成", 标签名 = "ProcessDone", 默认地址 = "M492",
-            是命令 = false, 是位元件 = true, 数据类型 = 标签数据类型.布尔, 分组 = 标签分组.快,
-            说明 = "M 区位：0=未完成 1=完成（FC01 读线圈）" },
-        new() { 显示名称 = "已锁附颗数", 标签名 = "ScrewCount", 默认地址 = "D1116",
-            是命令 = false, 数据类型 = 标签数据类型.Int16, 分组 = 标签分组.快,
-            说明 = "INT（16 位有符号，占 1 字）" },
+        new() { DisplayName = "锁附完成", TagName = "ScrewDone", DefaultAddress = "M490",
+            IsCommand = false, IsBitComponent = true, DataType = TagDataType.Boolean, Group = TagGroup.Fast,
+            Remark = "M 区位：0=未完成 1=完成（FC01 读线圈）" },
+        new() { DisplayName = "点胶完成", TagName = "GlueDone", DefaultAddress = "M491",
+            IsCommand = false, IsBitComponent = true, DataType = TagDataType.Boolean, Group = TagGroup.Fast,
+            Remark = "M 区位：0=未完成 1=完成（FC01 读线圈）" },
+        new() { DisplayName = "加工完成", TagName = "ProcessDone", DefaultAddress = "M492",
+            IsCommand = false, IsBitComponent = true, DataType = TagDataType.Boolean, Group = TagGroup.Fast,
+            Remark = "M 区位：0=未完成 1=完成（FC01 读线圈）" },
+        new() { DisplayName = "已锁附颗数", TagName = "ScrewCount", DefaultAddress = "D1116",
+            IsCommand = false, DataType = TagDataType.Int16, Group = TagGroup.Fast,
+            Remark = "INT（16 位有符号，占 1 字）" },
 
-        new() { 显示名称 = "启动按钮", 标签名 = "CmdStart", 默认地址 = "M200",
-            是命令 = true, 数据类型 = 标签数据类型.布尔, 分组 = 标签分组.命令,
-            说明 = "M 区，脉冲写（置位 200ms 后自动复位）" },
-        new() { 显示名称 = "停止按钮", 标签名 = "CmdStop", 默认地址 = "M201",
-            是命令 = true, 数据类型 = 标签数据类型.布尔, 分组 = 标签分组.命令, 说明 = "M 区，脉冲写" },
-        new() { 显示名称 = "复位按钮", 标签名 = "CmdReset", 默认地址 = "M202",
-            是命令 = true, 数据类型 = 标签数据类型.布尔, 分组 = 标签分组.命令, 说明 = "M 区，脉冲写" },
-        new() { 显示名称 = "报警清除按钮", 标签名 = "CmdAlarmClear", 默认地址 = "M203",
-            是命令 = true, 数据类型 = 标签数据类型.布尔, 分组 = 标签分组.命令,
-            说明 = "M 区，脉冲写；不要放进报警源区 M500–M600" },
-        new() { 显示名称 = "数据清除", 标签名 = "CmdDataClear", 默认地址 = "M1000",
-            是命令 = true, 数据类型 = 标签数据类型.布尔, 分组 = 标签分组.命令,
-            说明 = "M 区，复归型脉冲写，由 PLC 清零累计数据" },
+        new() { DisplayName = "启动按钮", TagName = "CmdStart", DefaultAddress = "M200",
+            IsCommand = true, DataType = TagDataType.Boolean, Group = TagGroup.Command,
+            Remark = "M 区，脉冲写（置位 200ms 后自动复位）" },
+        new() { DisplayName = "停止按钮", TagName = "CmdStop", DefaultAddress = "M201",
+            IsCommand = true, DataType = TagDataType.Boolean, Group = TagGroup.Command, Remark = "M 区，脉冲写" },
+        new() { DisplayName = "复位按钮", TagName = "CmdReset", DefaultAddress = "M202",
+            IsCommand = true, DataType = TagDataType.Boolean, Group = TagGroup.Command, Remark = "M 区，脉冲写" },
+        new() { DisplayName = "报警清除按钮", TagName = "CmdAlarmClear", DefaultAddress = "M203",
+            IsCommand = true, DataType = TagDataType.Boolean, Group = TagGroup.Command,
+            Remark = "M 区，脉冲写；不要放进报警源区 M500–M600" },
+        new() { DisplayName = "数据清除", TagName = "CmdDataClear", DefaultAddress = "M1000",
+            IsCommand = true, DataType = TagDataType.Boolean, Group = TagGroup.Command,
+            Remark = "M 区，复归型脉冲写，由 PLC 清零累计数据" },
     ];
 
-    private readonly 标签仓储接口 _标签;
-    private readonly 地址解析器接口 _解析器;
-    private readonly 轮询引擎接口 _轮询;
-    private readonly 权限守卫接口 _权限;
-    private readonly ILogger<运行监控地址服务> _日志;
-    private readonly List<运行监控元件> _元件列表 = [];
+    private readonly ITagRepository _tag;
+    private readonly IAddressParser _parser;
+    private readonly IPollingEngine _polling;
+    private readonly IPermissionGuard _permission;
+    private readonly ILogger<RunMonitorAddressService> _log;
+    private readonly List<RunMonitorComponent> _componentList = [];
 
-    public 运行监控地址服务(
-        标签仓储接口 标签列表,
-        地址解析器接口 解析器,
-        轮询引擎接口 轮询,
-        权限守卫接口 权限,
-        ILogger<运行监控地址服务> 日志)
+    public RunMonitorAddressService(
+        ITagRepository tagList,
+        IAddressParser Parser,
+        IPollingEngine Polling,
+        IPermissionGuard Permission,
+        ILogger<RunMonitorAddressService> Log)
     {
-        _标签 = 标签列表;
-        _解析器 = 解析器;
-        _轮询 = 轮询;
-        _权限 = 权限;
-        _日志 = 日志;
+        _tag = tagList;
+        _parser = Parser;
+        _polling = Polling;
+        _permission = Permission;
+        _log = Log;
 
-        foreach (var 定义项 in 出厂定义列表)
+        foreach (var DefinitionItem in factoryDefinitionList)
         {
-            var 标签项 = _标签.查找(定义项.标签名);
+            var tagItem = _tag.Find(DefinitionItem.TagName);
 
-            if (标签项 is null)
+            if (tagItem is null)
             {
                 // tags.json 被外部改动删掉了点位：地址退回出厂默认并留痕，
                 // 不抛异常——页面还要能打开，保存时校验会拦住缺失的点位
-                _日志.LogWarning("点位 {Tag} 不在 tags.json 中，运行页元件 {Name} 退回默认地址",
-                    定义项.标签名, 定义项.显示名称);
+                _log.LogWarning("点位 {Tag} 不在 tags.json 中，运行页元件 {Name} 退回默认地址",
+                    DefinitionItem.TagName, DefinitionItem.DisplayName);
             }
 
-            var 副本 = 定义项.克隆();
-            副本.地址 = 标签项?.地址 ?? 定义项.默认地址;
-            _元件列表.Add(副本);
+            var copy = DefinitionItem.Clone();
+            copy.Address = tagItem?.Address ?? DefinitionItem.DefaultAddress;
+            _componentList.Add(copy);
         }
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<运行监控元件> 元件集合 => _元件列表;
+    public IReadOnlyList<RunMonitorComponent> ComponentCollection => _componentList;
 
     /// <inheritdoc />
-    public event EventHandler? 地址已变更;
+    public event EventHandler? AddressChanged;
 
     /// <inheritdoc />
-    public 运行监控地址校验 校验(IReadOnlyList<运行监控元件> 候选)
+    public RunMonitorAddressValidate Validate(IReadOnlyList<RunMonitorComponent> candidate)
     {
-        ArgumentNullException.ThrowIfNull(候选);
+        ArgumentNullException.ThrowIfNull(candidate);
 
-        var 错误列表 = new List<string>();
-        var 已占用 = new List<占用范围>();
+        var errorList = new List<string>();
+        var IsOccupied = new List<occupiedRange>();
 
-        foreach (var 条目项 in 候选)
+        foreach (var EntryItem in candidate)
         {
-            if (string.IsNullOrWhiteSpace(条目项.地址))
+            if (string.IsNullOrWhiteSpace(EntryItem.Address))
             {
-                错误列表.Add($"{条目项.显示名称}：地址不能为空。");
+                errorList.Add($"{EntryItem.DisplayName}：地址不能为空。");
                 continue;
             }
 
-            if (!_解析器.尝试解析(条目项.地址, out var PLC地址) || PLC地址 is null)
+            if (!_parser.TryParse(EntryItem.Address, out var PlcAddress) || PlcAddress is null)
             {
-                错误列表.Add($"{条目项.显示名称}：「{条目项.地址}」不是有效的软元件地址。");
+                errorList.Add($"{EntryItem.DisplayName}：「{EntryItem.Address}」不是有效的软元件地址。");
                 continue;
             }
 
-            if (PLC地址.是字内位)
+            if (PlcAddress.IsIntraWordBit)
             {
-                错误列表.Add(
-                    $"{条目项.显示名称}：「{条目项.地址}」不允许使用字内位地址——"
+                errorList.Add(
+                    $"{EntryItem.DisplayName}：「{EntryItem.Address}」不允许使用字内位地址——"
                     + "运行页监控量为整字读写、命令为线圈，请填 D6、M200 这类完整地址。");
                 continue;
             }
 
-            if (需要M区(条目项) && PLC地址.元素 != 软元素.M)
+            if (NeedMArea(EntryItem) && PlcAddress.ElementItem != SoftElement.M)
             {
-                错误列表.Add(
-                    $"{条目项.显示名称}：「{条目项.地址}」必须是 M 区地址（当前解析为 {PLC地址.元素} 区）。"
-                    + (条目项.是命令
+                errorList.Add(
+                    $"{EntryItem.DisplayName}：「{EntryItem.Address}」必须是 M 区地址（当前解析为 {PlcAddress.ElementItem} 区）。"
+                    + (EntryItem.IsCommand
                         ? "上位机只置位内部继电器，由 PLC 程序决定何时驱动 Y 输出。"
                         : "该元件是 M 区位状态量（0=未完成 / 1=完成），请填 M490 这类位地址。"));
                 continue;
             }
 
-            if (!需要M区(条目项) && PLC地址.元素 != 软元素.D)
+            if (!NeedMArea(EntryItem) && PlcAddress.ElementItem != SoftElement.D)
             {
-                错误列表.Add(
-                    $"{条目项.显示名称}：「{条目项.地址}」必须是 D 区寄存器地址（当前解析为 {PLC地址.元素} 区）。");
+                errorList.Add(
+                    $"{EntryItem.DisplayName}：「{EntryItem.Address}」必须是 D 区寄存器地址（当前解析为 {PlcAddress.ElementItem} 区）。");
                 continue;
             }
 
             // 占用字数以 tags.json 中该点位的数据类型为准（UInt32 占 2 字）
-            var 标签项 = _标签.查找(条目项.标签名);
-            var 字数 = 标签项 is null ? 1 : Math.Max(1, _解析器.获取寄存器数量(标签项.数据类型));
-            已占用.Add(new 占用范围(条目项.显示名称, PLC地址.元素, PLC地址.Modbus地址, 字数));
+            var tagItem = _tag.Find(EntryItem.TagName);
+            var wordCount = tagItem is null ? 1 : Math.Max(1, _parser.GetRegisterCount(tagItem.DataType));
+            IsOccupied.Add(new occupiedRange(EntryItem.DisplayName, PlcAddress.ElementItem, PlcAddress.ModbusAddress, wordCount));
         }
 
-        检查候选重叠(错误列表, 已占用);
-        检查对照其它点位(错误列表, 候选, 已占用);
-        检查保留区域(错误列表, 已占用);
+        CheckCandidateOverlap(errorList, IsOccupied);
+        CheckPairPerOtherPoint(errorList, candidate, IsOccupied);
+        CheckRetainArea(errorList, IsOccupied);
 
-        return new 运行监控地址校验 { 是否有效 = 错误列表.Count == 0, 错误集合 = 错误列表 };
+        return new RunMonitorAddressValidate { IsValid = errorList.Count == 0, ErrorCollection = errorList };
     }
 
     /// <inheritdoc />
-    public async Task 异步保存(IReadOnlyList<运行监控元件> 候选, CancellationToken 取消令牌 = default)
+    public async Task SaveAsync(IReadOnlyList<RunMonitorComponent> candidate, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(候选);
+        ArgumentNullException.ThrowIfNull(candidate);
 
         // 服务层权限兜底：界面隐藏按钮只是防误触，绕过界面直接调服务也进不来（审查标准 R5）
-        _权限.要求(权限.编辑绑定地址);
+        _permission.WantRequire(Permission.EditBindAddress);
 
-        if (候选.Count != _元件列表.Count)
+        if (candidate.Count != _componentList.Count)
         {
             throw new InvalidOperationException(
-                $"候选元件数（{候选.Count}）与运行页元件数（{_元件列表.Count}）不一致，拒绝保存。");
+                $"候选元件数（{candidate.Count}）与运行页元件数（{_componentList.Count}）不一致，拒绝保存。");
         }
 
-        var 校验项 = 校验(候选);
-        if (!校验项.是否有效)
+        var validateItem = Validate(candidate);
+        if (!validateItem.IsValid)
         {
-            throw new InvalidOperationException($"运行监控页地址校验未通过：\n{校验项.摘要}");
+            throw new InvalidOperationException($"运行监控页地址校验未通过：\n{validateItem.Summary}");
         }
 
-        foreach (var 条目项 in 候选)
+        foreach (var EntryItem in candidate)
         {
-            if (_标签.尝试更新地址(条目项.标签名, 条目项.地址))
+            if (_tag.TryUpdateAddress(EntryItem.TagName, EntryItem.Address))
             {
                 continue;
             }
@@ -198,42 +198,42 @@ public sealed class 运行监控地址服务 : 运行监控地址服务接口
             // 现场 tags.json 里没有这个点位：覆盖升级时它属于"现场文件"，不会被新版覆盖，
             // 于是新版自带的点位（如工位状态三灯 + 已锁附颗数）在现场是缺的。
             // 按出厂定义补建后随整表保存一起落盘——否则管理员改完地址根本存不下去。
-            if (!_标签.尝试新增(new 标签定义
+            if (!_tag.TryAdd(new TagDefinition
                 {
-                    名称 = 条目项.标签名,
-                    地址 = 条目项.地址,
-                    数据类型 = 条目项.数据类型,
-                    访问 = 条目项.是命令 ? 标签访问.写入 : 标签访问.读取,
-                    分组 = 条目项.分组,
-                    描述 = 条目项.显示名称,
+                    Name = EntryItem.TagName,
+                    Address = EntryItem.Address,
+                    DataType = EntryItem.DataType,
+                    AccessQuery = EntryItem.IsCommand ? TagAccessQuery.Write : TagAccessQuery.Read,
+                    Group = EntryItem.Group,
+                    Description = EntryItem.DisplayName,
                 }))
             {
                 throw new InvalidOperationException(
-                    $"点位 \"{条目项.标签名}\"（{条目项.显示名称}）不在 tags.json 中，且补建失败，无法写入地址。");
+                    $"点位 \"{EntryItem.TagName}\"（{EntryItem.DisplayName}）不在 tags.json 中，且补建失败，无法写入地址。");
             }
 
-            _日志.LogWarning("运行页元件 {Name} 不在现场 tags.json 中，已按出厂定义补建点位 {Tag}",
-                条目项.显示名称, 条目项.标签名);
+            _log.LogWarning("运行页元件 {Name} 不在现场 tags.json 中，已按出厂定义补建点位 {Tag}",
+                EntryItem.DisplayName, EntryItem.TagName);
         }
 
-        await _标签.异步保存(取消令牌).ConfigureAwait(false);
+        await _tag.SaveAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var 条目项 in 候选)
+        foreach (var EntryItem in candidate)
         {
-            _元件列表.First(本地项 => 本地项.标签名 == 条目项.标签名).地址 = 条目项.地址;
+            _componentList.First(thisGroundItem => thisGroundItem.TagName == EntryItem.TagName).Address = EntryItem.Address;
         }
 
         // 点位定义已变，采集计划必须重建，否则新地址要等重启才生效
-        await _轮询.异步重建方案列表(取消令牌).ConfigureAwait(false);
+        await _polling.RebuildPlanListAsync(cancellationToken).ConfigureAwait(false);
 
-        _日志.LogInformation("运行监控页元件地址已保存并生效（{Count} 个元件）", 候选.Count);
-        地址已变更?.Invoke(this, EventArgs.Empty);
+        _log.LogInformation("运行监控页元件地址已保存并生效（{Count} 个元件）", candidate.Count);
+        AddressChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc />
-    public string 查找地址(string 标签名) =>
-        _元件列表.FirstOrDefault(条目项 =>
-            string.Equals(条目项.标签名, 标签名, StringComparison.OrdinalIgnoreCase))?.地址 ?? string.Empty;
+    public string FindAddress(string TagName) =>
+        _componentList.FirstOrDefault(EntryItem =>
+            string.Equals(EntryItem.TagName, TagName, StringComparison.OrdinalIgnoreCase))?.Address ?? string.Empty;
 
     // ── 校验辅助 ────────────────────────────────────────────────────────
 
@@ -241,29 +241,29 @@ public sealed class 运行监控地址服务 : 运行监控地址服务接口
     /// 该元件是否必须落在 M 区：命令（上位机写 M 位）与位元件（上位机读 M 位）都要 M 区，
     /// 其余是 D 区监控量。
     /// </summary>
-    private static bool 需要M区(运行监控元件 条目项) => 条目项.是命令 || 条目项.是位元件;
+    private static bool NeedMArea(RunMonitorComponent EntryItem) => EntryItem.IsCommand || EntryItem.IsBitComponent;
 
-    private sealed record 占用范围(string 标签, 软元素 元素, int 起点, int 字数)
+    private sealed record occupiedRange(string Tag, SoftElement ElementItem, int startPoint, int wordCount)
     {
-        public int 结束边界 => 起点 + 字数;
+        public int EndBoundary => startPoint + wordCount;
     }
 
-    private static void 检查候选重叠(List<string> 错误列表, List<占用范围> 已占用)
+    private static void CheckCandidateOverlap(List<string> errorList, List<occupiedRange> IsOccupied)
     {
         // 只比同软元件区：D100 与 M100 的 Modbus 地址都是 100，跨区比较会误报
-        for (var 甲 = 0; 甲 < 已占用.Count; 甲++)
+        for (var item = 0; item < IsOccupied.Count; item++)
         {
-            for (var 乙 = 甲 + 1; 乙 < 已占用.Count; 乙++)
+            for (var item2 = item + 1; item2 < IsOccupied.Count; item2++)
             {
-                var 甲项 = 已占用[甲];
-                var 乙项 = 已占用[乙];
+                var itemA = IsOccupied[item];
+                var itemB = IsOccupied[item2];
 
-                if (甲项.元素 == 乙项.元素 &&
-                    甲项.起点 < 乙项.结束边界 && 乙项.起点 < 甲项.结束边界)
+                if (itemA.ElementItem == itemB.ElementItem &&
+                    itemA.startPoint < itemB.EndBoundary && itemB.startPoint < itemA.EndBoundary)
                 {
-                    错误列表.Add(
-                        $"{甲项.标签}（{甲项.元素}{甲项.起点}，占 {甲项.字数} 字）与 "
-                        + $"{乙项.标签}（{乙项.元素}{乙项.起点}）地址重叠。");
+                    errorList.Add(
+                        $"{itemA.Tag}（{itemA.ElementItem}{itemA.startPoint}，占 {itemA.wordCount} 字）与 "
+                        + $"{itemB.Tag}（{itemB.ElementItem}{itemB.startPoint}）地址重叠。");
                 }
             }
         }
@@ -273,37 +273,37 @@ public sealed class 运行监控地址服务 : 运行监控地址服务接口
     /// 与 tags.json 中其它点位比对（本次编辑的运行页点位除外）。
     /// <b>不能只比可读点位</b>：CmdStart 这类只写点位同样占着地址。
     /// </summary>
-    private void 检查对照其它点位(
-        List<string> 错误列表, IReadOnlyList<运行监控元件> 候选, List<占用范围> 已占用)
+    private void CheckPairPerOtherPoint(
+        List<string> errorList, IReadOnlyList<RunMonitorComponent> candidate, List<occupiedRange> IsOccupied)
     {
-        var 已编辑 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var 条目项 in 候选)
+        var alreadyEdit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var EntryItem in candidate)
         {
-            已编辑.Add(条目项.标签名);
+            alreadyEdit.Add(EntryItem.TagName);
         }
 
-        foreach (var 标签项 in _标签.全部)
+        foreach (var tagItem in _tag.All)
         {
-            if (已编辑.Contains(标签项.名称))
+            if (alreadyEdit.Contains(tagItem.Name))
             {
                 continue;
             }
 
-            if (!_解析器.尝试解析(标签项.地址, out var PLC地址) || PLC地址 is null)
+            if (!_parser.TryParse(tagItem.Address, out var PlcAddress) || PlcAddress is null)
             {
                 continue;
             }
 
-            var 字数 = PLC地址.是字内位 ? 1 : _解析器.获取寄存器数量(标签项.数据类型);
-            var 其它 = new 占用范围($"点位 {标签项.名称}（{标签项.地址}）",
-                PLC地址.元素, PLC地址.Modbus地址, Math.Max(1, 字数));
+            var wordCount = PlcAddress.IsIntraWordBit ? 1 : _parser.GetRegisterCount(tagItem.DataType);
+            var other = new occupiedRange($"点位 {tagItem.Name}（{tagItem.Address}）",
+                PlcAddress.ElementItem, PlcAddress.ModbusAddress, Math.Max(1, wordCount));
 
-            foreach (var 范围 in 已占用.Where(占用项 => 占用项.元素 == 其它.元素))
+            foreach (var range in IsOccupied.Where(occupiedItem => occupiedItem.ElementItem == other.ElementItem))
             {
-                if (范围.起点 < 其它.结束边界 && 其它.起点 < 范围.结束边界)
+                if (range.startPoint < other.EndBoundary && other.startPoint < range.EndBoundary)
                 {
-                    错误列表.Add(
-                        $"{范围.标签}（{范围.元素}{范围.起点}）与{其它.标签}冲突。");
+                    errorList.Add(
+                        $"{range.Tag}（{range.ElementItem}{range.startPoint}）与{other.Tag}冲突。");
                 }
             }
         }
@@ -313,27 +313,27 @@ public sealed class 运行监控地址服务 : 运行监控地址服务接口
     /// 与系统保留区比对。这些区段不在 tags.json 里，但一样不能被运行页地址占用
     /// （尤其命令位落进报警源区会被 500ms 的报警扫描当成报警位读走）。
     /// </summary>
-    private static void 检查保留区域(List<string> 错误列表, List<占用范围> 已占用)
+    private static void CheckRetainArea(List<string> errorList, List<occupiedRange> IsOccupied)
     {
-        var 保留 = new List<占用范围>
+        var retain = new List<occupiedRange>
         {
-            new("报警位区", 软元素.M, 500, 101),
-            new("报警字区", 软元素.D, 550, 5),
-            new("延时表专属区", 软元素.D, 参数表格服务.延迟地址最小,
-                参数表格服务.延迟地址最大 - 参数表格服务.延迟地址最小 + 1),
-            new("按钮表区", 软元素.M, 参数表格服务.按钮地址最小,
-                参数表格服务.按钮地址最大 - 参数表格服务.按钮地址最小 + 1),
+            new("报警位区", SoftElement.M, 500, 101),
+            new("报警字区", SoftElement.D, 550, 5),
+            new("延时表专属区", SoftElement.D, ParameterTableService.delayAddressMin,
+                ParameterTableService.delayAddressMax - ParameterTableService.delayAddressMin + 1),
+            new("按钮表区", SoftElement.M, ParameterTableService.buttonAddressMin,
+                ParameterTableService.buttonAddressMax - ParameterTableService.buttonAddressMin + 1),
         };
 
-        foreach (var 范围 in 已占用)
+        foreach (var range in IsOccupied)
         {
-            foreach (var 块 in 保留.Where(保留项 => 保留项.元素 == 范围.元素))
+            foreach (var block in retain.Where(retainItem => retainItem.ElementItem == range.ElementItem))
             {
-                if (范围.起点 < 块.结束边界 && 块.起点 < 范围.结束边界)
+                if (range.startPoint < block.EndBoundary && block.startPoint < range.EndBoundary)
                 {
-                    错误列表.Add(
-                        $"{范围.标签}（{范围.元素}{范围.起点}）落在{块.标签}"
-                        + $"（{块.元素}{块.起点}–{块.元素}{块.结束边界 - 1}）内，请改到别处。");
+                    errorList.Add(
+                        $"{range.Tag}（{range.ElementItem}{range.startPoint}）落在{block.Tag}"
+                        + $"（{block.ElementItem}{block.startPoint}–{block.ElementItem}{block.EndBoundary - 1}）内，请改到别处。");
                 }
             }
         }

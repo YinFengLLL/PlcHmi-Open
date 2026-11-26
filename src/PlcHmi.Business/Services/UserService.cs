@@ -1,11 +1,11 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.核心.抽象;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 用户与权限服务。
@@ -15,100 +15,100 @@ namespace 上位机.业务.服务;
 ///
 /// <para><b>登录策略：</b>密码登录，<b>不超时回落</b>——适合无人看守的触摸屏。</para>
 /// </summary>
-public sealed class 用户服务 : 用户服务接口
+public sealed class UserService : IUserService
 {
     /// <summary>PBKDF2 迭代次数。10 万次在工控机上约 30ms，足以拖慢暴力破解。</summary>
-    private const int PBKDF2迭代次数 = 100_000;
+    private const int pBKDF2IterateIterationCount = 100_000;
 
-    private const int 盐值大小 = 16;
-    private const int 哈希大小 = 32;
+    private const int saltSize = 16;
+    private const int hashSize = 32;
 
     /// <summary>新密码最短长度。</summary>
-    private const int 最小密码长度 = 6;
+    private const int minPasswordLength = 6;
 
-    private readonly ILogger<用户服务> _日志;
-    private readonly 配置健康接口? _健康;
-    private readonly 用户文件 _文件 = new();
+    private readonly ILogger<UserService> _log;
+    private readonly IConfigHealth? _health;
+    private readonly UserFile _file = new();
 
-    private 用户账号? _当前;
+    private UserAccount? _current;
 
-    public 用户服务(ILogger<用户服务> 日志, 配置健康接口? 健康 = null)
+    public UserService(ILogger<UserService> Log, IConfigHealth? Health = null)
     {
-        _日志 = 日志;
-        _健康 = 健康;
+        _log = Log;
+        _health = Health;
     }
 
     /// <inheritdoc />
-    public 用户角色 当前角色 => _当前?.角色 ?? 用户角色.操作员;
+    public UserRole CurrentRole => _current?.Role ?? UserRole.Operator;
 
     /// <inheritdoc />
-    public string 当前用户名称 => _当前?.名称 ?? string.Empty;
+    public string CurrentUserName => _current?.Name ?? string.Empty;
 
     /// <inheritdoc />
-    public string 当前显示名称 => _当前?.显示名称 ?? "未登录（操作员）";
+    public string CurrentDisplayName => _current?.DisplayName ?? "未登录（操作员）";
 
     /// <inheritdoc />
-    public bool 是否已登录 => _当前 is not null;
+    public bool IsAlreadyLogin => _current is not null;
 
     /// <inheritdoc />
-    public 权限 当前权限 => 角色权限.的(当前角色);
+    public Permission CurrentPermission => RolePermission.Of(CurrentRole);
 
     /// <inheritdoc />
-    public bool 是否使用默认密码 => _当前?.是否默认密码 ?? false;
+    public bool IsUseDefaultPassword => _current?.IsDefaultPassword ?? false;
 
     /// <inheritdoc />
-    public IReadOnlyList<用户账号> 账号集合 => _文件.用户;
+    public IReadOnlyList<UserAccount> AccountNumberCollection => _file.User;
 
     /// <inheritdoc />
-    public event EventHandler? 用户已变更;
+    public event EventHandler? userChanged;
 
     /// <inheritdoc />
-    public bool 有(权限 权限项) => 角色权限.有(当前角色, 权限项);
+    public bool Has(Permission permissionItem) => RolePermission.Has(CurrentRole, permissionItem);
 
     // ── 初始化 ──────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task 异步初始化(CancellationToken 取消令牌 = default)
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var 文件路径 = 配置路径.用户;
+        var filePath = ConfigPath.User;
 
-        var 结果值 = await 配置文件加载器
-            .异步加载JSON<用户文件>(文件路径, JSON配置.读取, _日志, 取消令牌)
+        var resultValue = await ConfigFileLoader
+            .LoadJsonAsync<UserFile>(filePath, JsonConfig.Read, _log, cancellationToken)
             .ConfigureAwait(false);
 
-        _健康.上报("账号配置", 结果值);
+        _health.Report("账号配置", resultValue);
 
         // 缺失（首次运行）与失败（主文件与 .bak 双损坏）都回退出厂三账号：
         // 账号文件损坏若不清空回填，现场将无人能登录（含 admin），只能手工删文件——
         // 这是"双损坏永久锁死"，比丢一次账号配置严重得多。
-        if (结果值.加载结果 is 加载结果分类.缺失 or 加载结果分类.失败)
+        if (resultValue.loadResult is LoadResultSplitCategory.Missing or LoadResultSplitCategory.Failed)
         {
-            _日志.LogWarning("账号文件{Reason}，已恢复出厂默认账号（初始密码 {Password}）：{Path}",
-                结果值.加载结果 is 加载结果分类.缺失 ? "不存在" : "已损坏（主文件与备份均无法读取）",
-                用户服务接口.默认密码, 文件路径);
+            _log.LogWarning("账号文件{Reason}，已恢复出厂默认账号（初始密码 {Password}）：{Path}",
+                resultValue.loadResult is LoadResultSplitCategory.Missing ? "不存在" : "已损坏（主文件与备份均无法读取）",
+                IUserService.DefaultPassword, filePath);
 
-            _文件.用户.Clear();
-            _文件.用户.Add(创建默认("operator", "操作员", 用户角色.操作员));
-            _文件.用户.Add(创建默认("engineer", "工程师", 用户角色.工程师));
-            _文件.用户.Add(创建默认("admin", "管理员", 用户角色.管理员));
+            _file.User.Clear();
+            _file.User.Add(CreateDefault("operator", "操作员", UserRole.Operator));
+            _file.User.Add(CreateDefault("engineer", "工程师", UserRole.Engineer));
+            _file.User.Add(CreateDefault("admin", "管理员", UserRole.Admin));
 
-            await 异步保存(取消令牌).ConfigureAwait(false);
+            await SaveAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        _文件.用户.Clear();
+        _file.User.Clear();
 
-        if (结果值.值 is not null)
+        if (resultValue.Value is not null)
         {
-            _文件.用户.AddRange(结果值.值.用户);
+            _file.User.AddRange(resultValue.Value.User);
         }
 
-        if (结果值.加载结果 is 加载结果分类.已加载)
+        if (resultValue.loadResult is LoadResultSplitCategory.Loaded)
         {
-            _日志.LogInformation("已加载 {Count} 个账号", _文件.用户.Count);
+            _log.LogInformation("已加载 {Count} 个账号", _file.User.Count);
         }
 
-        用户已变更?.Invoke(this, EventArgs.Empty);
+        userChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ── 登录 / 登出 ─────────────────────────────────────────────────────
@@ -118,152 +118,152 @@ public sealed class 用户服务 : 用户服务接口
     /// PBKDF2 迭代 10 万次约需 30–50ms，属<b>同步 CPU 计算</b>。
     /// 放在线程池执行，避免登录时把 UI 线程卡住（也便于将来调高迭代次数）。
     /// </remarks>
-    public async Task<bool> 异步登录(
-        string 用户名称, string 密码, CancellationToken 取消令牌 = default)
+    public async Task<bool> LoginAsync(
+        string userName, string password, CancellationToken cancellationToken = default)
     {
-        var 账号项 = 查找(用户名称);
+        var accountNumberItem = Find(userName);
 
-        if (账号项 is null)
+        if (accountNumberItem is null)
         {
-            _日志.LogWarning("登录失败：账号「{Name}」不存在", 用户名称);
+            _log.LogWarning("登录失败：账号「{Name}」不存在", userName);
             return false;
         }
 
-        var 密码正确 = await Task.Run(() => 验证密码(密码, 账号项), 取消令牌)
+        var passwordPositiveConfirm = await Task.Run(() => VerifyPassword(password, accountNumberItem), cancellationToken)
             .ConfigureAwait(false);
 
-        if (!密码正确)
+        if (!passwordPositiveConfirm)
         {
-            _日志.LogWarning("登录失败：账号「{Name}」密码不正确", 用户名称);
+            _log.LogWarning("登录失败：账号「{Name}」密码不正确", userName);
             return false;
         }
 
-        _当前 = 账号项;
+        _current = accountNumberItem;
 
-        _日志.LogInformation("已登录：{Display}（{Role}）",
-            账号项.显示名称, 角色权限.显示名称(账号项.角色));
+        _log.LogInformation("已登录：{Display}（{Role}）",
+            accountNumberItem.DisplayName, RolePermission.DisplayName(accountNumberItem.Role));
 
-        用户已变更?.Invoke(this, EventArgs.Empty);
+        userChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
 
     /// <inheritdoc />
-    public void 退出登录()
+    public void ExitLogin()
     {
-        if (_当前 is null)
+        if (_current is null)
         {
             return;
         }
 
-        _日志.LogInformation("已登出：{Display}", _当前.显示名称);
+        _log.LogInformation("已登出：{Display}", _current.DisplayName);
 
-        _当前 = null;
-        用户已变更?.Invoke(this, EventArgs.Empty);
+        _current = null;
+        userChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc />
     /// <remarks>与登录同理：PBKDF2 是同步 CPU 计算，放线程池执行避免卡住界面。</remarks>
-    public async Task<bool> 异步变更密码(
-        string 用户名称, string 当前密码, string 新密码, CancellationToken 取消令牌 = default)
+    public async Task<bool> ChangePasswordAsync(
+        string userName, string currentPassword, string newPassword, CancellationToken cancellationToken = default)
     {
-        var 账号项 = 查找(用户名称);
-        var 实际用户 = 用户名称;
+        var accountNumberItem = Find(userName);
+        var actualUser = userName;
 
-        if (账号项 is null)
+        if (accountNumberItem is null)
         {
-            _日志.LogWarning("修改密码失败：账号「{Name}」不存在", 实际用户);
+            _log.LogWarning("修改密码失败：账号「{Name}」不存在", actualUser);
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(新密码) || 新密码.Length < 最小密码长度)
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < minPasswordLength)
         {
-            _日志.LogWarning("修改密码失败：新密码长度不足 {Min} 位", 最小密码长度);
+            _log.LogWarning("修改密码失败：新密码长度不足 {Min} 位", minPasswordLength);
             return false;
         }
 
-        var 密码正确 = await Task.Run(() => 验证密码(当前密码, 账号项), 取消令牌)
+        var passwordPositiveConfirm = await Task.Run(() => VerifyPassword(currentPassword, accountNumberItem), cancellationToken)
             .ConfigureAwait(false);
 
-        if (!密码正确)
+        if (!passwordPositiveConfirm)
         {
-            _日志.LogWarning("修改密码失败：原密码不正确（{Name}）", 实际用户);
+            _log.LogWarning("修改密码失败：原密码不正确（{Name}）", actualUser);
             return false;
         }
 
-        await Task.Run(() => 设置密码(账号项, 新密码), 取消令牌).ConfigureAwait(false);
+        await Task.Run(() => SetPassword(accountNumberItem, newPassword), cancellationToken).ConfigureAwait(false);
 
-        await 异步保存(取消令牌).ConfigureAwait(false);
+        await SaveAsync(cancellationToken).ConfigureAwait(false);
 
-        _日志.LogInformation("账号「{Name}」密码已修改", 实际用户);
+        _log.LogInformation("账号「{Name}」密码已修改", actualUser);
 
-        用户已变更?.Invoke(this, EventArgs.Empty);
+        userChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
 
     // ── 密码学 ──────────────────────────────────────────────────────────
 
     /// <summary>写入新密码（生成新盐 + 派生哈希）。</summary>
-    private static void 设置密码(用户账号 账号项, string 密码)
+    private static void SetPassword(UserAccount accountNumberItem, string password)
     {
-        var 盐值 = RandomNumberGenerator.GetBytes(盐值大小);
+        var Salt = RandomNumberGenerator.GetBytes(saltSize);
 
-        账号项.盐值 = Convert.ToBase64String(盐值);
-        账号项.密码哈希 = Convert.ToBase64String(推导(密码, 盐值));
-        账号项.是否默认密码 = false;
+        accountNumberItem.Salt = Convert.ToBase64String(Salt);
+        accountNumberItem.PasswordHash = Convert.ToBase64String(Resolve(password, Salt));
+        accountNumberItem.IsDefaultPassword = false;
     }
 
     /// <summary>校验密码。固定时间比较，避免根据耗时推断密码。</summary>
-    private bool 验证密码(string 密码, 用户账号 账号项)
+    private bool VerifyPassword(string password, UserAccount accountNumberItem)
     {
-        if (string.IsNullOrEmpty(账号项.盐值) || string.IsNullOrEmpty(账号项.密码哈希))
+        if (string.IsNullOrEmpty(accountNumberItem.Salt) || string.IsNullOrEmpty(accountNumberItem.PasswordHash))
         {
             return false;
         }
 
         try
         {
-            var 盐值 = Convert.FromBase64String(账号项.盐值);
-            var 期望 = Convert.FromBase64String(账号项.密码哈希);
-            var 实际 = 推导(密码, 盐值);
+            var Salt = Convert.FromBase64String(accountNumberItem.Salt);
+            var expected = Convert.FromBase64String(accountNumberItem.PasswordHash);
+            var actual = Resolve(password, Salt);
 
-            return CryptographicOperations.FixedTimeEquals(期望, 实际);
+            return CryptographicOperations.FixedTimeEquals(expected, actual);
         }
         catch (FormatException)
         {
             // 账号文件里的盐/哈希不是合法 Base64（被手工改坏）。
             // 不记日志的表现为"密码明明没错却登不进去"，现场无从下手排障。
-            _日志.LogWarning("账号「{Name}」的密码数据损坏（盐或哈希不是合法 Base64），已拒绝登录", 账号项.名称);
+            _log.LogWarning("账号「{Name}」的密码数据损坏（盐或哈希不是合法 Base64），已拒绝登录", accountNumberItem.Name);
             return false;
         }
     }
 
-    private static byte[] 推导(string 密码, byte[] 盐值) =>
-        Rfc2898DeriveBytes.Pbkdf2(密码, 盐值, PBKDF2迭代次数, HashAlgorithmName.SHA256, 哈希大小);
+    private static byte[] Resolve(string password, byte[] Salt) =>
+        Rfc2898DeriveBytes.Pbkdf2(password, Salt, pBKDF2IterateIterationCount, HashAlgorithmName.SHA256, hashSize);
 
-    private 用户账号? 查找(string 用户名称) =>
-        _文件.用户.FirstOrDefault(用户 => string.Equals(用户.名称, 用户名称, StringComparison.OrdinalIgnoreCase));
+    private UserAccount? Find(string userName) =>
+        _file.User.FirstOrDefault(User => string.Equals(User.Name, userName, StringComparison.OrdinalIgnoreCase));
 
-    private static 用户账号 创建默认(string 名称值, string 显示名称值, 用户角色 角色项)
+    private static UserAccount CreateDefault(string nameValue, string displayNameValue, UserRole roleItem)
     {
-        var 账号项 = new 用户账号 { 名称 = 名称值, 显示名称 = 显示名称值, 角色 = 角色项 };
-        设置密码(账号项, 用户服务接口.默认密码);
-        账号项.是否默认密码 = true;   // 标记为初始密码，界面提示尽快修改
+        var accountNumberItem = new UserAccount { Name = nameValue, DisplayName = displayNameValue, Role = roleItem };
+        SetPassword(accountNumberItem, IUserService.DefaultPassword);
+        accountNumberItem.IsDefaultPassword = true;   // 标记为初始密码，界面提示尽快修改
 
-        return 账号项;
+        return accountNumberItem;
     }
 
-    private async Task 异步保存(CancellationToken 取消令牌)
+    private async Task SaveAsync(CancellationToken cancellationToken)
     {
-        var JSON文本 = JsonSerializer.Serialize(_文件, JSON配置.写入);
+        var jsonText = JsonSerializer.Serialize(_file, JsonConfig.Write);
 
         try
         {
-            await 原子文件.异步写入全部文本(配置路径.用户, JSON文本, 取消令牌).ConfigureAwait(false);
-            _日志.LogDebug("账号已保存：{Path}", 配置路径.用户);
+            await AtomicFile.WriteAllTextAsync(ConfigPath.User, jsonText, cancellationToken).ConfigureAwait(false);
+            _log.LogDebug("账号已保存：{Path}", ConfigPath.User);
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "保存账号文件失败：{Path}", 配置路径.用户);
+            _log.LogError(exception, "保存账号文件失败：{Path}", ConfigPath.User);
             throw;
         }
     }

@@ -1,10 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
-using 上位机.业务.服务;
-using 上位机.核心.抽象;
+using PlcHmi.Business.Services;
+using PlcHmi.Core.Abstractions;
 
-namespace 上位机.应用.视图;
+namespace PlcHmi.App.Views;
 
 /// <summary>
 /// 弹窗设置对话框（仅管理员入口）。
@@ -14,157 +14,157 @@ namespace 上位机.应用.视图;
 ///
 /// <para>只负责收集与校验输入；落盘由调用方经 弹窗监控服务 原子写入 popups.json。</para>
 /// </summary>
-public partial class 弹窗设置对话框 : Window
+public partial class PopupSettingsDialog : Window
 {
     /// <summary>一行的可编辑状态。</summary>
-    public sealed partial class 弹窗行 : ObservableObject
+    public sealed partial class PopupRow : ObservableObject
     {
-        private readonly 弹窗定义 _定义;
+        private readonly PopupDefinition _definition;
 
-        [ObservableProperty] private string _名称 = string.Empty;
-        [ObservableProperty] private string _触发地址 = string.Empty;
-        [ObservableProperty] private string _内容 = string.Empty;
-        [ObservableProperty] private string _按钮一名称 = string.Empty;
-        [ObservableProperty] private string _按钮一地址 = string.Empty;
-        [ObservableProperty] private string _按钮二名称 = string.Empty;
-        [ObservableProperty] private string _按钮二地址 = string.Empty;
+        [ObservableProperty] private string _name = string.Empty;
+        [ObservableProperty] private string _triggerAddress = string.Empty;
+        [ObservableProperty] private string _content = string.Empty;
+        [ObservableProperty] private string _button1Name = string.Empty;
+        [ObservableProperty] private string _button1Address = string.Empty;
+        [ObservableProperty] private string _button2Name = string.Empty;
+        [ObservableProperty] private string _button2Address = string.Empty;
 
         /// <summary>按钮一模式索引（0 复归型 / 1 置位 ON / 2 复位 OFF）。</summary>
-        [ObservableProperty] private int _按钮一模式索引;
+        [ObservableProperty] private int _button1ModeIndex;
 
         /// <summary>按钮二模式索引（同上）。</summary>
-        [ObservableProperty] private int _按钮二模式索引;
+        [ObservableProperty] private int _button2ModeIndex;
 
-        /// <summary>模式下拉数据源（与 <see cref="弹窗定义.模式选项"/> 同一份）。</summary>
-        public IReadOnlyList<string> 模式选项 => 弹窗定义.模式选项;
+        /// <summary>模式下拉数据源（与 <see cref="PopupDefinition.ModeOptions"/> 同一份）。</summary>
+        public IReadOnlyList<string> ModeOptions => PopupDefinition.ModeOptions;
 
-        public 弹窗行(弹窗定义 定义)
+        public PopupRow(PopupDefinition Definition)
         {
-            _定义 = 定义;
-            名称 = 定义.名称;
-            触发地址 = 定义.触发地址;
-            内容 = 定义.内容;
-            按钮一名称 = 定义.按钮一名称;
-            按钮一地址 = 定义.按钮一地址;
-            按钮二名称 = 定义.按钮二名称;
-            按钮二地址 = 定义.按钮二地址;
-            按钮一模式索引 = (int)定义.按钮一模式;
-            按钮二模式索引 = (int)定义.按钮二模式;
+            _definition = Definition;
+            Name = Definition.Name;
+            TriggerAddress = Definition.TriggerAddress;
+            Content = Definition.Content;
+            Button1Name = Definition.Button1Name;
+            Button1Address = Definition.Button1Address;
+            Button2Name = Definition.Button2Name;
+            Button2Address = Definition.Button2Address;
+            Button1ModeIndex = (int)Definition.Button1Mode;
+            Button2ModeIndex = (int)Definition.Button2Mode;
         }
 
         /// <summary>底层定义（回写用）。</summary>
-        public 弹窗定义 定义 => _定义;
+        public PopupDefinition Definition => _definition;
     }
 
-    private readonly 地址解析器接口 _解析器;
+    private readonly IAddressParser _parser;
 
-    private 弹窗设置对话框(弹窗监控服务 监控, 地址解析器接口 解析器)
+    private PopupSettingsDialog(PopupMonitorService MonitorControl, IAddressParser Parser)
     {
         InitializeComponent();
 
-        _解析器 = 解析器;
+        _parser = Parser;
 
-        foreach (var 定义 in 监控.弹窗集合)
+        foreach (var Definition in MonitorControl.PopupCollection)
         {
-            弹窗集合.Add(new 弹窗行(定义));
+            PopupCollection.Add(new PopupRow(Definition));
         }
 
         DataContext = this;
     }
 
     /// <summary>可编辑行集合。</summary>
-    public ObservableCollection<弹窗行> 弹窗集合 { get; } = new();
+    public ObservableCollection<PopupRow> PopupCollection { get; } = new();
 
     /// <summary>
     /// 弹出编辑器。返回编辑后的弹窗定义集合；<c>null</c> = 取消（调用方据此决定是否落盘）。
     /// </summary>
-    public static IReadOnlyList<弹窗定义>? 显示(弹窗监控服务 监控, 地址解析器接口 解析器)
+    public static IReadOnlyList<PopupDefinition>? Show(PopupMonitorService MonitorControl, IAddressParser Parser)
     {
-        var 对话框 = new 弹窗设置对话框(监控, 解析器)
+        var Dialog = new PopupSettingsDialog(MonitorControl, Parser)
         {
             Owner = Application.Current.MainWindow,
         };
 
-        return 对话框.ShowDialog() == true ? 对话框.收集() : null;
+        return Dialog.ShowDialog() == true ? Dialog.CollectSet() : null;
     }
 
     /// <summary>仅供自检使用：实例化但不显示。</summary>
-    internal static Window 创建验证(弹窗监控服务 监控, 地址解析器接口 解析器) =>
-        new 弹窗设置对话框(监控, 解析器);
+    internal static Window CreateVerify(PopupMonitorService MonitorControl, IAddressParser Parser) =>
+        new PopupSettingsDialog(MonitorControl, Parser);
 
-    private void 新增弹窗(object 发送者, RoutedEventArgs 事件参数)
+    private void AddPopup(object sender, RoutedEventArgs eventArgs)
     {
-        var 序号 = 弹窗集合.Count + 1;
+        var Sequence = PopupCollection.Count + 1;
 
-        弹窗集合.Add(new 弹窗行(new 弹窗定义
+        PopupCollection.Add(new PopupRow(new PopupDefinition
         {
-            名称 = $"新弹窗{序号}",
-            触发地址 = "M0",
-            内容 = "请填写弹窗内容。",
-            按钮一名称 = "确认",
-            按钮一地址 = "M0",
-            按钮一模式 = 弹窗按钮模式.复归型,
+            Name = $"新弹窗{Sequence}",
+            TriggerAddress = "M0",
+            Content = "请填写弹窗内容。",
+            Button1Name = "确认",
+            Button1Address = "M0",
+            Button1Mode = PopupButtonMode.ReturnType,
         }));
     }
 
-    private void 删除弹窗(object 发送者, RoutedEventArgs 事件参数)
+    private void DeletePopup(object sender, RoutedEventArgs eventArgs)
     {
-        if (发送者 is FrameworkElement 元素 && 元素.DataContext is 弹窗行 行)
+        if (sender is FrameworkElement ElementItem && ElementItem.DataContext is PopupRow Row)
         {
-            弹窗集合.Remove(行);
+            PopupCollection.Remove(Row);
         }
     }
 
-    private void 取消(object 发送者, RoutedEventArgs 事件参数) => DialogResult = false;
+    private void Cancel(object sender, RoutedEventArgs eventArgs) => DialogResult = false;
 
-    private void 确认(object 发送者, RoutedEventArgs 事件参数)
+    private void Confirm(object sender, RoutedEventArgs eventArgs)
     {
-        foreach (var 行 in 弹窗集合)
+        foreach (var Row in PopupCollection)
         {
-            if (string.IsNullOrWhiteSpace(行.名称))
+            if (string.IsNullOrWhiteSpace(Row.Name))
             {
-                消息文本.Text = "弹窗名称不能为空。";
+                MessageText.Text = "弹窗名称不能为空。";
                 return;
             }
 
-            if (校验(行.触发地址, $"「{行.名称}」的触发地址") is { } 触发问题)
+            if (Validate(Row.TriggerAddress, $"「{Row.Name}」的触发地址") is { } triggerIssue)
             {
-                消息文本.Text = 触发问题;
+                MessageText.Text = triggerIssue;
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(行.按钮一名称))
+            if (string.IsNullOrWhiteSpace(Row.Button1Name))
             {
-                消息文本.Text = $"「{行.名称}」的按钮一名称不能为空。";
+                MessageText.Text = $"「{Row.Name}」的按钮一名称不能为空。";
                 return;
             }
 
-            if (校验(行.按钮一地址, $"「{行.名称}」的按钮一地址") is { } 按钮一问题)
+            if (Validate(Row.Button1Address, $"「{Row.Name}」的按钮一地址") is { } button1Issue)
             {
-                消息文本.Text = 按钮一问题;
+                MessageText.Text = button1Issue;
                 return;
             }
 
             // 按钮二：名称与地址要么都有、要么都空
-            var 有二名称 = !string.IsNullOrWhiteSpace(行.按钮二名称);
-            var 有二地址 = !string.IsNullOrWhiteSpace(行.按钮二地址);
+            var hasTwoName = !string.IsNullOrWhiteSpace(Row.Button2Name);
+            var hasTwoAddress = !string.IsNullOrWhiteSpace(Row.Button2Address);
 
-            if (有二名称 != 有二地址)
+            if (hasTwoName != hasTwoAddress)
             {
-                消息文本.Text = $"「{行.名称}」的按钮二：名称与地址必须同时填写，或同时留空。";
+                MessageText.Text = $"「{Row.Name}」的按钮二：名称与地址必须同时填写，或同时留空。";
                 return;
             }
 
-            if (有二地址 && 校验(行.按钮二地址, $"「{行.名称}」的按钮二地址") is { } 按钮二问题)
+            if (hasTwoAddress && Validate(Row.Button2Address, $"「{Row.Name}」的按钮二地址") is { } button2Issue)
             {
-                消息文本.Text = 按钮二问题;
+                MessageText.Text = button2Issue;
                 return;
             }
 
             // 触发地址与按钮地址互不相同：同一线圈既触发又"确认"会让弹窗按住期间反复触发
-            if (同址(行.触发地址, 行.按钮一地址) || 同址(行.触发地址, 行.按钮二地址))
+            if (SameAddress(Row.TriggerAddress, Row.Button1Address) || SameAddress(Row.TriggerAddress, Row.Button2Address))
             {
-                消息文本.Text = $"「{行.名称}」的按钮地址不能与触发地址相同。";
+                MessageText.Text = $"「{Row.Name}」的按钮地址不能与触发地址相同。";
                 return;
             }
         }
@@ -173,40 +173,40 @@ public partial class 弹窗设置对话框 : Window
     }
 
     /// <summary>地址校验：空地址不算错（触发地址必填在校验顺序里单独管），非法/非 M 区给原因。</summary>
-    private string? 校验(string 地址文本, string 用途)
+    private string? Validate(string AddressText, string usePurpose)
     {
-        if (string.IsNullOrWhiteSpace(地址文本))
+        if (string.IsNullOrWhiteSpace(AddressText))
         {
-            return $"{用途}不能为空。";
+            return $"{usePurpose}不能为空。";
         }
 
-        return 弹窗监控服务.校验地址(_解析器, 地址文本, 用途);
+        return PopupMonitorService.ValidateAddress(_parser, AddressText, usePurpose);
     }
 
-    private bool 同址(string 甲, string 乙) =>
-        !string.IsNullOrWhiteSpace(乙)
-        && string.Equals(甲.Trim(), 乙.Trim(), StringComparison.OrdinalIgnoreCase);
+    private bool SameAddress(string item, string item2) =>
+        !string.IsNullOrWhiteSpace(item2)
+        && string.Equals(item.Trim(), item2.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>把编辑结果回写成定义集合（确认后调用）。</summary>
-    private IReadOnlyList<弹窗定义> 收集()
+    private IReadOnlyList<PopupDefinition> CollectSet()
     {
-        var 结果 = new List<弹窗定义>();
+        var result = new List<PopupDefinition>();
 
-        foreach (var 行 in 弹窗集合)
+        foreach (var Row in PopupCollection)
         {
-            行.定义.名称 = 行.名称.Trim();
-            行.定义.触发地址 = 行.触发地址.Trim();
-            行.定义.内容 = 行.内容.Trim();
-            行.定义.按钮一名称 = 行.按钮一名称.Trim();
-            行.定义.按钮一地址 = 行.按钮一地址.Trim();
-            行.定义.按钮一模式 = (弹窗按钮模式)Math.Clamp(行.按钮一模式索引, 0, 弹窗定义.模式选项.Count - 1);
-            行.定义.按钮二名称 = 行.按钮二名称.Trim();
-            行.定义.按钮二地址 = 行.按钮二地址.Trim();
-            行.定义.按钮二模式 = (弹窗按钮模式)Math.Clamp(行.按钮二模式索引, 0, 弹窗定义.模式选项.Count - 1);
+            Row.Definition.Name = Row.Name.Trim();
+            Row.Definition.TriggerAddress = Row.TriggerAddress.Trim();
+            Row.Definition.Content = Row.Content.Trim();
+            Row.Definition.Button1Name = Row.Button1Name.Trim();
+            Row.Definition.Button1Address = Row.Button1Address.Trim();
+            Row.Definition.Button1Mode = (PopupButtonMode)Math.Clamp(Row.Button1ModeIndex, 0, PopupDefinition.ModeOptions.Count - 1);
+            Row.Definition.Button2Name = Row.Button2Name.Trim();
+            Row.Definition.Button2Address = Row.Button2Address.Trim();
+            Row.Definition.Button2Mode = (PopupButtonMode)Math.Clamp(Row.Button2ModeIndex, 0, PopupDefinition.ModeOptions.Count - 1);
 
-            结果.Add(行.定义);
+            result.Add(Row.Definition);
         }
 
-        return 结果;
+        return result;
     }
 }

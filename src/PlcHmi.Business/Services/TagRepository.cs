@@ -1,135 +1,135 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using 上位机.业务.配置;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.Business.Configuration;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
 /// 业务点位仓库。从 <c>config/tags.json</c> 加载点位定义。
 /// <para>点位全部配置化，换设备只改 JSON，不动代码。</para>
 /// </summary>
-public sealed class 标签仓储 : 标签仓储接口
+public sealed class TagRepository : ITagRepository
 {
-    private readonly ILogger<标签仓储> _日志;
-    private readonly 配置健康接口? _健康;
+    private readonly ILogger<TagRepository> _log;
+    private readonly IConfigHealth? _health;
 
     /// <summary>
     /// 点位列表。volatile 引用<b>整体替换</b>：此前重载是原地 Clear()+AddRange，
-    /// 与其它线程对 <see cref="全部"/> 的枚举并发会抛 Collection was modified。
+    /// 与其它线程对 <see cref="All"/> 的枚举并发会抛 Collection was modified。
     /// </summary>
-    private volatile List<标签定义> _标签 = new();
+    private volatile List<TagDefinition> _tag = new();
 
-    public 标签仓储(ILogger<标签仓储> 日志, 配置健康接口? 健康 = null)
+    public TagRepository(ILogger<TagRepository> Log, IConfigHealth? Health = null)
     {
-        _日志 = 日志;
-        _健康 = 健康;
-        加载();
+        _log = Log;
+        _health = Health;
+        Load();
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<标签定义> 全部 => _标签;
+    public IReadOnlyList<TagDefinition> All => _tag;
 
     /// <inheritdoc />
-    public 标签定义? 查找(string 名称值)
+    public TagDefinition? Find(string nameValue)
     {
-        var 列表 = _标签;
-        return 列表.FirstOrDefault(标签条目 => string.Equals(标签条目.名称, 名称值, StringComparison.OrdinalIgnoreCase));
+        var list = _tag;
+        return list.FirstOrDefault(tagEntry => string.Equals(tagEntry.Name, nameValue, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<标签定义> 获取分组(标签分组 group)
+    public IReadOnlyList<TagDefinition> GetGroup(TagGroup group)
     {
-        var 列表 = _标签;
-        return 列表.Where(标签条目 => 标签条目.分组 == group).ToList();
+        var list = _tag;
+        return list.Where(tagEntry => tagEntry.Group == group).ToList();
     }
 
     /// <inheritdoc />
-    public Task 异步重载(CancellationToken 取消令牌 = default)
+    public Task ReloadAsync(CancellationToken cancellationToken = default)
     {
-        加载();
+        Load();
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public bool 尝试更新地址(string 名称值, string 地址值)
+    public bool TryUpdateAddress(string nameValue, string addressValue)
     {
-        var 标签项 = 查找(名称值);
+        var tagItem = Find(nameValue);
 
-        if (标签项 is null)
+        if (tagItem is null)
         {
             return false;
         }
 
-        标签项.地址 = 地址值;
+        tagItem.Address = addressValue;
         return true;
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// 只在内存里加：调用方改完地址会走 <see cref="异步保存"/> 整表落盘，
+    /// 只在内存里加：调用方改完地址会走 <see cref="SaveAsync"/> 整表落盘，
     /// 新点位随那次保存一起进现场 <c>tags.json</c>。
     /// </remarks>
-    public bool 尝试新增(标签定义 定义项)
+    public bool TryAdd(TagDefinition DefinitionItem)
     {
-        if (查找(定义项.名称) is not null)
+        if (Find(DefinitionItem.Name) is not null)
         {
             return false;
         }
 
-        _标签.Add(定义项);
-        _日志.LogInformation("点位表补建缺失点位 {Name}（{Address}）", 定义项.名称, 定义项.地址);
+        _tag.Add(DefinitionItem);
+        _log.LogInformation("点位表补建缺失点位 {Name}（{Address}）", DefinitionItem.Name, DefinitionItem.Address);
         return true;
     }
 
     /// <inheritdoc />
-    public async Task 异步保存(CancellationToken 取消令牌 = default)
+    public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        var 文档 = new 标签文件 { 标签集合 = _标签.ToList() };
+        var Document = new TagFile { TagCollection = _tag.ToList() };
 
         try
         {
             // 用 camelCase 口径写：tags.json 是人工手写的，别让程序把风格翻成 PascalCase
-            var JSON文本 = JsonSerializer.Serialize(文档, JSON配置.写入人工风格);
-            await 原子文件.异步写入全部文本(配置路径.标签集合, JSON文本, 取消令牌).ConfigureAwait(false);
+            var jsonText = JsonSerializer.Serialize(Document, JsonConfig.writeHumanStyle);
+            await AtomicFile.WriteAllTextAsync(ConfigPath.TagCollection, jsonText, cancellationToken).ConfigureAwait(false);
 
-            _日志.LogInformation("点位表已保存：{Count} 个业务点位 → {Path}", _标签.Count, 配置路径.标签集合);
+            _log.LogInformation("点位表已保存：{Count} 个业务点位 → {Path}", _tag.Count, ConfigPath.TagCollection);
         }
-        catch (Exception 异常)
+        catch (Exception exception)
         {
-            _日志.LogError(异常, "保存点位表失败：{Path}", 配置路径.标签集合);
+            _log.LogError(exception, "保存点位表失败：{Path}", ConfigPath.TagCollection);
             throw;
         }
     }
 
-    private void 加载()
+    private void Load()
     {
-        var 结果值 = 配置文件加载器.加载JSON<标签文件>(配置路径.标签集合, JSON配置.读取, _日志);
+        var resultValue = ConfigFileLoader.LoadJson<TagFile>(ConfigPath.TagCollection, JsonConfig.Read, _log);
 
-        _健康.上报("业务点位表", 结果值);
+        _health.Report("业务点位表", resultValue);
 
         // 构建新列表后整体替换（volatile 引用发布）：重载与枚举并发时，
         // 读者看到的要么是完整的旧表、要么是完整的新表
-        var 新列表 = new List<标签定义>();
+        var NewList = new List<TagDefinition>();
 
-        if (结果值.值?.标签集合 is not null)
+        if (resultValue.Value?.TagCollection is not null)
         {
-            新列表.AddRange(结果值.值.标签集合.Where(标签条目 => !string.IsNullOrWhiteSpace(标签条目.名称)));
+            NewList.AddRange(resultValue.Value.TagCollection.Where(tagEntry => !string.IsNullOrWhiteSpace(tagEntry.Name)));
         }
 
-        _标签 = 新列表;
+        _tag = NewList;
 
-        if (结果值.加载结果 is 加载结果分类.已加载)
+        if (resultValue.loadResult is LoadResultSplitCategory.Loaded)
         {
-            _日志.LogInformation("已加载 {Count} 个业务点位，来自 {Path}", _标签.Count, 配置路径.标签集合);
+            _log.LogInformation("已加载 {Count} 个业务点位，来自 {Path}", _tag.Count, ConfigPath.TagCollection);
         }
     }
 
     /// <summary>与 tags.json 的顶层结构对应。</summary>
-    private sealed class 标签文件
+    private sealed class TagFile
     {
-        public List<标签定义>? 标签集合 { get; set; }
+        public List<TagDefinition>? TagCollection { get; set; }
     }
 }

@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Windows;
-using 上位机.应用.服务;
-using 上位机.应用.视图模型;
-using 上位机.业务.服务;
+using PlcHmi.App.Services;
+using PlcHmi.App.ViewModels;
+using PlcHmi.Business.Services;
 
-namespace 上位机.应用.视图;
+namespace PlcHmi.App.Views;
 
 /// <summary>
 /// 可配置弹窗的显示窗口。
@@ -17,73 +17,73 @@ namespace 上位机.应用.视图;
 /// <para><b>关闭规则：</b>窗口只能由触发线圈复位来关闭（<c>Closing</c> 拦截）——
 /// 它与 M 区是实时关系，操作员随手关掉会造成"弹窗被关、设备还停在提示状态"的假象。</para>
 /// </summary>
-public partial class 弹窗窗口 : Window
+public partial class PopupWindow : Window
 {
-    private readonly 弹窗宿主视图模型 _宿主;
+    private readonly PopupHostViewModel _hostShell;
 
-    private 弹窗窗口(弹窗宿主视图模型 宿主, 弹窗定义 定义)
+    private PopupWindow(PopupHostViewModel HostShell, PopupDefinition Definition)
     {
         InitializeComponent();
 
-        _宿主 = 宿主;
-        DataContext = 定义;
+        _hostShell = HostShell;
+        DataContext = Definition;
 
         // 复归型：按住 → 置位对应 M 线圈；松开 → 复位。与手动调试页的点动同一套手势。
         // 走即发即忘重载：失败必定留痕，不会以无人观察的 Task 触发"程序异常"红条。
-        点动手势.附加(
-            按钮一,
-            () => _宿主.即发即忘按下(0),
-            () => _宿主.即发即忘松开(0));
-        点动手势.附加(
-            按钮二,
-            () => _宿主.即发即忘按下(1),
-            () => _宿主.即发即忘松开(1));
+        JogGesture.Additional(
+            Button1,
+            () => _hostShell.FireAndForgetPress(0),
+            () => _hostShell.FireAndForgetRelease(0));
+        JogGesture.Additional(
+            Button2,
+            () => _hostShell.FireAndForgetPress(1),
+            () => _hostShell.FireAndForgetRelease(1));
 
         // 触发线圈仍闭合时不允许关闭：弹窗的显示/消失完全由 M 区实时决定
-        Closing += (_, 参数) =>
+        Closing += (_, Parameter) =>
         {
-            if (!_允许关闭 && _宿主.当前弹窗 is not null)
+            if (!_allowClose && _hostShell.CurrentPopup is not null)
             {
-                参数.Cancel = true;
+                Parameter.Cancel = true;
             }
         };
 
         // 主窗关闭（退出程序）时必须放行，否则残留窗口会拖住进程
         Loaded += (_, _) =>
         {
-            if (Owner is Window 主窗)
+            if (Owner is Window masterWindow)
             {
-                主窗.Closed += (_, _) => 强制关闭();
+                masterWindow.Closed += (_, _) => ForceClose();
             }
         };
     }
 
     /// <summary>允许关闭的标志：只在"程序退出 / 主窗已关"这种必须放行的场合置位。</summary>
-    private bool _允许关闭;
+    private bool _allowClose;
 
     /// <summary>无条件关闭（程序退出路径用）。</summary>
-    internal void 强制关闭()
+    internal void ForceClose()
     {
-        _允许关闭 = true;
+        _allowClose = true;
         Close();
     }
 
     /// <summary>显示弹窗（由 弹窗宿主视图模型 调用；内容随触发切换实时更新）。</summary>
-    internal static 弹窗窗口 创建(弹窗宿主视图模型 宿主, 弹窗定义 定义) => new(宿主, 定义);
+    internal static PopupWindow Create(PopupHostViewModel HostShell, PopupDefinition Definition) => new(HostShell, Definition);
 
     /// <summary>触发切换到另一个弹窗时换掉内容（无需重建窗口）。</summary>
-    internal void 更新(弹窗定义 定义) => DataContext = 定义;
+    internal void Update(PopupDefinition Definition) => DataContext = Definition;
 
     /// <summary>仅供自检使用：实例化但不显示。</summary>
-    internal static Window 创建验证(弹窗宿主视图模型 宿主) =>
-        创建(宿主, new 弹窗定义
+    internal static Window CreateVerify(PopupHostViewModel HostShell) =>
+        Create(HostShell, new PopupDefinition
         {
-            名称 = "自检弹窗",
-            触发地址 = "M0",
-            内容 = "自检用弹窗内容：验证布局与按钮排布。",
-            按钮一名称 = "确认",
-            按钮一地址 = "M0",
-            按钮二名称 = "稍后处理",
-            按钮二地址 = "M1",
+            Name = "自检弹窗",
+            TriggerAddress = "M0",
+            Content = "自检用弹窗内容：验证布局与按钮排布。",
+            Button1Name = "确认",
+            Button1Address = "M0",
+            Button2Name = "稍后处理",
+            Button2Address = "M1",
         });
 }

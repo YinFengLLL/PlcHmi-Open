@@ -1,4 +1,4 @@
-namespace 上位机.应用.服务;
+namespace PlcHmi.App.Services;
 
 /// <summary>
 /// 运行期提示的类别。
@@ -7,16 +7,16 @@ namespace 上位机.应用.服务;
 /// （设备没上电、网线没插、正在指数退避重连）。若把它和真正的代码缺陷混在一条红条里喊
 /// "程序异常"，操作员会很快学会无视顶栏——真正的缺陷就此淹没在噪声里。</para>
 /// </summary>
-public enum 运行期错误类别
+public enum RuntimeErrorCategory
 {
     /// <summary>真正的程序缺陷 / 非预期异常：红条，并计入"建议重启"统计。</summary>
-    程序异常 = 0,
+    ProcessIndexException = 0,
 
     /// <summary>
     /// 可预期的现场状况（PLC 未连接 / 连接被中止 / 通信超时）：橙条，
     /// <b>不计入</b>重启统计，连接恢复后自动消失。
     /// </summary>
-    设备未连接 = 1,
+    DeviceDisconnected = 1,
 }
 
 /// <summary>
@@ -31,81 +31,81 @@ public enum 运行期错误类别
 /// 操作员有空时再处理。同时统计短时间内的异常次数 —— 反复出错说明状态已经不可信，
 /// 这时才明确提示重启。</para>
 /// </summary>
-public interface 运行期错误接收器接口
+public interface IRuntimeErrorReceiver
 {
     /// <summary>最近一次错误（无错误时为 <c>null</c>）。</summary>
-    string? 最后错误 { get; }
+    string? LastError { get; }
 
     /// <summary>最近一次错误的类别。</summary>
-    运行期错误类别 最后类别 { get; }
+    RuntimeErrorCategory LastCategory { get; }
 
-    /// <summary>短时间内异常次数达到阈值，建议重启（只统计 <see cref="运行期错误类别.程序异常"/>）。</summary>
-    bool 应重启 { get; }
+    /// <summary>短时间内异常次数达到阈值，建议重启（只统计 <see cref="RuntimeErrorCategory.ProcessIndexException"/>）。</summary>
+    bool ShouldRestart { get; }
 
     /// <summary>错误集合变化（可能来自任意线程，订阅方自行切 UI 线程）。</summary>
-    event EventHandler? 已变更;
+    event EventHandler? changed;
 
     /// <summary>记录一次运行期错误。</summary>
-    /// <param name="消息">给操作员看的一句话。</param>
-    /// <param name="类别">类别，默认按程序异常处理（严进宽出：宁可多报也不漏报真缺陷）。</param>
-    void 上报(string 消息, 运行期错误类别 类别 = 运行期错误类别.程序异常);
+    /// <param name="Message">给操作员看的一句话。</param>
+    /// <param name="Category">类别，默认按程序异常处理（严进宽出：宁可多报也不漏报真缺陷）。</param>
+    void Report(string Message, RuntimeErrorCategory Category = RuntimeErrorCategory.ProcessIndexException);
 }
 
 /// <summary>默认实现：进程内单例。</summary>
-public sealed class 运行期错误服务 : 运行期错误接收器接口
+public sealed class RuntimeErrorService : IRuntimeErrorReceiver
 {
     /// <summary>判定"反复出错"的时间窗口。</summary>
-    private static readonly TimeSpan 窗口 = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan Window = TimeSpan.FromSeconds(60);
 
     /// <summary>窗口内达到这个次数就建议重启。</summary>
-    private const int 重启阈值 = 5;
+    private const int restartThreshold = 5;
 
-    private readonly object _同步 = new();
+    private readonly object _sync = new();
 
-    private DateTime _窗口启动 = DateTime.Now;
-    private int _窗口内数量;
-
-    /// <inheritdoc />
-    public event EventHandler? 已变更;
+    private DateTime _windowStart = DateTime.Now;
+    private int _windowInnerCount;
 
     /// <inheritdoc />
-    public string? 最后错误 { get; private set; }
+    public event EventHandler? changed;
 
     /// <inheritdoc />
-    public 运行期错误类别 最后类别 { get; private set; } = 运行期错误类别.程序异常;
+    public string? LastError { get; private set; }
 
     /// <inheritdoc />
-    public bool 应重启 { get; private set; }
+    public RuntimeErrorCategory LastCategory { get; private set; } = RuntimeErrorCategory.ProcessIndexException;
 
     /// <inheritdoc />
-    public void 上报(string 消息, 运行期错误类别 类别 = 运行期错误类别.程序异常)
+    public bool ShouldRestart { get; private set; }
+
+    /// <inheritdoc />
+    public void Report(string Message, RuntimeErrorCategory Category = RuntimeErrorCategory.ProcessIndexException)
     {
-        lock (_同步)
+        lock (_sync)
         {
-            最后错误 = 消息;
-            最后类别 = 类别;
+            LastError = Message;
+            LastCategory = Category;
 
             // 设备类提示不进"反复出错"统计：连接抖十次也不代表程序不可信
-            if (类别 is 运行期错误类别.程序异常)
+            if (Category is RuntimeErrorCategory.ProcessIndexException)
             {
-                var 当前时刻 = DateTime.Now;
+                var currentTimestamp = DateTime.Now;
 
-                if (当前时刻 - _窗口启动 > 窗口)
+                if (currentTimestamp - _windowStart > Window)
                 {
-                    _窗口启动 = 当前时刻;
-                    _窗口内数量 = 0;
-                    应重启 = false;
+                    _windowStart = currentTimestamp;
+                    _windowInnerCount = 0;
+                    ShouldRestart = false;
                 }
 
-                _窗口内数量++;
+                _windowInnerCount++;
 
-                if (_窗口内数量 >= 重启阈值)
+                if (_windowInnerCount >= restartThreshold)
                 {
-                    应重启 = true;
+                    ShouldRestart = true;
                 }
             }
         }
 
-        已变更?.Invoke(this, EventArgs.Empty);
+        changed?.Invoke(this, EventArgs.Empty);
     }
 }

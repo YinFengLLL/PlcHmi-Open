@@ -1,10 +1,10 @@
-using 上位机.核心.抽象;
+using PlcHmi.Core.Abstractions;
 
-namespace 上位机.通信.Modbus;
+namespace PlcHmi.Communication.Modbus;
 
 /// <summary>
 /// 可切换的 Modbus 客户端代理。对上层（连接管理器 / 轮询引擎）只是一个普通的
-/// <see cref="Modbus客户端接口"/>，内部把请求转发给"当前生效"的具体实现。
+/// <see cref="IModbusClient"/>，内部把请求转发给"当前生效"的具体实现。
 ///
 /// <para><b>为什么需要它：</b>运行模式（真实 / 模拟）要在运行期切换，而连接管理器只注入一次客户端。
 /// 有了这层间接，切换时只需替换内部实现，连接管理器无需重建、DI 无需重装。</para>
@@ -16,84 +16,84 @@ namespace 上位机.通信.Modbus;
 /// <para><b>释放责任：</b>实现方（真实 / 仿真客户端）由 DI 容器持有并释放，
 /// 代理自身<b>不释放</b>内部实现，避免重复释放。</para>
 /// </summary>
-public sealed class 可切换Modbus客户端 : Modbus客户端接口
+public sealed class SwitchableModbusClient : IModbusClient
 {
-    private readonly object _切换同步 = new();
-    private Modbus客户端接口 _当前;
+    private readonly object _switchSync = new();
+    private IModbusClient _current;
 
-    public 可切换Modbus客户端(Modbus客户端接口 初始客户端)
+    public SwitchableModbusClient(IModbusClient initialClient)
     {
-        ArgumentNullException.ThrowIfNull(初始客户端);
-        _当前 = 初始客户端;
+        ArgumentNullException.ThrowIfNull(initialClient);
+        _current = initialClient;
     }
 
     /// <summary>当前生效的实现（仅供诊断 / 测试断言）。</summary>
-    public Modbus客户端接口 当前实现
+    public IModbusClient CurrentRealCurrent
     {
         get
         {
-            lock (_切换同步)
+            lock (_switchSync)
             {
-                return _当前;
+                return _current;
             }
         }
     }
 
     /// <summary>替换当前实现。调用方应先停止连接，确保没有正在使用旧实现的活动请求。</summary>
-    public void 切换实现(Modbus客户端接口 客户端)
+    public void SwitchRealCurrent(IModbusClient Client)
     {
-        ArgumentNullException.ThrowIfNull(客户端);
+        ArgumentNullException.ThrowIfNull(Client);
 
-        lock (_切换同步)
+        lock (_switchSync)
         {
-            _当前 = 客户端;
+            _current = Client;
         }
     }
 
     /// <inheritdoc />
-    public bool 是否已连接 => 当前实现.是否已连接;
+    public bool IsConnected => CurrentRealCurrent.IsConnected;
 
     /// <inheritdoc />
-    public Task 异步连接(CancellationToken 取消令牌 = default) => 当前实现.异步连接(取消令牌);
+    public Task ConnectAsync(CancellationToken cancellationToken = default) => CurrentRealCurrent.ConnectAsync(cancellationToken);
 
     /// <inheritdoc />
-    public Task 异步断开() => 当前实现.异步断开();
+    public Task DisconnectAsync() => CurrentRealCurrent.DisconnectAsync();
 
     // ── 读 ──────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public Task<bool[]> 异步读取线圈(int 地址值, int 数量值, CancellationToken 取消令牌 = default) =>
-        当前实现.异步读取线圈(地址值, 数量值, 取消令牌);
+    public Task<bool[]> ReadCoilAsync(int addressValue, int countValue, CancellationToken cancellationToken = default) =>
+        CurrentRealCurrent.ReadCoilAsync(addressValue, countValue, cancellationToken);
 
     /// <inheritdoc />
-    public Task<bool[]> 异步读取离散输入(int 地址值, int 数量值, CancellationToken 取消令牌 = default) =>
-        当前实现.异步读取离散输入(地址值, 数量值, 取消令牌);
+    public Task<bool[]> ReadDiscreteInputAsync(int addressValue, int countValue, CancellationToken cancellationToken = default) =>
+        CurrentRealCurrent.ReadDiscreteInputAsync(addressValue, countValue, cancellationToken);
 
     /// <inheritdoc />
-    public Task<ushort[]> 异步读取保持寄存器(int 地址值, int 数量值, CancellationToken 取消令牌 = default) =>
-        当前实现.异步读取保持寄存器(地址值, 数量值, 取消令牌);
+    public Task<ushort[]> ReadHoldingRegisterAsync(int addressValue, int countValue, CancellationToken cancellationToken = default) =>
+        CurrentRealCurrent.ReadHoldingRegisterAsync(addressValue, countValue, cancellationToken);
 
     /// <inheritdoc />
-    public Task<ushort[]> 异步读取输入寄存器(int 地址值, int 数量值, CancellationToken 取消令牌 = default) =>
-        当前实现.异步读取输入寄存器(地址值, 数量值, 取消令牌);
+    public Task<ushort[]> ReadInputRegisterAsync(int addressValue, int countValue, CancellationToken cancellationToken = default) =>
+        CurrentRealCurrent.ReadInputRegisterAsync(addressValue, countValue, cancellationToken);
 
     // ── 写 ──────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public Task 异步写入单个线圈(int 地址值, bool 值, CancellationToken 取消令牌 = default) =>
-        当前实现.异步写入单个线圈(地址值, 值, 取消令牌);
+    public Task WriteSingleCoilAsync(int addressValue, bool Value, CancellationToken cancellationToken = default) =>
+        CurrentRealCurrent.WriteSingleCoilAsync(addressValue, Value, cancellationToken);
 
     /// <inheritdoc />
-    public Task 异步写入单个寄存器(int 地址值, ushort 值, CancellationToken 取消令牌 = default) =>
-        当前实现.异步写入单个寄存器(地址值, 值, 取消令牌);
+    public Task WriteSingleRegisterAsync(int addressValue, ushort Value, CancellationToken cancellationToken = default) =>
+        CurrentRealCurrent.WriteSingleRegisterAsync(addressValue, Value, cancellationToken);
 
     /// <inheritdoc />
-    public Task 异步写入多个线圈(int 地址值, IReadOnlyList<bool> 值列表, CancellationToken 取消令牌 = default) =>
-        当前实现.异步写入多个线圈(地址值, 值列表, 取消令牌);
+    public Task WriteMultiCoilAsync(int addressValue, IReadOnlyList<bool> ValueList, CancellationToken cancellationToken = default) =>
+        CurrentRealCurrent.WriteMultiCoilAsync(addressValue, ValueList, cancellationToken);
 
     /// <inheritdoc />
-    public Task 异步写入多个寄存器(int 地址值, IReadOnlyList<ushort> 值列表, CancellationToken 取消令牌 = default) =>
-        当前实现.异步写入多个寄存器(地址值, 值列表, 取消令牌);
+    public Task WriteMultiRegisterAsync(int addressValue, IReadOnlyList<ushort> ValueList, CancellationToken cancellationToken = default) =>
+        CurrentRealCurrent.WriteMultiRegisterAsync(addressValue, ValueList, cancellationToken);
 
     /// <inheritdoc />
     /// <remarks>内部实现由 DI 容器释放，代理不代为释放，避免重复释放。</remarks>

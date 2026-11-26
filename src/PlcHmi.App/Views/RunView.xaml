@@ -1,19 +1,19 @@
-<UserControl x:Class="上位机.应用.视图.运行视图"
+<UserControl x:Class="PlcHmi.App.Views.RunView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:conv="clr-namespace:上位机.应用.转换器"
-             xmlns:vm="clr-namespace:上位机.应用.视图模型"
-             xmlns:charts="clr-namespace:上位机.应用.视图"
+             xmlns:conv="clr-namespace:PlcHmi.App.Converters"
+             xmlns:vm="clr-namespace:PlcHmi.App.ViewModels"
+             xmlns:charts="clr-namespace:PlcHmi.App.Views"
              xmlns:sys="clr-namespace:System.Windows;assembly=PresentationFramework"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             d:DataContext="{d:DesignInstance Type=vm:运行视图模型}"
+             d:DataContext="{d:DesignInstance Type=vm:RunViewModel}"
              mc:Ignorable="d">
 
     <UserControl.Resources>
-        <conv:资源键画刷转换器 x:Key="KeyToBrush" />
-        <conv:设备状态图标转换器 x:Key="StateToIcon" />
-        <conv:布尔可见性转换器 x:Key="BoolToVis" />
+        <conv:ResourceKeyBrushConverter x:Key="KeyToBrush" />
+        <conv:DeviceStateIconConverter x:Key="StateToIcon" />
+        <conv:BooleanVisibilityConverter x:Key="BoolToVis" />
 
         <!-- 报警横幅图标：紧急级闪烁；尊重系统"减少动效"设置（关掉动效则静态常亮）。
              与顶栏报警图标、示教页状态灯同一套做法。 -->
@@ -27,7 +27,7 @@
             <Style.Triggers>
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding 报警闪烁}" Value="True" />
+                        <Condition Binding="{Binding AlarmFlickerBlink}" Value="True" />
                         <Condition Binding="{Binding Source={x:Static sys:SystemParameters.ClientAreaAnimation}}"
                                    Value="True" />
                     </MultiDataTrigger.Conditions>
@@ -77,8 +77,8 @@
         <!-- 页面标题（右侧：管理员编辑元件地址入口） -->
         <Grid Grid.Row="0" Margin="{StaticResource PageHeaderMargin}">
             <StackPanel>
-                <TextBlock Text="{Binding 标题}" Style="{StaticResource PageTitleText}" />
-                <TextBlock Text="{Binding 副标题}" Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}" />
+                <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleText}" />
+                <TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}" />
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -92,7 +92,7 @@
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="工单" Style="{StaticResource CaptionText}"
                                    VerticalAlignment="Center" Margin="{StaticResource GapRight4}" />
-                        <TextBlock Text="{Binding 工单号文本}" Style="{StaticResource BodyText}"
+                        <TextBlock Text="{Binding WorkOrderText}" Style="{StaticResource BodyText}"
                                    FontFamily="{StaticResource NumericFontFamily}"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
@@ -108,7 +108,7 @@
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="当前" Style="{StaticResource CaptionText}"
                                    VerticalAlignment="Center" Margin="{StaticResource GapRight4}" />
-                        <TextBlock Text="{Binding 当前机种文本}" Style="{StaticResource BodyText}"
+                        <TextBlock Text="{Binding CurrentMachineModelText}" Style="{StaticResource BodyText}"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource PrimaryBrush}"
                                    VerticalAlignment="Center" />
@@ -119,8 +119,8 @@
                         Content="编辑元件地址"
                         Style="{StaticResource SecondaryButton}" Height="40"
                         ToolTip="配置运行页监控元件与操作按钮的 PLC 地址（仅管理员）"
-                        Visibility="{Binding 可编辑地址, Converter={StaticResource BoolToVis}}"
-                        Command="{Binding 异步编辑地址Command}" />
+                        Visibility="{Binding EditableAddress, Converter={StaticResource BoolToVis}}"
+                        Command="{Binding EditAddressAsyncCommand}" />
             </StackPanel>
         </Grid>
 
@@ -150,14 +150,14 @@
                     <Border CornerRadius="8" Padding="14,10"
                             Margin="{StaticResource GapBottom12}"
                             Background="{DynamicResource DangerBrush}"
-                            Visibility="{Binding 有活动报警, Converter={StaticResource BoolToVis}}">
+                            Visibility="{Binding HasActiveAlarm, Converter={StaticResource BoolToVis}}">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource AlarmBannerIcon}"
                                   Data="{StaticResource Icon.Status.Alarm}"
                                   Stroke="{DynamicResource TextOnPrimaryBrush}"
                                   Width="28" Height="28"
                                   Margin="{StaticResource GapRight12}" />
-                            <TextBlock Text="{Binding 报警摘要}"
+                            <TextBlock Text="{Binding AlarmSummary}"
                                        FontSize="22"
                                        FontWeight="Bold"
                                        Foreground="{DynamicResource TextOnPrimaryBrush}"
@@ -172,10 +172,10 @@
 
                     <StackPanel Orientation="Horizontal" Margin="{StaticResource GapTop8}">
                         <Path Style="{StaticResource IconPathLarge}"
-                              Data="{Binding 设备状态文本, Converter={StaticResource StateToIcon}}"
+                              Data="{Binding DeviceStateText, Converter={StaticResource StateToIcon}}"
                               Stroke="{DynamicResource OnShellPrimaryBrush}"
                               Margin="{StaticResource GapRight12}" />
-                        <TextBlock Text="{Binding 设备状态文本}"
+                        <TextBlock Text="{Binding DeviceStateText}"
                                    FontSize="{StaticResource FontSizeDisplay}"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource OnShellPrimaryBrush}"
@@ -187,7 +187,7 @@
                                Foreground="{DynamicResource OnShellSecondaryBrush}"
                                Margin="{StaticResource GapTop12}"
                                TextTrimming="CharacterEllipsis"
-                               Visibility="{Binding 无活动报警, Converter={StaticResource BoolToVis}}"
+                               Visibility="{Binding NoneActiveAlarm, Converter={StaticResource BoolToVis}}"
                                Text="当前无报警" />
                 </StackPanel>
 
@@ -246,14 +246,14 @@
             <Border Style="{DynamicResource CardEnterStyle1}" Margin="{StaticResource GapRight12}">
                 <StackPanel>
                     <TextBlock Text="当前节拍 (s)" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Text="{Binding 周期时间文本}" Style="{StaticResource MetricValueHeroText}" />
+                    <TextBlock Text="{Binding WeekPeriodTimeText}" Style="{StaticResource MetricValueHeroText}" />
                 </StackPanel>
             </Border>
 
             <Border Style="{DynamicResource CardEnterStyle2}" Margin="{StaticResource GapRight12}">
                 <StackPanel>
                     <TextBlock Text="良品数量" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Text="{Binding 良品数量文本}" Style="{StaticResource MetricValueHeroText}"
+                    <TextBlock Text="{Binding GoodCountText}" Style="{StaticResource MetricValueHeroText}"
                                Foreground="{DynamicResource SuccessBrush}" />
                 </StackPanel>
             </Border>
@@ -261,7 +261,7 @@
             <Border Style="{DynamicResource CardEnterStyle3}">
                 <StackPanel>
                     <TextBlock Text="不良品数量" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Text="{Binding 不良品数量文本}" Style="{StaticResource MetricValueHeroText}"
+                    <TextBlock Text="{Binding DefectiveCountText}" Style="{StaticResource MetricValueHeroText}"
                                Foreground="{DynamicResource DangerBrush}" />
                 </StackPanel>
             </Border>
@@ -283,19 +283,19 @@
                 <!-- 左：产量与目标进度 -->
                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
                     <TextBlock Text="当前产量 / 目标" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Text="{Binding 输出数量文本}" Style="{StaticResource MetricValueDisplayText}" />
+                    <TextBlock Text="{Binding OutputCountText}" Style="{StaticResource MetricValueDisplayText}" />
                     <TextBlock Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}">
                         <Run Text="目标 " />
-                        <Run Text="{Binding 目标数量文本, Mode=OneWay}" />
+                        <Run Text="{Binding TargetCountText, Mode=OneWay}" />
                     </TextBlock>
 
                     <TextBlock Text="达成率" Style="{StaticResource MetricLabelText}"
                                Margin="{StaticResource GapTop12}" />
-                    <TextBlock Text="{Binding 达成文本}"
+                    <TextBlock Text="{Binding ReachAsText}"
                                Style="{StaticResource MetricValueDisplayText}"
                                Foreground="{DynamicResource PrimaryBrush}" />
                     <!-- 条只表达进度感，精确值看上面的数字（超产时条钳在 100%） -->
-                    <ProgressBar Value="{Binding 达成率}" Maximum="100" Height="10"
+                    <ProgressBar Value="{Binding AchievementRate}" Maximum="100" Height="10"
                                  Margin="{StaticResource GapTop8}" />
                 </StackPanel>
 
@@ -309,7 +309,7 @@
                     </Grid.RowDefinitions>
 
                     <Grid Grid.Row="0" Margin="{StaticResource GapBottom8}">
-                        <TextBlock Text="{Binding 图表标题}"
+                        <TextBlock Text="{Binding ChartTitle}"
                                    Style="{StaticResource SectionTitleText}"
                                    VerticalAlignment="Center" />
 
@@ -323,47 +323,47 @@
                                     Height="30" Padding="12,0" FontSize="12"
                                     Margin="{StaticResource GapRight16}"
                                     ToolTip="清零 PLC 累计数据（复归型脉冲命令，仅工程师 / 管理员）"
-                                    Visibility="{Binding 可清除数据, Converter={StaticResource BoolToVis}}"
-                                    Command="{Binding 异步清除数据Command}" />
+                                    Visibility="{Binding CanClearRemoveData, Converter={StaticResource BoolToVis}}"
+                                    Command="{Binding ClearRemoveDataAsyncCommand}" />
 
                             <Button Content="‹" Style="{StaticResource SecondaryButton}"
                                     Width="34" Height="30" Padding="0"
                                     FontSize="15" FontWeight="Bold"
                                     ToolTip="上一张图"
-                                    Command="{Binding 上一图表Command}" />
-                            <TextBlock Text="{Binding 页码文本}" Width="46"
+                                    Command="{Binding OnOneChartCommand}" />
+                            <TextBlock Text="{Binding PageNumberText}" Width="46"
                                        FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
                                        TextAlignment="Center" VerticalAlignment="Center" />
                             <Button Content="›" Style="{StaticResource SecondaryButton}"
                                     Width="34" Height="30" Padding="0"
                                     FontSize="15" FontWeight="Bold"
                                     ToolTip="下一张图"
-                                    Command="{Binding 下一图表Command}" />
+                                    Command="{Binding NextChartCommand}" />
                         </StackPanel>
                     </Grid>
 
                     <Grid Grid.Row="1" MinHeight="225">
                         <!-- 1. 良品 / 不良品占比（饼图） -->
-                        <charts:环形占比图 值甲="{Binding 占比良品值}"
-                                  值乙="{Binding 占比不良品值}"
-                                  标签甲="良品" 标签乙="不良品"
-                                  Visibility="{Binding 显示占比图, Converter={StaticResource BoolToVis}}" />
+                        <charts:DonutRatioChart ValueA="{Binding RatioGoodValue}"
+                                  ValueB="{Binding RatioDefectiveValue}"
+                                  LabelA="良品" LabelB="不良品"
+                                  Visibility="{Binding ShowRatioChart, Converter={StaticResource BoolToVis}}" />
 
                         <!-- 2. 今日每小时产量（柱状图，高亮当前小时） -->
-                        <charts:柱状图控件 数值集合="{Binding 今日小时集合}"
-                                  标签集合="{Binding 小时标签集合}"
-                                  高亮索引="{Binding 当前小时索引}"
-                                  Visibility="{Binding 显示小时图, Converter={StaticResource BoolToVis}}" />
+                        <charts:BarChartWidget NumericValueCollection="{Binding TodayHourCollection}"
+                                  TagCollection="{Binding HourTagCollection}"
+                                  HighlightIndex="{Binding CurrentHourIndex}"
+                                  Visibility="{Binding ShowHourChart, Converter={StaticResource BoolToVis}}" />
 
                         <!-- 3. 近 7 天每日产量（折线图） -->
-                        <charts:折线图控件 系列集合="{Binding 周产量系列}"
-                                  标签集合="{Binding 周标签集合}"
-                                  Visibility="{Binding 显示周图, Converter={StaticResource BoolToVis}}" />
+                        <charts:LineChartWidget SeriesCollection="{Binding WeeklyOutputSeries}"
+                                  TagCollection="{Binding WeekTagCollection}"
+                                  Visibility="{Binding ShowWeekChart, Converter={StaticResource BoolToVis}}" />
 
                         <!-- 4. 今日与昨日同小时对比（双系列折线图） -->
-                        <charts:折线图控件 系列集合="{Binding 对比系列}"
-                                  标签集合="{Binding 小时标签集合}"
-                                  Visibility="{Binding 显示对比图, Converter={StaticResource BoolToVis}}" />
+                        <charts:LineChartWidget SeriesCollection="{Binding PairCompareSeries}"
+                                  TagCollection="{Binding HourTagCollection}"
+                                  Visibility="{Binding ShowPairCompareChart, Converter={StaticResource BoolToVis}}" />
                     </Grid>
                 </Grid>
             </Grid>
@@ -378,7 +378,7 @@
         <UniformGrid Grid.Row="4" Rows="1" Columns="4" Margin="{StaticResource GapBottom16}">
             <Button Style="{StaticResource ButtonSuccess}"
                     Margin="{StaticResource GapRight12}"
-                    Command="{Binding 异步启动Command}">
+                    Command="{Binding StartAsyncCommand}">
                 <StackPanel Orientation="Horizontal">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Action.Start}"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
@@ -388,7 +388,7 @@
             </Button>
             <Button Style="{StaticResource ButtonWarning}"
                     Margin="{StaticResource GapRight12}"
-                    Command="{Binding 异步停止Command}">
+                    Command="{Binding StopAsyncCommand}">
                 <StackPanel Orientation="Horizontal">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Action.Stop}"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
@@ -398,7 +398,7 @@
             </Button>
             <Button Style="{StaticResource ButtonNeutral}"
                     Margin="{StaticResource GapRight12}"
-                    Command="{Binding 异步重置Command}">
+                    Command="{Binding ResetAsyncCommand}">
                 <StackPanel Orientation="Horizontal">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Action.Reset}"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
@@ -408,7 +408,7 @@
             </Button>
             <Button Style="{StaticResource ButtonDanger}"
                     ToolTip="向 PLC 下发报警清除命令"
-                    Command="{Binding 异步清空报警Command}">
+                    Command="{Binding ClearEmptyAlarmAsyncCommand}">
                 <StackPanel Orientation="Horizontal">
                     <Path Style="{StaticResource IconPath}" Data="{StaticResource Icon.Status.Alarm}"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
@@ -424,7 +424,7 @@
              同一屏显示两遍不增加信息，只增加噪声。
              整体拆到 RunStatusStrip.xaml（2026-10-16 加了工位三灯与颗数后本行变长，
              拆出去也让"状态条有哪些项"集中在一个文件里）。 -->
-        <charts:运行状态条 Grid.Row="5" />
+        <charts:RunStatusStrip Grid.Row="5" />
         </Grid>
         </ScrollViewer>
     </Grid>

@@ -1,577 +1,577 @@
 {
-  "元": {
-    "PLC模型": "EASY52X",
-    "X基址地址": 63488,
-    "Y基址地址": 64512,
-    "编号基址": "octal",
-    "X区域": null,
-    "Y区域": null,
-    "分组大小": 8,
-    "输入数量": 40,
-    "输出数量": 40
+  "element": {
+    "plcModel": "EASY52X",
+    "xBaseAddressValue": 63488,
+    "yBaseAddressValue": 64512,
+    "numberBaseAddress": "octal",
+    "xArea": null,
+    "yArea": null,
+    "groupSize": 8,
+    "inputCount": 40,
+    "outputCount": 40
   },
-  "输入": [
+  "input": [
     {
-      "代码": "X0",
-      "含义": "手脉A相",
-      "启用": true,
-      "取反": false,
-      "注释": "光电开关"
+      "code": "X0",
+      "meaning": "手脉A相",
+      "enabled": true,
+      "negate": false,
+      "comment": "光电开关"
     },
     {
-      "代码": "X1",
-      "含义": "手脉A相",
-      "启用": true,
-      "取反": false,
-      "注释": "接近开关"
+      "code": "X1",
+      "meaning": "手脉A相",
+      "enabled": true,
+      "negate": false,
+      "comment": "接近开关"
     },
     {
-      "代码": "X2",
-      "含义": "",
-      "启用": true,
-      "取反": true,
-      "注释": "常闭"
+      "code": "X2",
+      "meaning": "",
+      "enabled": true,
+      "negate": true,
+      "comment": "常闭"
     },
     {
-      "代码": "X3",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X3",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X4",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X4",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X5",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X5",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X6",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X6",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X7",
-      "含义": "",
-      "启用": true,
-      "取反": true,
-      "注释": "常闭，断开即急停"
+      "code": "X7",
+      "meaning": "",
+      "enabled": true,
+      "negate": true,
+      "comment": "常闭，断开即急停"
     },
     {
-      "代码": "X10",
-      "含义": "启动按钮",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X10",
+      "meaning": "启动按钮",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X11",
-      "含义": "复位按钮",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X11",
+      "meaning": "复位按钮",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X12",
-      "含义": "暂停按钮",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X12",
+      "meaning": "暂停按钮",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X13",
-      "含义": "急停按钮",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X13",
+      "meaning": "急停按钮",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X14",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X14",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X15",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X15",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X16",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X16",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X17",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X17",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X20",
-      "含义": "安全光栅",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X20",
+      "meaning": "安全光栅",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X21",
-      "含义": "前放料按钮1",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X21",
+      "meaning": "前放料按钮1",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X22",
-      "含义": "前放料按钮2",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X22",
+      "meaning": "前放料按钮2",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X23",
-      "含义": "对针激光1",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X23",
+      "meaning": "对针激光1",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X24",
-      "含义": "对针激光2",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X24",
+      "meaning": "对针激光2",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X25",
-      "含义": "胶桶缺胶感应",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X25",
+      "meaning": "胶桶缺胶感应",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X26",
-      "含义": "吸真空检测",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X26",
+      "meaning": "吸真空检测",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X27",
-      "含义": "螺丝供料准备好信号",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "X27",
+      "meaning": "螺丝供料准备好信号",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X30",
-      "含义": "电批OK信号",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X30",
+      "meaning": "电批OK信号",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X31",
-      "含义": "电批NG信号",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X31",
+      "meaning": "电批NG信号",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X32",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X32",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X33",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X33",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X34",
-      "含义": "右安全门",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X34",
+      "meaning": "右安全门",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X35",
-      "含义": "左安全门",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X35",
+      "meaning": "左安全门",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X36",
-      "含义": "正安全门",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X36",
+      "meaning": "正安全门",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X37",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X37",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X40",
-      "含义": "手脉X轴",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X40",
+      "meaning": "手脉X轴",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X41",
-      "含义": "手脉Y档",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X41",
+      "meaning": "手脉Y档",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X42",
-      "含义": "手脉Z档",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X42",
+      "meaning": "手脉Z档",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X43",
-      "含义": "手脉4档",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X43",
+      "meaning": "手脉4档",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X44",
-      "含义": "手脉*1",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X44",
+      "meaning": "手脉*1",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X45",
-      "含义": "手脉*10",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X45",
+      "meaning": "手脉*10",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X46",
-      "含义": "手脉*100",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X46",
+      "meaning": "手脉*100",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "X47",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "X47",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     }
   ],
-  "输出": [
+  "output": [
     {
-      "代码": "Y0",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y0",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y1",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y1",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y2",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y2",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y3",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y3",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y4",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y4",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y5",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y5",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y6",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y6",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y7",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y7",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y10",
-      "含义": "电批启动",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y10",
+      "meaning": "电批启动",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y11",
-      "含义": "电批反转",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y11",
+      "meaning": "电批反转",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y12",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y12",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y13",
-      "含义": "",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y13",
+      "meaning": "",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y14",
-      "含义": "1#螺丝扶正气缸",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y14",
+      "meaning": "1#螺丝扶正气缸",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y15",
-      "含义": "2#吸螺丝真空",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y15",
+      "meaning": "2#吸螺丝真空",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y16",
-      "含义": "3#吸螺丝破真空",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y16",
+      "meaning": "3#吸螺丝破真空",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y17",
-      "含义": "4#出胶阀",
-      "启用": false,
-      "取反": false,
-      "注释": null
+      "code": "Y17",
+      "meaning": "4#出胶阀",
+      "enabled": false,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y20",
-      "含义": "5#备用",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y20",
+      "meaning": "5#备用",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y21",
-      "含义": "6#备用",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y21",
+      "meaning": "6#备用",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y22",
-      "含义": "7#备用",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y22",
+      "meaning": "7#备用",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y23",
-      "含义": "螺丝机开盖",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y23",
+      "meaning": "螺丝机开盖",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y24",
-      "含义": "螺丝机定位",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y24",
+      "meaning": "螺丝机定位",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y25",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y25",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y26",
-      "含义": "日光灯",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y26",
+      "meaning": "日光灯",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y27",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y27",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y30",
-      "含义": "上相机光源",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y30",
+      "meaning": "上相机光源",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y31",
-      "含义": "下相机光源",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y31",
+      "meaning": "下相机光源",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y32",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y32",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y33",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y33",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y34",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y34",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y35",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y35",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y36",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y36",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y37",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y37",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y40",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y40",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y41",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y41",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y42",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y42",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y43",
-      "含义": "",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y43",
+      "meaning": "",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y44",
-      "含义": "警示灯（红）",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y44",
+      "meaning": "警示灯（红）",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y45",
-      "含义": "警示灯（黄）",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y45",
+      "meaning": "警示灯（黄）",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y46",
-      "含义": "警示灯（绿）",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y46",
+      "meaning": "警示灯（绿）",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     },
     {
-      "代码": "Y47",
-      "含义": "警示灯（喇叭）",
-      "启用": true,
-      "取反": false,
-      "注释": null
+      "code": "Y47",
+      "meaning": "警示灯（喇叭）",
+      "enabled": true,
+      "negate": false,
+      "comment": null
     }
   ]
 }

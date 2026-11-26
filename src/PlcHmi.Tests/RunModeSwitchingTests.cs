@@ -1,13 +1,13 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using 上位机.业务.服务;
-using 上位机.通信.Modbus;
-using 上位机.通信.仿真;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
-using 上位机.上位机测试.替身;
+using PlcHmi.Business.Services;
+using PlcHmi.Communication.Modbus;
+using PlcHmi.Communication.Simulation;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
+using PlcHmi.Tests.Fake;
 
-namespace 上位机.上位机测试;
+namespace PlcHmi.Tests;
 
 /// <summary>
 /// 运行模式管理器测试：真实 PLC ↔ 模拟 PLC 的运行期切换。
@@ -19,187 +19,187 @@ namespace 上位机.上位机测试;
 /// <para>用替身连接管理器记录启停次数，用真实的两套客户端实现与真实从站，
 /// 使断言落在"到底换了谁、从站起没起"这些可观察事实上。</para>
 /// </summary>
-public class 运行模式切换测试
+public class RunModeSwitchTest
 {
     /// <summary>每个用例一套完整夹具：真实/仿真客户端各一份 + 代理 + 从站 + 替身连接管理器。</summary>
-    private sealed class 夹具 : IAsyncDisposable
+    private sealed class Fixture : IAsyncDisposable
     {
-        public required PLC连接选项 选项 { get; init; }
+        public required PlcConnectionOptions Options { get; init; }
 
-        public required 替身连接管理器 连接 { get; init; }
+        public required FakeConnectManager Connect { get; init; }
 
-        public required 虚拟PLC设备 设备 { get; init; }
+        public required VirtualPlcDevice Device { get; init; }
 
-        public required 虚拟PLC从站 从站 { get; init; }
+        public required VirtualPlcSlave Slave { get; init; }
 
-        public required 仿真Modbus客户端 仿真 { get; init; }
+        public required SimulationModbusClient Simulation { get; init; }
 
-        public required FluentModbusTCP客户端 真实 { get; init; }
+        public required FluentModbusTCPClient Real { get; init; }
 
-        public required 可切换Modbus客户端 代理 { get; init; }
+        public required SwitchableModbusClient Proxy { get; init; }
 
-        public required Modbus运行模式管理器 管理器 { get; init; }
+        public required ModbusRunModeManager Manager { get; init; }
 
         public async ValueTask DisposeAsync()
         {
-            await 管理器.DisposeAsync();
-            await 真实.DisposeAsync();
-            await 仿真.DisposeAsync();
-            await 设备.DisposeAsync();
+            await Manager.DisposeAsync();
+            await Real.DisposeAsync();
+            await Simulation.DisposeAsync();
+            await Device.DisposeAsync();
         }
     }
 
     /// <summary>未登录身份走生产用的真实守卫 —— 操作员不具备「切换运行模式」权限。</summary>
-    private static 权限守卫接口 未登录权限() =>
-        new 用户权限守卫(new 用户服务(NullLogger<用户服务>.Instance),
-            NullLogger<用户权限守卫>.Instance);
+    private static IPermissionGuard NotLoginPermission() =>
+        new UserPermissionGuard(new UserService(NullLogger<UserService>.Instance),
+            NullLogger<UserPermissionGuard>.Instance);
 
-    private static 夹具 构建夹具(
-        bool 初始模拟 = false,
-        string 监听地址 = "127.0.0.1",
-        通讯协议 协议 = 通讯协议.ModbusTCP,
-        权限守卫接口? 权限 = null)
+    private static Fixture BuildFixture(
+        bool initialSimulation = false,
+        string ListenAddress = "127.0.0.1",
+        CommunicationProtocol Protocol = CommunicationProtocol.ModbusTCP,
+        IPermissionGuard? Permission = null)
     {
-        var 选项 = new PLC连接选项
+        var Options = new PlcConnectionOptions
         {
-            主机 = "127.0.0.1",
-            端口 = 502,
-            单元标识 = 1,
-            使用模拟器 = 初始模拟,
-            通讯协议 = 协议,
-            模拟从站端口 = 0,
-            模拟从站监听地址 = 监听地址,
-            连接超时毫秒 = 1000,
-            读取超时毫秒 = 1000,
+            Host = "127.0.0.1",
+            Port = 502,
+            UnitId = 1,
+            UseSimulator = initialSimulation,
+            CommunicationProtocol = Protocol,
+            SimulationSlavePort = 0,
+            SimulationSlaveListenAddress = ListenAddress,
+            ConnectTimeoutMilliseconds = 1000,
+            ReadTimeoutMilliseconds = 1000,
         };
 
-        var 设备 = new 虚拟PLC设备(NullLogger<虚拟PLC设备>.Instance);
-        var 从站 = new 虚拟PLC从站(设备, 选项, NullLogger<虚拟PLC从站>.Instance);
-        var 仿真 = new 仿真Modbus客户端(设备, NullLogger<仿真Modbus客户端>.Instance);
-        var 真实 = new FluentModbusTCP客户端(选项, NullLogger<FluentModbusTCP客户端>.Instance);
-        var 代理 = new 可切换Modbus客户端(初始模拟 ? 仿真 : 真实);
-        var 连接 = new 替身连接管理器();
-        var 管理器 = new Modbus运行模式管理器(
-            代理, 真实, 仿真, 从站, 连接, 选项,
-            权限 ?? new 允许全部权限守卫(),
-            NullLogger<Modbus运行模式管理器>.Instance);
+        var Device = new VirtualPlcDevice(NullLogger<VirtualPlcDevice>.Instance);
+        var Slave = new VirtualPlcSlave(Device, Options, NullLogger<VirtualPlcSlave>.Instance);
+        var Simulation = new SimulationModbusClient(Device, NullLogger<SimulationModbusClient>.Instance);
+        var Real = new FluentModbusTCPClient(Options, NullLogger<FluentModbusTCPClient>.Instance);
+        var Proxy = new SwitchableModbusClient(initialSimulation ? Simulation : Real);
+        var Connect = new FakeConnectManager();
+        var Manager = new ModbusRunModeManager(
+            Proxy, Real, Simulation, Slave, Connect, Options,
+            Permission ?? new AllowAllPermissionGuard(),
+            NullLogger<ModbusRunModeManager>.Instance);
 
-        return new 夹具
+        return new Fixture
         {
-            选项 = 选项,
-            连接 = 连接,
-            设备 = 设备,
-            从站 = 从站,
-            仿真 = 仿真,
-            真实 = 真实,
-            代理 = 代理,
-            管理器 = 管理器,
+            Options = Options,
+            Connect = Connect,
+            Device = Device,
+            Slave = Slave,
+            Simulation = Simulation,
+            Real = Real,
+            Proxy = Proxy,
+            Manager = Manager,
         };
     }
 
     [Fact]
-    public async Task 切到模拟模式_应换用仿真客户端并启动调试从站()
+    public async Task SwitchToSimulationMode_ShouldSwapUseSimulationClientAndStartDebugSlave()
     {
-        await using var 夹具实例 = 构建夹具();
-        var 事件次数 = 0;
-        夹具实例.管理器.模式已变更 += (_, _) => 事件次数++;
+        await using var fixtureRealCase = BuildFixture();
+        var EventTimes = 0;
+        fixtureRealCase.Manager.modeChanged += (_, _) => EventTimes++;
 
-        await 夹具实例.管理器.异步切换(运行模式.模拟PLC);
+        await fixtureRealCase.Manager.SwitchAsync(RunMode.SimulationPlc);
 
-        Assert.Equal(运行模式.模拟PLC, 夹具实例.管理器.当前模式);
-        Assert.IsType<仿真Modbus客户端>(夹具实例.代理.当前实现);
-        Assert.True(夹具实例.选项.使用模拟器);
+        Assert.Equal(RunMode.SimulationPlc, fixtureRealCase.Manager.CurrentMode);
+        Assert.IsType<SimulationModbusClient>(fixtureRealCase.Proxy.CurrentRealCurrent);
+        Assert.True(fixtureRealCase.Options.UseSimulator);
 
         // 离线调试从站必须真的起来（否则"可用工具调试"是一句空话）
-        Assert.True(夹具实例.从站.是否运行);
-        Assert.True(夹具实例.管理器.模拟从站是否运行);
-        Assert.True(夹具实例.从站.端口 > 0, "端口配 0 应由系统分配实际端口");
-        Assert.Contains("监听中", 夹具实例.管理器.模拟从站状态文本, StringComparison.Ordinal);
+        Assert.True(fixtureRealCase.Slave.IsRun);
+        Assert.True(fixtureRealCase.Manager.SimulationSlaveIsRun);
+        Assert.True(fixtureRealCase.Slave.Port > 0, "端口配 0 应由系统分配实际端口");
+        Assert.Contains("监听中", fixtureRealCase.Manager.SimulationSlaveStateText, StringComparison.Ordinal);
 
         // 连接被"停一次、起一次"——换实现必须走断连重连，否则旧连接会继续用旧实现
-        Assert.Equal(1, 夹具实例.连接.停止次数);
-        Assert.Equal(1, 夹具实例.连接.启动次数);
-        Assert.Equal(1, 事件次数);
+        Assert.Equal(1, fixtureRealCase.Connect.StopCount);
+        Assert.Equal(1, fixtureRealCase.Connect.StartCount);
+        Assert.Equal(1, EventTimes);
     }
 
     [Fact]
-    public async Task 从模拟切回真实_应换回真实客户端并停用调试从站()
+    public async Task FromSimulationSwitchBackReal_ShouldSwitchBackRealClientAndStopUseDebugSlave()
     {
-        await using var 夹具实例 = 构建夹具();
-        await 夹具实例.管理器.异步切换(运行模式.模拟PLC);
-        Assert.True(夹具实例.从站.是否运行);
+        await using var fixtureRealCase = BuildFixture();
+        await fixtureRealCase.Manager.SwitchAsync(RunMode.SimulationPlc);
+        Assert.True(fixtureRealCase.Slave.IsRun);
 
-        var 事件次数 = 0;
-        夹具实例.管理器.模式已变更 += (_, _) => 事件次数++;
+        var EventTimes = 0;
+        fixtureRealCase.Manager.modeChanged += (_, _) => EventTimes++;
 
-        await 夹具实例.管理器.异步切换(运行模式.真实PLC);
+        await fixtureRealCase.Manager.SwitchAsync(RunMode.RealPlc);
 
-        Assert.Equal(运行模式.真实PLC, 夹具实例.管理器.当前模式);
-        Assert.IsType<FluentModbusTCP客户端>(夹具实例.代理.当前实现);
-        Assert.False(夹具实例.选项.使用模拟器);
+        Assert.Equal(RunMode.RealPlc, fixtureRealCase.Manager.CurrentMode);
+        Assert.IsType<FluentModbusTCPClient>(fixtureRealCase.Proxy.CurrentRealCurrent);
+        Assert.False(fixtureRealCase.Options.UseSimulator);
 
         // 回到真实 PLC 后调试从站必须关闭：留着一个可写的虚拟 PLC 监听口是安全隐患
-        Assert.False(夹具实例.从站.是否运行);
-        Assert.Equal(2, 夹具实例.连接.停止次数);
-        Assert.Equal(2, 夹具实例.连接.启动次数);
-        Assert.Equal(1, 事件次数);
+        Assert.False(fixtureRealCase.Slave.IsRun);
+        Assert.Equal(2, fixtureRealCase.Connect.StopCount);
+        Assert.Equal(2, fixtureRealCase.Connect.StartCount);
+        Assert.Equal(1, EventTimes);
     }
 
     [Fact]
-    public async Task 目标与当前一致时应幂等_不重启连接()
+    public async Task TargetAndCurrentConsistentWhenShouldIdempotent_NotRestartConnect()
     {
-        await using var 夹具实例 = 构建夹具();
-        var 事件次数 = 0;
-        夹具实例.管理器.模式已变更 += (_, _) => 事件次数++;
+        await using var fixtureRealCase = BuildFixture();
+        var EventTimes = 0;
+        fixtureRealCase.Manager.modeChanged += (_, _) => EventTimes++;
 
-        await 夹具实例.管理器.异步切换(运行模式.真实PLC);
+        await fixtureRealCase.Manager.SwitchAsync(RunMode.RealPlc);
 
-        Assert.Equal(0, 夹具实例.连接.停止次数);
-        Assert.Equal(0, 夹具实例.连接.启动次数);
-        Assert.Equal(0, 事件次数);
+        Assert.Equal(0, fixtureRealCase.Connect.StopCount);
+        Assert.Equal(0, fixtureRealCase.Connect.StartCount);
+        Assert.Equal(0, EventTimes);
     }
 
     [Fact]
-    public async Task 无切换权限时_应拒绝且不留下任何状态变更()
+    public async Task NoneSwitchPermissionWhen_ShouldRejectAndNotLeaveAnyStateChange()
     {
-        await using var 夹具实例 = 构建夹具(权限: 未登录权限());
+        await using var fixtureRealCase = BuildFixture(Permission: NotLoginPermission());
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => 夹具实例.管理器.异步切换(运行模式.模拟PLC));
+            () => fixtureRealCase.Manager.SwitchAsync(RunMode.SimulationPlc));
 
-        Assert.Equal(运行模式.真实PLC, 夹具实例.管理器.当前模式);
-        Assert.IsType<FluentModbusTCP客户端>(夹具实例.代理.当前实现);
-        Assert.False(夹具实例.从站.是否运行);
-        Assert.Equal(0, 夹具实例.连接.停止次数);
-        Assert.Equal(0, 夹具实例.连接.启动次数);
+        Assert.Equal(RunMode.RealPlc, fixtureRealCase.Manager.CurrentMode);
+        Assert.IsType<FluentModbusTCPClient>(fixtureRealCase.Proxy.CurrentRealCurrent);
+        Assert.False(fixtureRealCase.Slave.IsRun);
+        Assert.Equal(0, fixtureRealCase.Connect.StopCount);
+        Assert.Equal(0, fixtureRealCase.Connect.StartCount);
     }
 
     [Fact]
-    public async Task 从站无法监听时_应中止切换且状态不变()
+    public async Task SlaveUnableToListenWhen_ShouldStopSwitchAndStateNotChange()
     {
         // 监听地址不是合法 IP → 从站在"停连接"之前就失败，属预期中的"什么都没发生"
-        await using var 夹具实例 = 构建夹具(监听地址: "不是IP");
+        await using var fixtureRealCase = BuildFixture(ListenAddress: "不是IP");
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => 夹具实例.管理器.异步切换(运行模式.模拟PLC));
+            () => fixtureRealCase.Manager.SwitchAsync(RunMode.SimulationPlc));
 
-        Assert.Equal(运行模式.真实PLC, 夹具实例.管理器.当前模式);
-        Assert.IsType<FluentModbusTCP客户端>(夹具实例.代理.当前实现);
-        Assert.False(夹具实例.从站.是否运行);
-        Assert.Equal(0, 夹具实例.连接.停止次数);
-        Assert.Equal(0, 夹具实例.连接.启动次数);
+        Assert.Equal(RunMode.RealPlc, fixtureRealCase.Manager.CurrentMode);
+        Assert.IsType<FluentModbusTCPClient>(fixtureRealCase.Proxy.CurrentRealCurrent);
+        Assert.False(fixtureRealCase.Slave.IsRun);
+        Assert.Equal(0, fixtureRealCase.Connect.StopCount);
+        Assert.Equal(0, fixtureRealCase.Connect.StartCount);
     }
 
     [Fact]
-    public async Task OPCUA模式_不支持运行期切换()
+    public async Task OpcUaMode_UnsupportedRuntimeSwitch()
     {
-        await using var 夹具实例 = 构建夹具(协议: 通讯协议.OPCUA);
+        await using var fixtureRealCase = BuildFixture(Protocol: CommunicationProtocol.OPCUA);
 
-        Assert.False(夹具实例.管理器.可在运行期切换);
+        Assert.False(fixtureRealCase.Manager.CanAtRuntimeSwitch);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => 夹具实例.管理器.异步切换(运行模式.模拟PLC));
+            () => fixtureRealCase.Manager.SwitchAsync(RunMode.SimulationPlc));
 
-        Assert.Equal(0, 夹具实例.连接.停止次数);
+        Assert.Equal(0, fixtureRealCase.Connect.StopCount);
     }
 }

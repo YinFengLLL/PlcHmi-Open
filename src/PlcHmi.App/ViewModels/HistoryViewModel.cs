@@ -3,178 +3,178 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using 上位机.应用.服务;
-using 上位机.核心.抽象;
-using 上位机.核心.枚举;
-using 上位机.核心.模型;
+using PlcHmi.App.Services;
+using PlcHmi.Core.Abstractions;
+using PlcHmi.Core.Enums;
+using PlcHmi.Core.Models;
 
-namespace 上位机.应用.视图模型;
+namespace PlcHmi.App.ViewModels;
 
 /// <summary>历史记录单元格：显示文本 + 该列颜色键（做成小对象，避免 XAML 逐格反查配置）。</summary>
-public sealed class 历史记录单元格视图模型
+public sealed class HistoryRecordCellViewModel
 {
-    public 历史记录单元格视图模型(string 文本值, string 颜色键值)
+    public HistoryRecordCellViewModel(string textValue, string colorKeyValue)
     {
-        文本 = 文本值;
-        颜色键 = 颜色键值;
+        Text = textValue;
+        ColorKey = colorKeyValue;
     }
 
     /// <summary>单元格文本（已应用小数位或 ASCII 转换）。</summary>
-    public string 文本 { get; }
+    public string Text { get; }
 
     /// <summary>文字画刷资源键（主题语义色；"无"为正文色）。</summary>
-    public string 颜色键 { get; }
+    public string ColorKey { get; }
 }
 
 /// <summary>历史记录表的一行：列配置驱动，显示值装载时算一次（避免滚动时逐格重算）。</summary>
-public sealed class 历史记录行视图模型
+public sealed class HistoryRecordRowViewModel
 {
-    public 历史记录行视图模型(
-        历史记录条目 条目, IReadOnlyList<历史数据项> 数据项集合, int 序号, 字顺序 字序)
+    public HistoryRecordRowViewModel(
+        HistoryRecordEntry Entry, IReadOnlyList<HistoryDataItem> DataItemCollection, int Sequence, WordOrder wordOrder)
     {
-        ArgumentNullException.ThrowIfNull(条目);
-        ArgumentNullException.ThrowIfNull(数据项集合);
+        ArgumentNullException.ThrowIfNull(Entry);
+        ArgumentNullException.ThrowIfNull(DataItemCollection);
 
-        模型 = 条目;
-        序号文本 = 序号.ToString(CultureInfo.InvariantCulture);
+        Model = Entry;
+        IndexText = Sequence.ToString(CultureInfo.InvariantCulture);
 
-        var 显示值 = new List<历史记录单元格视图模型>(数据项集合.Count);
+        var showValue = new List<HistoryRecordCellViewModel>(DataItemCollection.Count);
 
-        for (var 列序号 = 0; 列序号 < 数据项集合.Count; 列序号++)
+        for (var columnIndex = 0; columnIndex < DataItemCollection.Count; columnIndex++)
         {
-            var 数据项 = 数据项集合[列序号];
+            var dataItem = DataItemCollection[columnIndex];
 
             // 记录条数少于当前配置（列被增删过）时留占位符，不补 0——
             // 补 0 会让"没采到"看起来像"真的是 0"
-            显示值.Add(列序号 < 条目.数值集合.Count
-                ? new 历史记录单元格视图模型(数据项.显示文本(条目.数值集合[列序号], 字序), 数据项.颜色键)
-                : new 历史记录单元格视图模型("--", "TextDisabledBrush"));
+            showValue.Add(columnIndex < Entry.NumericValueCollection.Count
+                ? new HistoryRecordCellViewModel(dataItem.ShowText(Entry.NumericValueCollection[columnIndex], wordOrder), dataItem.ColorKey)
+                : new HistoryRecordCellViewModel("--", "TextDisabledBrush"));
         }
 
-        显示值集合 = 显示值;
+        ShowValueCollection = showValue;
     }
 
     /// <summary>原始记录。</summary>
-    public 历史记录条目 模型 { get; }
+    public HistoryRecordEntry Model { get; }
 
     /// <summary>该日第几条（1 起，按时间顺序）。</summary>
-    public string 序号文本 { get; }
+    public string IndexText { get; }
 
     /// <summary>工单号：写下记录时的上次扫码结果（不落盘，重载后为空列）。</summary>
-    public string 工单号文本 => 模型.工单号;
+    public string WorkOrderText => Model.WorkOrder;
 
     /// <summary>触发时刻（只显示时间，日期由页面标题承载）。</summary>
-    public string 时间文本 => 模型.时刻.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+    public string TimeText => Model.Timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 
     /// <summary>与当前列一一对应的显示值（含该列颜色）。</summary>
-    public IReadOnlyList<历史记录单元格视图模型> 显示值集合 { get; }
+    public IReadOnlyList<HistoryRecordCellViewModel> ShowValueCollection { get; }
 }
 
 /// <summary>历史记录页 ViewModel。</summary>
-public sealed partial class 历史记录视图模型 : 视图模型基类
+public sealed partial class HistoryRecordViewModel : ViewModelBase
 {
-    private static readonly string[] 星期名称 = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    private static readonly string[] starPeriodName = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
     /// <summary>单列宽度（与 XAML 中的列宽保持一致，用于计算横向滚动的最小宽度）。</summary>
-    private const double 列宽 = 118;
+    private const double columnWidth = 118;
 
     /// <summary>工单号列宽（与 XAML 保持一致）。</summary>
-    private const double 工单号列宽 = 140;
+    private const double workOrderColumnWidth = 140;
 
     /// <summary>固定列（工单号 + 序号 + 时间）占用的宽度。</summary>
-    private const double 固定列宽 = 工单号列宽 + 56 + 96;
+    private const double fixedColumnWidth = workOrderColumnWidth + 56 + 96;
 
-    private readonly 历史记录服务接口 _历史;
-    private readonly 用户服务接口 _用户项;
-    private readonly 对话框服务接口 _对话框;
-    private readonly 文件对话框服务接口 _文件对话框;
-    private readonly ILogger<历史记录视图模型> _日志;
+    private readonly IHistoryRecordService _history;
+    private readonly IUserService _userItem;
+    private readonly IDialogService _dialog;
+    private readonly IFileDialogService _fileDialog;
+    private readonly ILogger<HistoryRecordViewModel> _log;
 
-    private readonly Queue<历史记录条目> _待追加 = new();  // 200ms 合批，避免逐条 Insert
-    private readonly DispatcherTimer _追加合批 = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private readonly Queue<HistoryRecordEntry> _pendingAppend = new();  // 200ms 合批，避免逐条 Insert
+    private readonly DispatcherTimer _appendBatch = new() { Interval = TimeSpan.FromMilliseconds(200) };
 
-    [ObservableProperty] private DateTime _当前日期 = DateTime.Today;
-    [ObservableProperty] private string _日期文本 = string.Empty;
-    [ObservableProperty] private string _数据体名称 = string.Empty;
-    [ObservableProperty] private string _采集状态文本 = string.Empty;
-    [ObservableProperty] private string _采集状态颜色键 = "MutedBrush";
-    [ObservableProperty] private double _表格宽度 = 720;
-    [ObservableProperty] private int _记录条数;
-    [ObservableProperty] private bool _可编辑历史;
+    [ObservableProperty] private DateTime _currentDate = DateTime.Today;
+    [ObservableProperty] private string _dateText = string.Empty;
+    [ObservableProperty] private string _dataBodyName = string.Empty;
+    [ObservableProperty] private string _samplingStateText = string.Empty;
+    [ObservableProperty] private string _samplingStateColorKey = "MutedBrush";
+    [ObservableProperty] private double _tableWidth = 720;
+    [ObservableProperty] private int _recordCount;
+    [ObservableProperty] private bool _editableHistory;
 
-    public 历史记录视图模型(
-        历史记录服务接口 历史记录,
-        用户服务接口 用户,
-        对话框服务接口 对话框集合,
-        文件对话框服务接口 文件对话框,
-        ILogger<历史记录视图模型> 日志)
+    public HistoryRecordViewModel(
+        IHistoryRecordService historyRecord,
+        IUserService User,
+        IDialogService dialogCollection,
+        IFileDialogService FileDialog,
+        ILogger<HistoryRecordViewModel> Log)
     {
-        _历史 = 历史记录;
-        _用户项 = 用户;
-        _对话框 = 对话框集合;
-        _文件对话框 = 文件对话框;
-        _日志 = 日志;
+        _history = historyRecord;
+        _userItem = User;
+        _dialog = dialogCollection;
+        _fileDialog = FileDialog;
+        _log = Log;
 
-        标题 = "历史记录";
-        副标题 = "按触发位采集的数据体，可按天翻页查看、导出 CSV";
+        Title = "历史记录";
+        Subtitle = "按触发位采集的数据体，可按天翻页查看、导出 CSV";
 
-        _追加合批.Tick += (_, _) => { _追加合批.Stop(); 冲刷待追加(); };
+        _appendBatch.Tick += (_, _) => { _appendBatch.Stop(); FlushPendingAppend(); };
 
-        _历史.配置已变更 += (_, _) => 在界面线程执行(() =>
+        _history.configChanged += (_, _) => AtUiThreadExecute(() =>
         {
-            重建列();
+            RebuildColumn();
             // 列变了，已显示的行必须按新列重建（否则表头与数据错位）
-            异步安全调用.即发即忘(() => 异步加载日(当前日期), _日志, "刷新历史记录");
+            SafeInvokeAsync.FireAndForget(() => LoadDayAsync(CurrentDate), _log, "刷新历史记录");
         });
 
-        _历史.记录已新增 += (_, 条目) => 在界面线程执行(() => 追加行(条目));
+        _history.recordAlreadyAdd += (_, Entry) => AtUiThreadExecute(() => AppendRow(Entry));
 
-        _用户项.用户已变更 += (_, _) => 在界面线程执行(刷新权限);
+        _userItem.userChanged += (_, _) => AtUiThreadExecute(RefreshPermission);
 
-        重建列();
-        刷新权限();
+        RebuildColumn();
+        RefreshPermission();
     }
 
     /// <summary>表格列（配置里的数据项，按显示顺序）。</summary>
-    public 批量可观察集合<历史数据项> 列集合 { get; } = new();
+    public BatchObservableCollection<HistoryDataItem> ColumnCollection { get; } = new();
 
     /// <summary>当前日期的记录（最新的在最上面，新记录不必滚动就能看见）。</summary>
     /// <remarks>
     /// 用 <see cref="批量可观察集合{T}"/>：翻页装载是"整表替换"，
     /// 逐条 Add 会对每一行各发一次通知，几千行就是几千次布局。
     /// </remarks>
-    public 批量可观察集合<历史记录行视图模型> 记录集合 { get; } = new();
+    public BatchObservableCollection<HistoryRecordRowViewModel> RecordCollection { get; } = new();
 
     /// <summary>当前日期的记录条数文本。</summary>
-    public string 记录条数文本 => $"共 {记录条数} 条";
+    public string RecordCountText => $"共 {RecordCount} 条";
 
     /// <inheritdoc />
-    public override Task 异步初始化()
+    public override Task InitializeAsync()
     {
-        重建列();
-        刷新权限();
-        return 异步加载日(当前日期);
+        RebuildColumn();
+        RefreshPermission();
+        return LoadDayAsync(CurrentDate);
     }
 
-    partial void On记录条数Changed(int value) => OnPropertyChanged(nameof(记录条数文本));
+    partial void OnRecordCountChanged(int value) => OnPropertyChanged(nameof(RecordCountText));
 
     // ── 翻页 ────────────────────────────────────────────────────────────
 
     /// <summary>前一天（跳到最近有记录的前一天，停机几天后翻页不必连点十几下）。</summary>
     [RelayCommand]
-    private Task 异步前一天() => 异步翻页(-1);
+    private Task BeforeOneDaysAsync() => FlipPageAsync(-1);
 
     /// <summary>后一天（同上，跳到最近有记录的后一天）。</summary>
     [RelayCommand]
-    private Task 异步后一天() => 异步翻页(1);
+    private Task AfterOneDaysAsync() => FlipPageAsync(1);
 
     /// <summary>回到今天。</summary>
     [RelayCommand]
-    private Task 异步回到今天() => 异步加载日(DateTime.Today);
+    private Task BackToTodayAsync() => LoadDayAsync(DateTime.Today);
 
-    private async Task 异步翻页(int 方向)
+    private async Task FlipPageAsync(int direction)
     {
-        var 日期列表 = _历史.有记录的日期集合();
+        var dateList = _history.HasRecordDateCollection();
 
         // 【2026-11-12 修复】这里原来写的是 Where(...).MaxBy/MinBy，
         // 而 MaxBy/MinBy 在**空序列 + 不可空值类型**（DateTime）上不返回 null，
@@ -182,214 +182,214 @@ public sealed partial class 历史记录视图模型 : 视图模型基类
         // 于是"前一天没有数据"时友好提示永远走不到，异常直接冒到全局处理器，
         // 顶栏挂红条「程序异常（已记录日志，可继续操作）：InvalidOperationException…」。
         // 现在先筛成列表再判空，空列表就是"没有更多记录"。
-        var 候选列表 = 日期列表
-            .Where(日期值 => 方向 < 0 ? 日期值 < 当前日期 : 日期值 > 当前日期)
+        var candidateList = dateList
+            .Where(dateValue => direction < 0 ? dateValue < CurrentDate : dateValue > CurrentDate)
             .ToList();
 
-        if (候选列表.Count == 0)
+        if (candidateList.Count == 0)
         {
-            _对话框.提示("没有更多记录",
-                方向 < 0
-                    ? $"没有早于 {当前日期:yyyy-MM-dd} 的历史记录。"
-                    : $"没有晚于 {当前日期:yyyy-MM-dd} 的历史记录。");
+            _dialog.Hint("没有更多记录",
+                direction < 0
+                    ? $"没有早于 {CurrentDate:yyyy-MM-dd} 的历史记录。"
+                    : $"没有晚于 {CurrentDate:yyyy-MM-dd} 的历史记录。");
             return;
         }
 
-        var 候选 = 方向 < 0 ? 候选列表.Max() : 候选列表.Min();
+        var candidate = direction < 0 ? candidateList.Max() : candidateList.Min();
 
-        await 异步加载日(候选).ConfigureAwait(true);
+        await LoadDayAsync(candidate).ConfigureAwait(true);
     }
 
     // ── 导出 / 清除 / 配置 ──────────────────────────────────────────────
 
     [RelayCommand]
-    private async Task 异步导出CSV()
+    private async Task ExportCsvAsync()
     {
-        var 默认名称 = $"历史记录-{当前日期:yyyy-MM-dd}.csv";
+        var defaultName = $"历史记录-{CurrentDate:yyyy-MM-dd}.csv";
 
-        var 文件路径 = _文件对话框.选择保存文件("导出历史记录", 文件对话框服务.CSV筛选, 默认名称);
+        var filePath = _fileDialog.SelectSaveFile("导出历史记录", FileDialogService.csvFilter, defaultName);
 
-        if (文件路径 is null)
+        if (filePath is null)
         {
             return;
         }
 
-        var 成功 = await 界面命令
-            .异步执行(_日志, _对话框, "导出", () => _历史.异步导出CSV到文件(文件路径, 当前日期), 默认名称)
+        var Success = await UiCommand
+            .ExecuteAsync(_log, _dialog, "导出", () => _history.ExportCsvToFileAsync(filePath, CurrentDate), defaultName)
             .ConfigureAwait(true);
 
-        if (成功)
+        if (Success)
         {
-            _对话框.提示("导出完成", $"{当前日期:yyyy-MM-dd} 的 {记录条数} 条记录已导出：\n{文件路径}");
+            _dialog.Hint("导出完成", $"{CurrentDate:yyyy-MM-dd} 的 {RecordCount} 条记录已导出：\n{filePath}");
         }
     }
 
     [RelayCommand]
-    private async Task 异步清除历史()
+    private async Task ClearRemoveHistoryAsync()
     {
-        if (!可编辑历史)
+        if (!EditableHistory)
         {
-            _对话框.提示("权限不足", "只有管理员可以清除历史记录。");
+            _dialog.Hint("权限不足", "只有管理员可以清除历史记录。");
             return;
         }
 
-        var 天数 = _历史.有记录的日期集合().Count;
+        var daysNumber = _history.HasRecordDateCollection().Count;
 
-        if (!_对话框.确认("清除历史数据",
-                $"确认清除全部历史记录？共 {天数} 天的数据。",
-                视图.确认等级.危险, "清除",
+        if (!_dialog.Confirm("清除历史数据",
+                $"确认清除全部历史记录？共 {daysNumber} 天的数据。",
+                Views.ConfirmLevel.Danger, "清除",
                 "历史记录将永久删除，不可撤销；追溯设备动作与工艺参数时将无据可查。"))
         {
             return;
         }
 
-        var 成功 = await 界面命令
-            .异步执行(_日志, _对话框, "清除", () => _历史.异步清除全部(), "全部历史记录")
+        var Success = await UiCommand
+            .ExecuteAsync(_log, _dialog, "清除", () => _history.ClearRemoveAllAsync(), "全部历史记录")
             .ConfigureAwait(true);
 
-        if (!成功)
+        if (!Success)
         {
             return;
         }
 
-        await 异步加载日(DateTime.Today).ConfigureAwait(true);
-        _对话框.提示("已清除", "历史记录已全部清除。");
+        await LoadDayAsync(DateTime.Today).ConfigureAwait(true);
+        _dialog.Hint("已清除", "历史记录已全部清除。");
     }
 
     [RelayCommand]
-    private async Task 异步编辑配置()
+    private async Task EditConfigAsync()
     {
-        if (!可编辑历史)
+        if (!EditableHistory)
         {
-            _对话框.提示("权限不足", "只有管理员可以修改历史记录配置。");
+            _dialog.Hint("权限不足", "只有管理员可以修改历史记录配置。");
             return;
         }
 
         // 编辑的是克隆副本：取消时运行中的配置必须原封不动
-        var 副本 = _历史.配置.克隆();
+        var copy = _history.Config.Clone();
 
-        if (!_对话框.编辑历史记录配置(副本))
+        if (!_dialog.EditHistoryRecordConfig(copy))
         {
             return;
         }
 
-        var 校验项 = _历史.校验(副本);
+        var validateItem = _history.Validate(copy);
 
-        if (!校验项.是否有效)
+        if (!validateItem.IsValid)
         {
-            _对话框.错误信息("校验失败", 校验项.摘要);
+            _dialog.ErrorInfo("校验失败", validateItem.Summary);
             return;
         }
 
-        var 成功 = await 界面命令
-            .异步执行(_日志, _对话框, "保存配置", () => _历史.异步保存配置(副本), "历史记录配置")
+        var Success = await UiCommand
+            .ExecuteAsync(_log, _dialog, "保存配置", () => _history.SaveConfigAsync(copy), "历史记录配置")
             .ConfigureAwait(true);
 
-        if (!成功)
+        if (!Success)
         {
             return;
         }
 
-        重建列();
-        await 异步加载日(当前日期).ConfigureAwait(true);
+        RebuildColumn();
+        await LoadDayAsync(CurrentDate).ConfigureAwait(true);
 
-        _对话框.提示("已保存",
-            $"历史记录配置已保存：触发位 {副本.触发地址}，{副本.数据项集合.Count} 个数据项。");
+        _dialog.Hint("已保存",
+            $"历史记录配置已保存：触发位 {copy.TriggerAddress}，{copy.DataItemCollection.Count} 个数据项。");
     }
 
     // ── 数据加载与刷新 ──────────────────────────────────────────────────
 
-    private Task 异步加载日(DateTime 日期) =>
-        界面命令.异步执行(_日志, _对话框, "加载历史记录", async () =>
+    private Task LoadDayAsync(DateTime Date) =>
+        UiCommand.ExecuteAsync(_log, _dialog, "加载历史记录", async () =>
         {
-            当前日期 = 日期.Date;
+            CurrentDate = Date.Date;
 
-            var 条目列表 = await _历史.异步读取日(当前日期).ConfigureAwait(true);
+            var entryList = await _history.ReadDayAsync(CurrentDate).ConfigureAwait(true);
 
-            _待追加.Clear();
-            _追加合批.Stop();
-            重建行(条目列表);
-        }, 日期.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            _pendingAppend.Clear();
+            _appendBatch.Stop();
+            RebuildRow(entryList);
+        }, Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
 
-    private void 重建列()
+    private void RebuildColumn()
     {
-        var 配置 = _历史.配置;
+        var Config = _history.Config;
 
-        列集合.替换全部(配置.数据项集合);
+        ColumnCollection.ReplaceAll(Config.DataItemCollection);
 
         // 表格横向最小宽度：列多时出现横向滚动条，而不是把每列挤成看不清
-        表格宽度 = Math.Max(720, 固定列宽 + 列集合.Count * 列宽);
+        TableWidth = Math.Max(720, fixedColumnWidth + ColumnCollection.Count * columnWidth);
 
-        数据体名称 = 配置.标题;
-        副标题 = $"{配置.标题} · 按天翻页查看，可导出 CSV";
+        DataBodyName = Config.Title;
+        Subtitle = $"{Config.Title} · 按天翻页查看，可导出 CSV";
 
-        刷新采集状态();
-        刷新日期文本();
+        RefreshSamplingState();
+        RefreshDateText();
     }
 
     /// <summary>按当前列重建全部行（最新的在最上面）。</summary>
-    private void 重建行(IReadOnlyList<历史记录条目> 条目列表)
+    private void RebuildRow(IReadOnlyList<HistoryRecordEntry> entryList)
     {
-        var 配置 = _历史.配置;
-        var 行列表 = new List<历史记录行视图模型>(条目列表.Count);
+        var Config = _history.Config;
+        var rowList = new List<HistoryRecordRowViewModel>(entryList.Count);
 
-        for (var 序号 = 条目列表.Count - 1; 序号 >= 0; 序号--)
+        for (var Sequence = entryList.Count - 1; Sequence >= 0; Sequence--)
         {
-            行列表.Add(new 历史记录行视图模型(
-                条目列表[序号], 配置.数据项集合, 序号 + 1, 配置.字顺序));
+            rowList.Add(new HistoryRecordRowViewModel(
+                entryList[Sequence], Config.DataItemCollection, Sequence + 1, Config.WordOrder));
         }
 
         // 整表替换只发一次 Reset 通知（逐条 Add 会触发 N 次布局）
-        记录集合.替换全部(行列表);
+        RecordCollection.ReplaceAll(rowList);
 
-        记录条数 = 条目列表.Count;
-        刷新日期文本();
+        RecordCount = entryList.Count;
+        RefreshDateText();
     }
 
     /// <summary>采集线程记下一条：只入队，200ms 内多条合并成一次整表替换，最新的仍排在最上面。</summary>
-    private void 追加行(历史记录条目 条目)
+    private void AppendRow(HistoryRecordEntry Entry)
     {
-        if (条目.时刻.Date != 当前日期) return;   // 翻看别的日期：不打扰当前视图
-        _待追加.Enqueue(条目);
-        _追加合批.Stop();
-        _追加合批.Start();
+        if (Entry.Timestamp.Date != CurrentDate) return;   // 翻看别的日期：不打扰当前视图
+        _pendingAppend.Enqueue(Entry);
+        _appendBatch.Stop();
+        _appendBatch.Start();
     }
 
-    private void 冲刷待追加()
+    private void FlushPendingAppend()
     {
-        var 配置 = _历史.配置;
-        var 全部 = 记录集合.ToList();   // 替换全部() 会清空自身，先快照旧行；Insert(0) 保持最新在最上
-        while (_待追加.Count > 0)
+        var Config = _history.Config;
+        var All = RecordCollection.ToList();   // 替换全部() 会清空自身，先快照旧行；Insert(0) 保持最新在最上
+        while (_pendingAppend.Count > 0)
         {
-            记录条数++;
-            全部.Insert(0, new 历史记录行视图模型(
-                _待追加.Dequeue(), 配置.数据项集合, 记录条数, 配置.字顺序));
+            RecordCount++;
+            All.Insert(0, new HistoryRecordRowViewModel(
+                _pendingAppend.Dequeue(), Config.DataItemCollection, RecordCount, Config.WordOrder));
         }
-        记录集合.替换全部(全部);
+        RecordCollection.ReplaceAll(All);
     }
 
-    private void 刷新日期文本()
+    private void RefreshDateText()
     {
-        var 今天 = DateTime.Today;
-        var 后缀 = 当前日期 == 今天
+        var TodayDate = DateTime.Today;
+        var suffix = CurrentDate == TodayDate
             ? "（今天）"
-            : 当前日期 == 今天.AddDays(-1) ? "（昨天）" : string.Empty;
+            : CurrentDate == TodayDate.AddDays(-1) ? "（昨天）" : string.Empty;
 
-        日期文本 = $"{当前日期:yyyy-MM-dd} {星期名称[(int)当前日期.DayOfWeek]}{后缀}";
+        DateText = $"{CurrentDate:yyyy-MM-dd} {starPeriodName[(int)CurrentDate.DayOfWeek]}{suffix}";
     }
 
-    private void 刷新采集状态()
+    private void RefreshSamplingState()
     {
-        var 配置 = _历史.配置;
+        var Config = _history.Config;
 
-        var 握手说明 = 配置.读取后复位触发位 ? "读取后自动复位触发位" : "触发位由 PLC 复位";
+        var handshakeDescription = Config.ReadAfterResetTriggerBit ? "读取后自动复位触发位" : "触发位由 PLC 复位";
 
-        采集状态文本 = 配置.启用
-            ? $"采集中：触发位 {配置.触发地址}（上升沿记一条 · {握手说明}）· {配置.数据项集合.Count} 个数据项"
-            : $"已停用采集：触发位 {配置.触发地址} · {配置.数据项集合.Count} 个数据项";
+        SamplingStateText = Config.Enabled
+            ? $"采集中：触发位 {Config.TriggerAddress}（上升沿记一条 · {handshakeDescription}）· {Config.DataItemCollection.Count} 个数据项"
+            : $"已停用采集：触发位 {Config.TriggerAddress} · {Config.DataItemCollection.Count} 个数据项";
 
-        采集状态颜色键 = 配置.启用 ? "SuccessBrush" : "MutedBrush";
+        SamplingStateColorKey = Config.Enabled ? "SuccessBrush" : "MutedBrush";
     }
 
-    private void 刷新权限() => 可编辑历史 = _用户项.有(权限.编辑历史记录);
+    private void RefreshPermission() => EditableHistory = _userItem.Has(Permission.EditHistoryRecord);
 }

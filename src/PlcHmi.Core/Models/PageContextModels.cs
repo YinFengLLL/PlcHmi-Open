@@ -1,4 +1,4 @@
-namespace 上位机.核心.模型;
+namespace PlcHmi.Core.Models;
 
 /// <summary>
 /// 页面上下文寄存器：上位机把"操作员此刻在哪一页、选中了哪个点"同步给 PLC，
@@ -22,17 +22,17 @@ namespace 上位机.核心.模型;
 /// 写死反而比再开一份配置少一个出错入口。
 /// 它们都落在机种区段（D2500–D3999）之外，属"全局记忆"：不随机种切换。</para>
 /// </summary>
-public static class 页面上下文寄存器
+public static class PageContextRegister
 {
     /// <summary>页面号寄存器：D10（主监控 = 1，按侧栏顺序递增）。</summary>
-    public const int 页码 = 10;
+    public const int pageNumber = 10;
 
     /// <summary>锁附示教点码寄存器：D651（0 基，第一个点 = 0）。</summary>
-    public const int 锁附示教点码 = 651;
+    public const int screwTeachPointCode = 651;
 
     /// <summary>点胶示教点码寄存器：D652（0 基，第一个点 = 0）。</summary>
-    public const int 点胶示教点码 = 652;
+    public const int dispenseTeachPointCode = 652;
 
     /// <summary>标定页「其它点」点码寄存器：D653（0 基，第一个点 = 0）。</summary>
-    public const int 标定其它点点码 = 653;
+    public const int calibrationOtherPointPointCode = 653;
 }

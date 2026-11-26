@@ -1,63 +1,63 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace 上位机.业务.服务;
+namespace PlcHmi.Business.Services;
 
 /// <summary>
-/// <see cref="弹窗监控服务"/> 的「配置装载 + 触发轮询」部分（partial）。
+/// <see cref="PopupMonitorService"/> 的「配置装载 + 触发轮询」部分（partial）。
 ///
 /// <para>从主文件拆出：主文件已顶到项目规模门禁（400 行）。这里的职责单一——
 /// 把 <c>config/popups.json</c> 读进内存，并常驻轮询各弹窗的触发线圈；
 /// 按钮写入与配置保存留在主文件（那是"操作"，这里是"监视"）。</para>
 /// </summary>
-public sealed partial class 弹窗监控服务
+public sealed partial class PopupMonitorService
 {
     // ── 内部：装载与轮询 ────────────────────────────────────────────────
 
-    private void 装载配置()
+    private void InstallLoadConfig()
     {
         try
         {
-            if (!File.Exists(存储路径))
+            if (!File.Exists(storePath))
             {
-                _日志.LogInformation("未配置弹窗（{Path} 不存在），弹窗功能静默待命", 存储路径);
+                _log.LogInformation("未配置弹窗（{Path} 不存在），弹窗功能静默待命", storePath);
                 return;
             }
 
-            var 文件 = JsonSerializer.Deserialize<弹窗文件>(
-                File.ReadAllText(存储路径), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var file = JsonSerializer.Deserialize<PopupFile>(
+                File.ReadAllText(storePath), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            _弹窗.Clear();
+            _popup.Clear();
 
-            if (文件 is not null)
+            if (file is not null)
             {
-                _弹窗.AddRange(文件.弹窗集合.Where(定义 => !string.IsNullOrWhiteSpace(定义.触发地址)));
+                _popup.AddRange(file.PopupCollection.Where(Definition => !string.IsNullOrWhiteSpace(Definition.TriggerAddress)));
             }
 
-            _日志.LogInformation("已装载 {Count} 个可配置弹窗", _弹窗.Count);
+            _log.LogInformation("已装载 {Count} 个可配置弹窗", _popup.Count);
 
             // 装载即校验触发地址：地址写错时现场只会看到"弹窗不出现"，
             // 必须在日志里明确说清是哪个弹窗的哪个地址没解析出来。
-            foreach (var 定义 in _弹窗)
+            foreach (var Definition in _popup)
             {
-                if (解析线圈(定义.触发地址) is not { } 基址)
+                if (ParseCoil(Definition.TriggerAddress) is not { } BaseAddress)
                 {
-                    _日志.LogWarning(
+                    _log.LogWarning(
                         "弹窗「{Name}」的触发地址「{Address}」不是有效的 M 区线圈，该弹窗不会被触发",
-                        定义.名称, 定义.触发地址);
+                        Definition.Name, Definition.TriggerAddress);
                     continue;
                 }
 
-                _日志.LogInformation(
+                _log.LogInformation(
                     "弹窗「{Name}」监听触发地址 {Address}（线圈 {Base}）",
-                    定义.名称, 定义.触发地址, 基址);
+                    Definition.Name, Definition.TriggerAddress, BaseAddress);
             }
         }
-        catch (Exception 异常) when (异常 is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
         {
             // 收窄为具体类型（读文件 + 反序列化可能抛出的全集），语义不变：
             // 装载失败只停用弹窗功能，不带崩进程
-            _日志.LogError(异常, "装载弹窗配置失败（{Path}），弹窗功能停用", 存储路径);
+            _log.LogError(exception, "装载弹窗配置失败（{Path}），弹窗功能停用", storePath);
         }
     }
 
@@ -71,27 +71,27 @@ public sealed partial class 弹窗监控服务
     /// <para><b>为什么 try/catch 在循环内：</b>放在循环外时，一次通信异常会永久终止轮询
     /// （弹窗从此彻底失灵，且日志里只有一条 Warning）。放在循环内则"本轮跳过、下轮继续"。</para>
     /// </summary>
-    private async Task 轮询循环()
+    private async Task PollingLoopRing()
     {
-        using var 周期 = new PeriodicTimer(TimeSpan.FromMilliseconds(600));
+        using var weekPeriod = new PeriodicTimer(TimeSpan.FromMilliseconds(600));
 
         try
         {
-            while (await 周期.WaitForNextTickAsync().ConfigureAwait(false))
+            while (await weekPeriod.WaitForNextTickAsync().ConfigureAwait(false))
             {
-                if (!_客户端.是否已连接)
+                if (!_client.IsConnected)
                 {
                     continue;
                 }
 
                 try
                 {
-                    await 轮询一轮().ConfigureAwait(false);
+                    await PollingOneRound().ConfigureAwait(false);
                 }
-                catch (Exception 异常)
+                catch (Exception exception)
                 {
                     // 轮询线程绝不能带崩进程：通信抖动会导致弹窗暂时失灵，下轮自动恢复
-                    _日志.LogWarning(异常, "弹窗触发轮询异常，本轮跳过");
+                    _log.LogWarning(exception, "弹窗触发轮询异常，本轮跳过");
                 }
             }
         }
@@ -101,70 +101,70 @@ public sealed partial class 弹窗监控服务
         }
     }
 
-    private async Task 轮询一轮()
+    private async Task PollingOneRound()
     {
-        List<线圈定位> 定位列表;
+        List<CoilPositioning> positioningList;
 
-        lock (_同步)
+        lock (_sync)
         {
-            定位列表 = _弹窗
-                .Select(定义 =>
+            positioningList = _popup
+                .Select(Definition =>
                 {
-                    var 基址 = 解析线圈(定义.触发地址);
-                    return new 线圈定位(定义.键, 基址 ?? -1, 基址 is not null);
+                    var BaseAddress = ParseCoil(Definition.TriggerAddress);
+                    return new CoilPositioning(Definition.Key, BaseAddress ?? -1, BaseAddress is not null);
                 })
                 .ToList();
         }
 
-        string? 新触发键 = null;
+        string? newTriggerKey = null;
 
-        foreach (var 定位 in 定位列表)
+        foreach (var positioning in positioningList)
         {
-            if (!定位.解析成功)
+            if (!positioning.parseSuccess)
             {
                 continue;
             }
 
             try
             {
-                var 线圈列表 = await _客户端
-                    .异步读取线圈(定位.基址, 1)
+                var coilList = await _client
+                    .ReadCoilAsync(positioning.BaseAddress, 1)
                     .ConfigureAwait(false);
 
-                if (线圈列表.Length > 0 && 线圈列表[0])
+                if (coilList.Length > 0 && coilList[0])
                 {
-                    新触发键 = 定位.键;
+                    newTriggerKey = positioning.Key;
                     break;
                 }
             }
-            catch (Exception 异常)
+            catch (Exception exception)
             {
-                _日志.LogWarning(异常, "读取弹窗触发线圈 D 基址 {Base} 失败", 定位.基址);
+                _log.LogWarning(exception, "读取弹窗触发线圈 D 基址 {Base} 失败", positioning.BaseAddress);
             }
         }
 
-        if (新触发键 == 当前触发键)
+        if (newTriggerKey == CurrentTriggerKey)
         {
             return;
         }
 
-        当前触发键 = 新触发键;
+        CurrentTriggerKey = newTriggerKey;
 
         // 触发/消失都记一条：现场排查"为什么没弹窗"时，日志要能一眼看出
         // 上位机到底有没有读到那个线圈。
-        if (新触发键 is null)
+        if (newTriggerKey is null)
         {
-            _日志.LogInformation("弹窗触发线圈已断开，弹窗收起");
+            _log.LogInformation("弹窗触发线圈已断开，弹窗收起");
         }
         else
         {
-            var 定义 = 弹窗集合.FirstOrDefault(条目 => 条目.键 == 新触发键);
+            var Definition = PopupCollection.FirstOrDefault(Entry => Entry.Key == newTriggerKey);
 
-            _日志.LogInformation(
+            _log.LogInformation(
                 "弹窗「{Name}」触发（{Address} 闭合），主界面已显示",
-                定义?.名称 ?? 新触发键, 定义?.触发地址 ?? "?");
+                Definition?.Name ?? newTriggerKey, Definition?.TriggerAddress ?? "?");
         }
 
-        触发已变更?.Invoke(this, 新触发键);
+        triggerChanged?.Invoke(this, newTriggerKey);
     }
 }

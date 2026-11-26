@@ -1,26 +1,26 @@
 {
-  "元件集合": [
+  "componentCollection": [
     {
-      "标识": "cyl-1",
-      "类型": "按钮",
-      "名称": "螺丝机开盖",
-      "顺序": 1,
-      "地址": "M486",
-      "状态地址": "",
-      "变量": "",
-      "状态值变量": "",
-      "注释": null
+      "id": "cyl-1",
+      "kind": "Button",
+      "name": "螺丝机开盖",
+      "order": 1,
+      "address": "M486",
+      "stateAddress": "",
+      "variable": "",
+      "stateValueVariable": "",
+      "comment": null
     },
     {
-      "标识": "cyl-2",
-      "类型": "气缸",
-      "名称": "螺丝机定位气缸",
-      "顺序": 2,
-      "地址": "M494",
-      "状态地址": "",
-      "变量": "",
-      "状态值变量": "",
-      "注释": null
+      "id": "cyl-2",
+      "kind": "Cylinder",
+      "name": "螺丝机定位气缸",
+      "order": 2,
+      "address": "M494",
+      "stateAddress": "",
+      "variable": "",
+      "stateValueVariable": "",
+      "comment": null
     }
   ]
 }
