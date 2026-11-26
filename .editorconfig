@@ -1,0 +1,112 @@
+# ============================================================================
+# PlcHmi 代码规范基线（.editorconfig）
+# 目的：把「格式」交给工具，把「逻辑」留给人。
+# 引入方式：放在仓库根目录即可自动生效（VS / Rider / dotnet format 均识别）。
+# 注意：本文件只设置格式偏好与代码风格建议，不把任何规则设为 error，
+#       因此不会让现有构建变红。收紧为 error 请走 Directory.Build.props。
+# ============================================================================
+
+root = true
+
+# ---------------------------------------------------------------- 全局默认
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+[*.{json,yml,yaml,xml,csproj,props,targets,slnx,config}]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[*.{md,markdown}]
+indent_size = 2
+trim_trailing_whitespace = false
+# Markdown 中行尾双空格有语义（强制换行），不要删
+
+[*.{sh,bash}]
+indent_size = 2
+end_of_line = lf
+
+[*.{cmd,bat}]
+end_of_line = crlf
+
+# ---------------------------------------------------------------- C# 语言特性
+[*.cs]
+indent_size = 4
+
+# --- 现代语法（团队统一用语，避免同一件事两种写法）---
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_prefer_braces = true:suggestion
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_prefer_switch_expression = true:suggestion
+csharp_style_prefer_pattern_matching = true:suggestion
+csharp_style_throw_expression = true:suggestion
+
+# --- using 指令 ---
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:suggestion
+
+# --- 本项目特别关注：async / 线程纪律（对应红线 R2）---
+csharp_style_prefer_async_await = true:suggestion
+
+# ⚠️ 重要：下面三条规则的现状与理由各不相同，改动前先读完这段。
+#
+#   CA1849（异步方法内调用同步阻塞 API）—— 已升为 warning，纳入构建门禁。
+#     2026-09-10 修掉全部 4 处：AlarmDefinitionService / ManualWidgetService /
+#     ParamTableService / UserService 的 InitializeAsync 里，同步的
+#     JsonSerializer.Deserialize 改为 await JsonSerializer.DeserializeAsync。
+#     此后本规则应保持 0 命中。
+#
+#   CA2000（未释放 IDisposable）—— 已升为 warning，纳入构建门禁。
+#     2026-09-10 修掉 3 处测试里 VirtualPlcDevice 未释放的问题。
+#     注意：VirtualPlcDevice 实现的是 IAsyncDisposable，必须写 `await using`，
+#     写 `using` 会直接编译失败（CS8418）。
+#
+#   CA1031（不要捕获通用异常类型）—— 保持 suggestion，**这是刻意的，不要提升为 warning**。
+#     全项目 198 处命中，且绝大多数是**正确**的：工控后台服务的顶层捕获就该是
+#     "记录 + 继续运行"。收窄成 catch (IOException) 反而会让现场因为一个没预料到的
+#     异常类型整个崩掉 —— 那比"宽泛捕获"严重得多。
+#     留在 IDE 提示级别即可，不进构建门禁。
+dotnet_diagnostic.CA1031.severity = suggestion  # 宽泛捕获：工控后台服务的刻意设计，勿提升
+dotnet_diagnostic.CA1849.severity = warning     # 异步方法内调用同步阻塞 API
+dotnet_diagnostic.CA2000.severity = warning     # 未释放 IDisposable / IAsyncDisposable
+dotnet_diagnostic.CA2007.severity = none        # ConfigureAwait 由项目自行把握（WPF + 类库混用）
+
+# --- 资源释放 ---
+dotnet_diagnostic.CA2213.severity = suggestion  # IDisposable 字段未在 Dispose 中释放
+
+# --- 异常处理（对应红线：禁止静默吞异常）---
+dotnet_diagnostic.CA2201.severity = suggestion  # 不要抛出通用异常类型
+
+# --- 空值与边界 ---
+dotnet_diagnostic.CA1062.severity = none      # 公参 null 校验：由 Nullable 上下文覆盖，避免噪音
+# 注：CS8600 等可空性警告的收紧（升为 error）请放到 Directory.Build.props，
+#     因为 .editorconfig 的 severity 在构建期同样生效，改动会影响现有构建结果。
+
+# --- 命名（与现有代码保持一致：私有字段 _camelCase）---
+dotnet_naming_rule.private_fields_underscore.severity = suggestion
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# --- 接口与类型命名 ---
+dotnet_naming_rule.interfaces_start_with_i.severity = warning
+dotnet_naming_rule.interfaces_start_with_i.symbols = interfaces
+dotnet_naming_rule.interfaces_start_with_i.style = i_prefix
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+dotnet_naming_style.i_prefix.required_prefix = I
+dotnet_naming_style.i_prefix.capitalization = pascal_case

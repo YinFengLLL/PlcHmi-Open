@@ -1,0 +1,34 @@
+# 统一行尾策略：仓库内存 LF，工作区检出 CRLF（与 .editorconfig 的 end_of_line = crlf 一致）
+# 加这条之前仓库混装了 LF/CRLF，导致每次 git diff 出现上千行纯行尾噪声。
+* text=auto
+
+# 明确按 LF 存储并检出的脚本（在 Git Bash / WSL / Linux CI 上必须能直接执行）
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows 脚本与解决方案文件固定 CRLF，避免 cmd.exe / PowerShell 解析问题
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+
+# 二进制文件：不参与行尾转换与文本 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.bmp binary
+*.ico binary
+*.zip binary
+*.rar binary
+*.7z binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.snk binary
+*.pfx binary
+*.cer binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary

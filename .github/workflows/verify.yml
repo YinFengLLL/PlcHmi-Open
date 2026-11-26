@@ -1,0 +1,57 @@
+# PlcHmi 提交门禁（CI 模板）
+#
+# docs/04 §6 P2 第 ⑧ 项的落地：把 tools/verify.ps1 里那套门禁搬到每次 push / PR 上，
+# 不再依赖"记得本地跑一遍"。
+#
+# ⚠️ 说明：本项目此前没有任何 CI。这个文件是**可直接使用的模板**，
+#    但它在本机无法被验证（跑起来需要推到 GitHub）。
+#    如果内部用的是 GitLab / Jenkins / 自建 runner，把下面的步骤照搬即可 ——
+#    核心只有一条：`pwsh tools/verify.ps1`，其余都是环境准备。
+
+name: verify
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  verify:
+    # WPF 项目只能在 Windows 上构建
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: 安装 Python（对比度与规模门禁）
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: 全部门禁（构建 / 测试 / 界面自检 / 对比度 / 规模）
+        # verify.ps1 内部：build -warnaserror --no-incremental → test → --smoke → 两个 python 门禁
+        # 任何一步红灯即非 0 退出
+        shell: pwsh
+        run: ./tools/verify.ps1
+
+      - name: 上传测试与截图产物（失败时便于排查）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            src/PlcHmi.App/bin/Debug/net10.0-windows/logs/
+          if-no-files-found: ignore
+          retention-days: 7

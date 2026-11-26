@@ -1,0 +1,74 @@
+<Window x:Class="上位机.应用.视图.辅助点编辑对话框"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="其它点编辑"
+        Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        Style="{StaticResource DialogWindow}">
+
+    <Grid Margin="{StaticResource DialogMargin}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="{StaticResource GapBottom12}">
+            <TextBlock x:Name="标题控件" Style="{StaticResource DialogTitleText}" />
+            <TextBlock Text="名称可改（与其它点重名会被拒绝）；坐标基址为 D 区寄存器序号，写入 / 读取均按 Float32（占 2 字）。"
+                       Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop8}"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="名称" Style="{StaticResource BodyText}"
+                       VerticalAlignment="Center" Margin="{StaticResource GapRight12}" />
+            <TextBox x:Name="名称框" Grid.Column="1" Style="{StaticResource InputBox}"
+                     Margin="{StaticResource GapBottom12}" />
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="X" Style="{StaticResource BodyText}"
+                       VerticalAlignment="Center" Margin="{StaticResource GapRight12}" />
+            <TextBox x:Name="X框" Grid.Column="1" Style="{StaticResource InputBox}"
+                     FontFamily="{StaticResource NumericFontFamily}" MaxLength="12"
+                     Margin="{StaticResource GapRight12}" />
+            <TextBlock Grid.Column="2" Text="Y" Style="{StaticResource BodyText}"
+                       VerticalAlignment="Center" Margin="{StaticResource GapRight12}" />
+            <TextBox x:Name="Y框" Grid.Column="3" Style="{StaticResource InputBox}"
+                     FontFamily="{StaticResource NumericFontFamily}" MaxLength="12"
+                     Margin="{StaticResource GapRight12}" />
+            <TextBlock Grid.Column="4" Text="Z" Style="{StaticResource BodyText}"
+                       VerticalAlignment="Center" Margin="{StaticResource GapRight12}" />
+            <TextBox x:Name="Z框" Grid.Column="5" Style="{StaticResource InputBox}"
+                     FontFamily="{StaticResource NumericFontFamily}" MaxLength="12" />
+        </Grid>
+
+        <StackPanel Grid.Row="3" Margin="{StaticResource GapTop16}">
+            <TextBlock x:Name="消息文本" Text=""
+                       Foreground="{DynamicResource DangerBrush}"
+                       Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                       Margin="{StaticResource GapBottom8}" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="取消" Style="{StaticResource SecondaryButton}"
+                        Width="100" Height="44" Margin="{StaticResource GapRight12}"
+                        IsCancel="True" Click="取消" />
+                <Button Content="确定" Style="{StaticResource PrimaryButton}"
+                        Width="110" Height="44" IsDefault="True" Click="确认" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Window>

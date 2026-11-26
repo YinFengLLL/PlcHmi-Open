@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PlcHmi.App/PlcHmi.App.csproj" />
+    <Project Path="src/PlcHmi.Business/PlcHmi.Business.csproj" />
+    <Project Path="src/PlcHmi.Communication/PlcHmi.Communication.csproj" />
+    <Project Path="src/PlcHmi.Core/PlcHmi.Core.csproj" />
+    <Project Path="src/PlcHmi.Tests/PlcHmi.Tests.csproj" />
+  </Folder>
+</Solution>

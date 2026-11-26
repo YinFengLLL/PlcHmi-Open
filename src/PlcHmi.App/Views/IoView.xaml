@@ -1,0 +1,259 @@
+<UserControl x:Class="上位机.应用.视图.IO视图"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:上位机.应用.转换器"
+             xmlns:vm="clr-namespace:上位机.应用.视图模型"
+             d:DataContext="{d:DesignInstance Type=vm:IO视图模型}"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <conv:资源键画刷转换器 x:Key="KeyToBrush" />
+        <conv:布尔可见性转换器 x:Key="BoolToVis" />
+        <conv:布尔状态画刷转换器 x:Key="BoolToStatus" />
+
+        <!-- 单个 IO 点行 -->
+        <DataTemplate x:Key="IoPointTemplate" DataType="{x:Type vm:IO点位视图模型}">
+            <Grid Margin="{StaticResource GapV4}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="58" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 编号 -->
+                <TextBlock Grid.Column="0"
+                           Text="{Binding 代码}"
+                           FontFamily="{StaticResource NumericFontFamily}"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource PrimaryLightBrush}" />
+
+                <!-- 含义：编辑模式下为文本框，否则为文本 -->
+                <TextBlock x:Name="IO点位文本"
+                           Grid.Column="1"
+                           Text="{Binding 含义}"
+                           VerticalAlignment="Center"
+                           FontSize="13"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           Visibility="{Binding 是否编辑中, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}" />
+
+                <TextBox Grid.Column="1"
+                         Text="{Binding 含义, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalAlignment="Center"
+                         FontSize="13"
+                         MaxLength="24"
+                         Visibility="{Binding 是否编辑中, Converter={StaticResource BoolToVis}}" />
+
+                <!-- 状态灯：16px（触屏可辨）+ ON/OFF 文字 12px，宽度留足防裁切；
+                     "色 + 文字"双通道编码，不单靠颜色 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="{StaticResource GapLeft8}">
+                    <Ellipse Width="16" Height="16" VerticalAlignment="Center"
+                             Fill="{Binding 是否开启, Converter={StaticResource BoolToStatus}}" />
+                    <TextBlock Text="{Binding 状态文本}"
+                               FontFamily="{StaticResource NumericFontFamily}"
+                               FontSize="12"
+                               Width="34"
+                               TextAlignment="Right"
+                               VerticalAlignment="Center"
+                               Margin="{StaticResource GapLeft8}"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                </StackPanel>
+            </Grid>
+
+            <DataTemplate.Triggers>
+                <!-- 未定义的点位置灰 -->
+                <DataTrigger Binding="{Binding 是否已定义}" Value="False">
+                    <Setter TargetName="IO点位文本" Property="Foreground" Value="{DynamicResource TextDisabledBrush}" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 分组卡片 -->
+        <DataTemplate x:Key="IoGroupTemplate" DataType="{x:Type vm:IO分组视图模型}">
+            <Border Style="{StaticResource CardBorder}" Padding="{StaticResource ToolBarPadding}" Margin="{StaticResource GapBottom12}">
+                <StackPanel>
+                    <Grid Margin="{StaticResource GapBottom8}">
+                        <TextBlock Text="{Binding 标题}"
+                                   FontFamily="{StaticResource NumericFontFamily}"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource PrimaryBrush}" />
+                        <TextBlock Text="{Binding 已定义摘要}"
+                                   HorizontalAlignment="Right"
+                                   Style="{StaticResource CaptionText}" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding 点位集合}"
+                                  ItemTemplate="{StaticResource IoPointTemplate}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid Margin="{StaticResource PageMargin}"
+          Style="{DynamicResource PageTransitionStyle}">
+        <Grid.RenderTransform>
+            <TranslateTransform />
+        </Grid.RenderTransform>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 标题 -->
+        <StackPanel Grid.Row="0" Margin="{StaticResource GapBottom16}">
+            <TextBlock Text="{Binding 标题}" Style="{StaticResource PageTitleText}" />
+            <TextBlock Text="{Binding 副标题}" Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}" />
+        </StackPanel>
+
+        <!-- 工具条 -->
+        <Border Grid.Row="1" Style="{StaticResource CardBorder}" Padding="{StaticResource ToolBarPadding}" Margin="{StaticResource GapBottom16}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <!-- 筛选框：占位提示直接可见，不再藏在 ToolTip 里 -->
+                    <Grid Width="240" VerticalAlignment="Center">
+                        <TextBox x:Name="筛选框"
+                                 Text="{Binding 筛选文本, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Text="按编号或含义筛选"
+                                   IsHitTestVisible="False"
+                                   VerticalAlignment="Center" Margin="{StaticResource GapLeft12}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}" />
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=筛选框}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <CheckBox Content="仅显示已定义"
+                              IsChecked="{Binding 显示已定义}"
+                              VerticalAlignment="Center"
+                              Margin="{StaticResource GapLeft16}" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <!-- 新增点位区：管理员专属（这会改变采集范围，不只是改文案）。
+                         刻意与右侧"编辑含义"这类低风险操作用间距隔开。 -->
+                    <Button Content="+ 新增 X 区"
+                            Style="{StaticResource SecondaryButton}"
+                            Height="44" Margin="{StaticResource GapRight8}"
+                            Command="{Binding 异步新增输入区Command}"
+                            ToolTip="在 X 区末尾追加一栏 8 个点位，编号按八进制自动递增，立即写入配置并重建采集计划"
+                            Visibility="{Binding 可新增点位, Converter={StaticResource BoolToVis}}" />
+                    <Button Content="+ 新增 Y 区"
+                            Style="{StaticResource SecondaryButton}"
+                            Height="44" Margin="{StaticResource GapRight16}"
+                            Command="{Binding 异步新增输出区Command}"
+                            ToolTip="在 Y 区末尾追加一栏 8 个点位，编号按八进制自动递增，立即写入配置并重建采集计划"
+                            Visibility="{Binding 可新增点位, Converter={StaticResource BoolToVis}}" />
+
+                    <!-- IO 通信诊断：X/Y 段分别用 FC01 / FC02 读一次并排显示。
+                         "显示与物理对不上"时，用它一眼看出物理 IO 落在哪个功能码上 -->
+                    <Button Content="IO 通信诊断"
+                            Style="{StaticResource SecondaryButton}"
+                            Height="44" Margin="{StaticResource GapRight16}"
+                            Command="{Binding 异步IO诊断Command}"
+                            Visibility="{Binding 可诊断, Converter={StaticResource BoolToVis}}"
+                            ToolTip="把 X / Y 两个地址段分别用 FC01（线圈）和 FC02（离散输入）读一次并排显示，用于定位「显示与物理对不上」" />
+                    <Button Content="编辑含义"
+                            Style="{StaticResource SecondaryButton}"
+                            Height="44" Margin="{StaticResource GapRight8}"
+                            Command="{Binding 切换编辑模式Command}"
+                            Visibility="{Binding 是否编辑模式, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}" />
+                    <Button Content="保存"
+                            Style="{StaticResource ButtonSuccess}"
+                            Height="44" Margin="{StaticResource GapRight8}"
+                            Command="{Binding 异步保存Command}"
+                            Visibility="{Binding 是否编辑模式, Converter={StaticResource BoolToVis}}" />
+                    <Button Content="取消"
+                            Style="{StaticResource SecondaryButton}"
+                            Height="44"
+                            Command="{Binding 取消编辑Command}"
+                            Visibility="{Binding 是否编辑模式, Converter={StaticResource BoolToVis}}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 双栏：X 输入 / Y 输出。
+             大容器刻意不用卡片包裹（原先外层 Border 内再套分组 CardBorder，双层边框互相打架）——
+             只保留分组一层卡片，X/Y 用 SectionTitle 标题区分。 -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- X 输入 -->
+            <Grid Grid.Column="0" Margin="{StaticResource GapRight8}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="{StaticResource GapBottom12}">
+                        <TextBlock Text="X 输入继电器" Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="{Binding 输入摘要}" Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}" />
+                    </StackPanel>
+
+                    <ScrollViewer PanningMode="VerticalOnly" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding 输入分组}"
+                                      ItemTemplate="{StaticResource IoGroupTemplate}" />
+                    </ScrollViewer>
+                </DockPanel>
+            </Grid>
+
+            <!-- Y 输出 -->
+            <Grid Grid.Column="1" Margin="{StaticResource GapLeft8}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="{StaticResource GapBottom12}">
+                        <TextBlock Text="Y 输出继电器" Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="{Binding 输出摘要}" Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}" />
+                    </StackPanel>
+
+                    <ScrollViewer PanningMode="VerticalOnly" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding 输出分组}"
+                                      ItemTemplate="{StaticResource IoGroupTemplate}" />
+                    </ScrollViewer>
+                </DockPanel>
+            </Grid>
+
+            <!-- 筛选无结果空状态：两列分组都为空时给出出口（ClearFilter 一键还原） -->
+            <StackPanel Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Margin="{StaticResource GapTop60}">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding 输入分组.Count}" Value="0" />
+                                    <Condition Binding="{Binding 输出分组.Count}" Value="0" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible" />
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <Path Style="{StaticResource IconPathLarge}"
+                      Data="{StaticResource Icon.Nav.Io}"
+                      Stroke="{DynamicResource TextDisabledBrush}" />
+                <TextBlock Text="没有匹配的点，请调整筛选条件。"
+                           HorizontalAlignment="Center" Style="{StaticResource CaptionText}"
+                           Margin="{StaticResource GapTop8}" />
+                <Button Content="清除筛选" Style="{StaticResource SmallButton}" Height="44" Padding="24,0"
+                        HorizontalAlignment="Center" Margin="{StaticResource GapTop12}"
+                        Command="{Binding 清空筛选Command}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

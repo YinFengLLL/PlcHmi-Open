@@ -1,0 +1,118 @@
+<Window x:Class="上位机.应用.视图.报警编辑器对话框"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="编辑报警定义"
+        Width="500" Height="620" MinHeight="420" MaxHeight="780"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        Style="{StaticResource DialogWindow}">
+
+    <Grid Margin="{StaticResource DialogMargin}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="{StaticResource GapBottom16}">
+            <TextBlock x:Name="页眉标题文本" Text="报警定义"
+                       Style="{StaticResource DialogTitleText}" />
+            <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop8}"
+                       Text="上位机读取指定 PLC 地址，按位判断是否触发，再显示成下面的报警文本。" />
+        </StackPanel>
+
+        <!-- 编号 + 等级 -->
+        <Grid Grid.Row="1" Margin="{StaticResource GapBottom12}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="报警编号" Style="{StaticResource BodyText}" Margin="{StaticResource GapBottom8}" />
+                <TextBox x:Name="编号框" Style="{StaticResource InputBox}"
+                         FontFamily="{StaticResource NumericFontFamily}" MaxLength="10" />
+                <TextBlock x:Name="编号提示文本" Text="编号是报警的唯一标识，编辑时不可修改。"
+                           Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}"
+                           TextWrapping="Wrap" Visibility="Collapsed" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="报警等级" Style="{StaticResource BodyText}" Margin="{StaticResource GapBottom8}" />
+                <ComboBox x:Name="等级框" Height="44" VerticalContentAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 报警文本 -->
+        <StackPanel Grid.Row="2" Margin="{StaticResource GapBottom12}">
+            <TextBlock Text="报警文本（显示在报警栏）" Style="{StaticResource BodyText}" Margin="{StaticResource GapBottom8}" />
+            <TextBox x:Name="消息框" Style="{StaticResource InputBox}" MaxLength="60"
+                     TextChanged="消息已变更" />
+        </StackPanel>
+
+        <!-- 建议 -->
+        <StackPanel Grid.Row="3" Margin="{StaticResource GapBottom12}">
+            <TextBlock Text="处理建议（可选）" Style="{StaticResource BodyText}" Margin="{StaticResource GapBottom8}" />
+            <TextBox x:Name="建议框" Style="{StaticResource InputBox}" MaxLength="80" />
+        </StackPanel>
+
+        <!-- 读取地址 -->
+        <StackPanel Grid.Row="4" Margin="{StaticResource GapBottom12}">
+            <TextBlock Text="读取地址" Style="{StaticResource BodyText}" Margin="{StaticResource GapBottom8}" />
+            <TextBox x:Name="地址框" Style="{StaticResource InputBox}"
+                     FontFamily="{StaticResource NumericFontFamily}" MaxLength="12"
+                     TextChanged="地址已变更" />
+            <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionText}" Margin="{StaticResource GapTop4}"
+                       Text="只能填 M500 – M600（如 M512），或 D550 – D554 的字（如 D551，需同时指定位号）。" />
+        </StackPanel>
+
+        <!-- 位号 + 启用 -->
+        <Grid Grid.Row="5" Margin="{StaticResource GapBottom12}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="位号（D 区必填）" Style="{StaticResource BodyText}" Margin="{StaticResource GapBottom8}" />
+                <ComboBox x:Name="位框" Height="44" VerticalContentAlignment="Center"
+                          SelectionChanged="位已变更" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
+                <CheckBox x:Name="启用框" Content="启用这条报警"
+                          VerticalAlignment="Center" MinHeight="44" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 预览 -->
+        <Border Grid.Row="6" Padding="{StaticResource NoticePadding}" CornerRadius="8" Margin="{StaticResource GapBottom12}"
+                Background="{DynamicResource PrimarySoftBrush}"
+                BorderBrush="{DynamicResource PrimaryLightBrush}" BorderThickness="1">
+            <StackPanel>
+                <TextBlock Text="效果预览" Style="{StaticResource CaptionText}" />
+                <TextBlock x:Name="预览文本" Style="{StaticResource BodyText}"
+                           FontWeight="SemiBold" Margin="{StaticResource GapTop4}" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="消息文本" Grid.Row="7" VerticalAlignment="Top"
+                   Text="" Foreground="{DynamicResource DangerBrush}"
+                   Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+
+        <StackPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="取消" Style="{StaticResource SecondaryButton}"
+                    Width="100" Height="44" Margin="{StaticResource GapRight12}" IsCancel="True" Click="取消" />
+            <Button Content="确定" Style="{StaticResource PrimaryButton}"
+                    Width="110" Height="44" IsDefault="True" Click="确认" />
+        </StackPanel>
+    </Grid>
+</Window>

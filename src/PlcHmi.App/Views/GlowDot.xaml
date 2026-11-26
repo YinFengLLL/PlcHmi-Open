@@ -1,0 +1,12 @@
+<UserControl x:Class="上位机.应用.视图.辉光状态灯"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="根"
+             Width="16" Height="16">
+    <!-- 光晕与灯芯共用同一画刷（光晕 = 低透明度放大圈），
+         不引入额外配色令牌，双主题下自动跟随 Fill。 -->
+    <Grid>
+        <Ellipse Fill="{Binding Fill, ElementName=根}" Opacity="0.28" />
+        <Ellipse Width="8" Height="8" Fill="{Binding Fill, ElementName=根}" />
+    </Grid>
+</UserControl>

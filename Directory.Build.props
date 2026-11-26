@@ -1,0 +1,43 @@
+<Project>
+
+  <!-- ============================================================================
+       PlcHmi 全局编译设置
+       ────────────────────────────────────────────────────────────────────────────
+       作用范围：本目录及其子目录下的所有项目（src/*，含 Tests）。
+       与 .editorconfig 的分工：
+         · 本文件   —— 编译属性（语言版本、分析器开关、哪些规则升级为错误）
+         · .editorconfig —— 代码风格与**单条分析器规则的 severity**
+       两者互补：这里开总开关，具体某条规则的松紧去 .editorconfig 调。
+       ============================================================================ -->
+
+  <PropertyGroup>
+    <!-- 语言与类型安全：各 csproj 里的同名设置仍会覆盖这里，这里只作兜底 -->
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- .NET 分析器。SDK 默认已开，这里显式声明，防止将来被某处误关而无人察觉 -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+
+    <!-- 让 .editorconfig 里的代码风格规则也在构建期生效（默认只在 IDE 里提示） -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- 刻意不做「全量警告即错误」。
+         现有代码仍有 198 处宽泛捕获（CA1031），而工控后台服务的顶层捕获
+         "记录 + 继续运行"本身是正确设计。若整体 -warnaserror，就会逼着大家
+         去写 #pragma warning disable —— 那比保留警告更糟。
+         详见 .editorconfig 中 CA1031 那一段的理由。 -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+
+    <!-- 只把「一旦出现就必定是缺陷」的规则升级为错误，用于防回归。
+         以下规则在 2026-09-10 实测命中数均为 0，加进来不会让现有构建变红：
+           CS8600 / CS8602 / CS8603 / CS8618 —— 可空性（现场表现为 NullReferenceException）
+           CA2000                            —— 未释放 IDisposable / IAsyncDisposable
+           CA1849                            —— 异步方法内同步阻塞（会卡住 UI 线程） -->
+    <WarningsAsErrors>$(WarningsAsErrors);CS8600;CS8602;CS8603;CS8618;CA2000;CA1849</WarningsAsErrors>
+  </PropertyGroup>
+
+</Project>
