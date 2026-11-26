@@ -1,10 +1,12 @@
-# PlcHmi — WPF 工控上位机参考实现
+# WPF 工控上位机参考实现
 
+> 仓库名 `WPF-Hmi-Reference`；**代码工程名沿用 `PlcHmi`**（解决方案 `PlcHmi.slnx`，程序集 `PlcHmi.*`）。
+>
 > 用一台工控 PC 替代设备触摸屏：**工艺逻辑留在 PLC，上位机只做数据交互**。
 > .NET 10 + WPF，Modbus TCP（可切 OPC UA），点位 / 报警 / 元件 / 机种全部配置化，
 > 代码使用**中文标识符**——代码里的名字与电气图纸、配置 JSON、界面文案直接对应。
 >
-> **直接下载**：[v1.0 免安装包](https://github.com/YinFengLLL/PlcHmi-Open/releases/latest)
+> **直接下载**：[v1.0 免安装包](https://github.com/YinFengLLL/WPF-Hmi-Reference/releases/latest)
 > —— win-x64 自包含，解压即用，目标机免装 .NET（61 MB）。
 
 ---
@@ -220,7 +222,7 @@ powershell tools/publish.ps1       # 产物在 publish/，整目录拷贝即可�
 ## 八、目录结构
 
 ```
-PlcHmi/
+WPF-Hmi-Reference/
 ├─ PlcHmi.slnx
 ├─ src/
 │  ├─ PlcHmi.Core/            模型、枚举、抽象接口（零依赖）
